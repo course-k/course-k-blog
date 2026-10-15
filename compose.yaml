@@ -1,0 +1,59 @@
+# Local-only prototype. This PostgreSQL service is a development dependency,
+# not a reversal of the managed RDS deployment plan.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: blog_test
+      POSTGRES_USER: blog
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    ports: ["127.0.0.1:5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blog -d blog_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  migrate:
+    build: ./backend
+    command: [migrate]
+    environment: &api_environment
+      APP_ORIGIN: http://localhost:8080
+      DATABASE_HOST: db:5432
+      DATABASE_NAME: blog_test
+      DATABASE_USER: blog
+      DATABASE_PASSWORD_FILE: /run/secrets/db_password
+      DATABASE_SSLMODE: disable
+      ADMIN_PASSWORD_HASH_FILE: /run/secrets/admin_hash
+      LISTEN_ADDR: 0.0.0.0:8081
+    secrets: [db_password, admin_hash]
+    depends_on:
+      db: { condition: service_healthy }
+  api:
+    build: ./backend
+    environment: *api_environment
+    secrets: [db_password, admin_hash]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
+  web:
+    build: ./frontend
+    environment:
+      API_BASE_URL: http://api:8081
+    depends_on: [api]
+    restart: unless-stopped
+  gateway:
+    image: caddy:2-alpine
+    environment:
+      API_UPSTREAM: api:8081
+      WEB_UPSTREAM: web:3000
+    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro"]
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on: [web]
+    restart: unless-stopped
+secrets:
+  db_password: { file: ./config/db-password.txt }
+  admin_hash: { file: ./config/admin-hash.txt }
+volumes:
+  postgres_data:

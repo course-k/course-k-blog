@@ -1,0 +1,20 @@
+config/
+frontend/node_modules/
+frontend/dist/
+frontend/src/routeTree.gen.ts
+frontend/.tanstack/
+frontend/.rsbuild/
+frontend/test-results/
+frontend/playwright-report/
+backend/api
+*.log
+.DS_Store
+
+# Secrets and local runtime files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx

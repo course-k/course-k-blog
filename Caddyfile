@@ -1,0 +1,20 @@
+{
+  auto_https off
+  admin off
+}
+:8080 {
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+    X-Frame-Options DENY
+    -Server
+  }
+  @api path /api /api/*
+  handle @api {
+    reverse_proxy {$API_UPSTREAM:127.0.0.1:8081}
+  }
+  handle {
+    header Cache-Control "no-store"
+    reverse_proxy {$WEB_UPSTREAM:127.0.0.1:3000}
+  }
+}
