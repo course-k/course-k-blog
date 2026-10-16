@@ -83,6 +83,32 @@ PC・スマホ、キーボード、長いコード・表、失敗時の復帰を
 
 ## 5. 構成・責務・通信
 
+### 判断記録：Reactで画面を実装し、TanStack StartでSSRする理由
+
+2026年10月17日。既存実装後の設計レビューで代案を比較し、本人が整理した選定理由を記録した。実装前からこの比較を済ませていたという意味ではない。
+
+**判断**：公開画面と編集画面をReact／TypeScriptで実装し、公開記事のSSRにTanStack Startを使う。認証・記事の公開判断・保存・DBアクセスはGo APIへ集約する。Node.jsはReactのSSRを実行する役割であり、業務処理をGoと二重に実装するためのものではない。
+
+| 比較した案 | 利点 | 今回の判断で考慮した負担 |
+|---|---|---|
+| GoのHTMLテンプレートで公開・編集画面を生成 | Go側にHTML生成と業務処理をまとめられる。単純な記事表示のSSR要件は満たせる | 操作の多い編集画面にはブラウザー側の処理を組み合わせる。本人のReact習熟を画面全体では活かしにくい |
+| 公開記事はGoでSSR、編集画面はReact | 公開側のReact SSR用Node.jsを省きつつ、編集にReactを使える | GoテンプレートとReactという二つの画面実装を維持。公開側にも操作を追加する場合は、JavaScriptや部分的なReactとの境界を設計する |
+| 公開・編集ともReact、公開記事はTanStack StartでSSR（選択） | 本人のReact習熟を活かし、画面の実装方法を揃えられる。編集の状態管理や公開画面への操作追加を同じ技術で扱える | Node.jsとGoの運用、API接続・データ型の整合、SSRとブラウザーの初期表示一致の検証が必要 |
+
+**選定理由**：GoでもSSRできることを確認したうえで、編集画面の入力・プレビュー・保存状態等の連動、将来の公開画面へのコメント・いいね等の追加可能性、本人のReactへの習熟度と画面実装の一貫性を重視した。構成をGoへまとめる利点より、Reactで画面を開発・改良する利点を優先する。
+
+**判断の限界**：コメント・いいね・SNS共有を初回必須へ追加しない。Goでもこれらの機能は実現でき、状態管理やSSR自体がReact専用という意味ではない。React採用による工数削減や性能優位は未測定であり、習熟度・保守方針に基づく判断と、実測した効果を区別する。単純な共有リンクのためだけにReactが必要とはしない。
+
+**関連する未決事項**：Node.jsとGoの役割分担と、Caddyを採用する判断は別。Caddyは現在の試作で振り分けを担当するが、本番で専用プロキシを置く必要性と製品選定は未確定。今回の判断をCaddyやAWS入口の採用承認に拡張しない。
+
+確認した一次情報：
+
+- [Go公式のWebアプリ教材](https://go.dev/doc/articles/wiki/)：net/httpとhtml/templateによる閲覧・編集・保存。
+- [Go html/template](https://pkg.go.dev/html/template)：GoでのHTML生成。
+- [ReactのSSR](https://react.dev/reference/react-dom/server/renderToPipeableStream)と[ハイドレーション](https://react.dev/reference/react-dom/client/hydrateRoot)：サーバー生成HTMLとブラウザー側の操作の接続、初期表示一致の制約。
+- [Reactの部分導入](https://react.dev/learn/add-react-to-an-existing-project)：Goで生成したページの一部にReactを組み込む代案も成立する。
+
+
 ### ローカルの現在の実装
 
 ```text
