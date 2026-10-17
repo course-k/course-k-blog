@@ -13,6 +13,8 @@
 
 ## 資料
 
+- [配備準備の実装・検証記録](aws-readiness-implementation-2026-10-17.md)
+
 - [2タスクAWS配備前レビュー・月額・撤去復旧](aws-deployment-review.md)
 
 - [現在の機能・作業台帳（10月15日時点）](blog-current-taskboard-2026-10-15.md)

@@ -6,6 +6,7 @@ import (
 	"coursek/blog/backend/internal/auth"
 	"coursek/blog/backend/internal/blog"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -240,6 +241,28 @@ func TestLoginLimitSharedByHandlers(t *testing.T) {
 	for _, h := range []http.Handler{a, b} {
 		if request(h, "POST", "/api/session", `{"password":"test password long enough"}`, "https://blog.example", nil).Code != 429 {
 			t.Fatal("login limit bypassed")
+		}
+	}
+}
+
+func TestHealthAndProtectionDuringDatabaseFailure(t *testing.T) {
+	store := fake()
+	store.pingError = fmt.Errorf("database offline")
+	hash, _ := auth.HashPassword("test-only-long-password")
+	handler, err := New(store, "http://localhost:8080", hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, status := range map[string]int{"/api/healthz": 200, "/api/readyz": 503, "/api/admin/posts": 401} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest("GET", path, nil))
+		if recorder.Code != status {
+			t.Fatalf("%s: got %d", path, recorder.Code)
+		}
+		for key, value := range map[string]string{"X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY", "Referrer-Policy": "strict-origin-when-cross-origin"} {
+			if recorder.Header().Get(key) != value {
+				t.Fatalf("%s missing %s", path, key)
+			}
 		}
 	}
 }

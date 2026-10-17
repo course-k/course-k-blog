@@ -115,7 +115,9 @@ PC・スマホ、キーボード、長いコード・表、失敗時の復帰を
 
 [比較と採用理由](ingress-comparison-2026-10-17.md)、[具体的な設定と成立性検証の準備](aws-two-task-validation.md)を参照。必要資源・AWS実経路は未実証。以前の専用プロキシ優先案は1タスク同居前提の履歴。ローカルのCaddy構成は既存動作を維持し、本番の採用構成と区別する。
 
-配置全体の具体化は[配備前レビュー・全体費用・撤去復旧](aws-deployment-review.md)と[CloudFormation草案](../infra/review/two-task-stack.template.json)を参照。試算は月53.38ドルの利用例。必要容量と本番適合は未検証、課金未承認。
+配置全体の具体化は[配備前レビュー・全体費用・撤去復旧](aws-deployment-review.md)と[CloudFormation草案](../infra/review/two-task-stack.template.json)を参照。試算は月53.58ドルの利用例。必要容量と本番適合は未検証、課金未承認。
+
+配備準備の最新状態は[実装・検証記録](aws-readiness-implementation-2026-10-17.md)を参照。生存確認・保護ヘッダー・RDS CA・移行/疎通設定を実装し、AWS配備はしていない。
 
 ### ローカルの現在の実装
 

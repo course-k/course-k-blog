@@ -1,6 +1,6 @@
 # course-k-blog
 
-設計の確認は [現行設計書](docs/current-design.md) から始めます。追加機能の実装は停止中です。
+設計の確認は [現行設計書](docs/current-design.md) から始めます。外部記事等の追加機能は保留し、現在は2タスク配置に向けた生存確認・接続・運用の準備を進めています。
 
 ECS＋Fargate向けの設計に沿って、閲覧→ログイン→Markdown下書き保存→公開→更新→非公開を実装したソースです。**ローカルで画面と実DBを接続した動作を確認済みです。AWS未配備で、公開用の完成版ではありません。**
 
@@ -125,3 +125,7 @@ node scripts/check-restart.mjs
 個人GitHubの非公開 `course-k/course-k-blog` でブログ単位に管理します。フロント、Go API、今後のインフラ設定、設計・検証記録をまとめます。追加変更はブランチとPRで目的・差分・検証結果を記録します。現在のUIは未採用の試作です。
 
 現在の作業方針は [docs/README.md](docs/README.md) を参照。初回取り込み後も追加機能の実装は保留し、次の作業範囲を確認します。
+
+## AWS配備前準備
+
+[今回の変更と検証結果](docs/aws-readiness-implementation-2026-10-17.md)を参照。画面サーバーはnpm startでserver.mjsを起動し、/healthzはGo/DBなしで応答します。Goはapi healthcheckでloopbackの生存を確認します。AWSの課金環境は未作成です。

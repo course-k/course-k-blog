@@ -31,17 +31,17 @@
     "ECR_2GiB": 0.2,
     "LogIngest1GiB": 0.76,
     "LogStorage1GiB": 0.033,
-    "StandardAlarms6": 0.6,
     "CrossAZ10GiBAllowance": 0.1,
-    "ProbeAndNotificationAllowance": 0.05
+    "ProbeAndNotificationAllowance": 0.05,
+    "StandardAlarms8": 0.8
   },
-  "monthlyTotalUSD": 53.37945,
+  "monthlyTotalUSD": 53.57945,
   "without30GiBEgressAllowanceExtraUSD": 3.42,
-  "dailyExampleUSD": 1.7549408219178084,
+  "dailyExampleUSD": 1.7615161643835617,
   "sizingSensitivityUSD": {
     "oneTaskExtra0_25vCPU_1GiB": 10.608725,
     "oneTaskExtra1GiB": 3.2266000000000004,
-    "nodeAndGoEach0_5vCPU_2GiB_TotalMonthly": 74.5969
+    "nodeAndGoEach0_5vCPU_2GiB_TotalMonthly": 74.79690000000001
   },
   "sources": "aws-price-evidence-2026-10-17.json plus linked official pricing pages; hosted zones/IPv4/global egress checked on public pricing pages; probe allowance is budget reserve"
 }
