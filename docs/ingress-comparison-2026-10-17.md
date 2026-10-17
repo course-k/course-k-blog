@@ -1,5 +1,7 @@
 # 入口の振り分け：類似例と比較
 
+**現行提案は末尾「タスク分離を前提とした再評価」。それ以前の専用プロキシ優先案は、1タスク同居を前提とした検討履歴。採用未決。**
+
 2026年10月17日。調査・提案のみ。採用未承認、実装・AWS設定の変更なし。
 
 ## 確認した前例と証拠の範囲
@@ -88,3 +90,74 @@ React SSR＋Go APIとECS/Fargateは維持。1タスク同居、HTTP API＋Cloud 
 - [Nginx HTTP proxy](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)、[Caddy reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)。
 
 本人への確認対象は、この提案の「コンテナ1つの保守負担を受け入れ、AWSの独自登録やアプリ内転送の組込みを避ける」方針。Nginx設定の細部を本人へ逐一選ばせない。現在の試作は変更せず、採用確認後に必要な実装と検証へ進む。
+
+
+## タスク分離を前提とした再評価（現行提案）
+
+2026年10月17日。本人の疑問を受け、AWSが示す同居/分離の基準を確認。前の推奨は1タスク同居を前提にCloud Mapの登録制約を重く評価したもの。NodeとGoを別ECSサービスにすれば、それぞれ標準のCloud Mapサービスへ登録できるため、独自登録処理が必要という懸念はこの構成には当てはまらない。
+
+### 目的に戻す
+
+必要なのは、Reactの記事SSR・管理画面、Goによる認証/保存/同期、常時運用、無理のない費用と保守。Nginxを動かすこと、1コンテナ1タスク、サービス数を増やすこと自体は目的ではない。本人の「役割で分けたい」は、まず役割・配置の理解を確認する発言で、3タスク採用の明示決定ではない。
+
+AWS公式は、同じライフサイクル・同居・共有資源が必要なら同一タスクを、不要なら分離を推奨。画面とAPIの異なるスケールを具体例にしている。ただし常に1タスク1コンテナという規則ではない。
+
+### 比較する経路
+
+A：3タスク（各1個常時）
+
+```text
+API Gateway HTTP API→VPC Link→Cloud MapのNginx登録先
+ → Nginxタスク → Nodeタスク / Goタスク（各Cloud Mapで内部発見）
+```
+
+B：2タスク（各1個常時、現在の推奨候補）
+
+```text
+API Gateway HTTP API
+ ├─ ANY /api と ANY /api/{proxy+} → VPC Link → GoのCloud Map登録先 → Goタスク
+ └─ $default → VPC Link → NodeのCloud Map登録先 → Nodeタスク
+Nodeタスク → 内部DNS → Goタスク（SSR用のデータ取得）
+```
+
+BはALBを新たに置く案とは別。Cloud Mapは接続先を管理・発見し、HTTPの取り次ぎはAPI Gatewayが担当。ECSサービスはNode用とGo用の2つで、各々にタスク定義・Cloud Map登録先を持つ。VPC Linkは同じものを共有する案。SRV＋必要なAレコード、コンテナヘルスチェック、パス転送、DNS更新時の再接続を設計する。ブラウザーから見えるURL/オリジンは1つに保つ。
+
+| 観点 | A：独立Nginx＋Node＋Go | B：AWS入口＋Node＋Go |
+|---|---|---|
+| 独立更新・資源・権限 | 3サービスごとに設定 | 2サービスと入口設定。NodeとGoを独立にできる |
+| 入口の仕事 | API GatewayとNginxの2段で管理 | パス分岐をAPI Gatewayへ集約 |
+| 保守 | Nginxイメージ・設定・ログ・DNS再解決・正常性を追加管理 | Nginxの保守なし。代わりに2つのAWS統合先とルートを管理 |
+| 障害 | Nginx停止で両経路に影響。単一Nginxは高可用ではない | 中継用の独自単一タスクを省ける。各アプリ1個なのでアプリ側の高可用性はない |
+| 適する追加条件 | Nginx固有の変換・キャッシュ・通信制御が必要 | 今回のパス転送で足り、HTTP APIの制約内で動く |
+
+### 費用の比較例（必要容量の判定ではない）
+
+公式東京料金表を2026年10月17日に再取得。publicationDateは2026-09-11T12:44:25Z。Linux ARMオンデマンド、730時間/月、CPU 0.04045 USD/vCPU時・RAM 0.00442 USD/GiB時。税・為替・割引なし。
+
+NodeとGoの割当を両案で同一にして差分比較。計算例として各0.25vCPU/1GiB、Nginxは独立タスク最小の0.25vCPU/0.5GiBと置く。これでブログ運用に十分と証明した値ではない。実測で必要枠を決める。
+
+| 項目 | A：3タスク | B：2タスク |
+|---|---|---|
+| Node＋Goの計算資源 | 約21.22ドル/月 | 約21.22ドル/月 |
+| Nginxタスクの計算資源 | 約9.00ドル/月追加 | なし |
+| 各タスクに公開IPv4を1つ付ける外向き通信案 | 3個＝10.95ドル/月 | 2個＝7.30ドル/月 |
+| 上記小計（サービス全体の料金ではない） | 約41.16ドル/月 | 約28.52ドル/月 |
+
+差は約12.65ドル/月に、追加の登録・DNS・ログ等の差が加わる。Nginxをプライベートにする場合はIPv4分が変わるが、イメージ取得等のためのNAT/エンドポイント等を代わりに計上する必要があり、無料の外向き経路とはしない。公開IPv4があってもSGで直接受信を禁止し、内部通信には私有IPを使う。
+両案共通のAPI Gateway/VPC Link/Cloud Map、RDS、S3、DNS、ログ、通信、更新時一時増加等は小計に含まない。過去の全体49〜53ドル試算は1タスク前提であり、そのまま新構成の合計に使わない。ALB案は時間/LCU/IPv4課金を含む別の入口比較で、この2案比較に混ぜない。
+
+### 推奨と理由
+
+**NodeとGoを別ECSサービス/タスクとし、HTTP API＋VPC Link＋各Cloud Map登録先で直接振り分けるBを、次に検証する構成として推奨する。独立Nginxタスクは初期には置かない。**
+理由：NodeとGoの運用単位を分ける目的を満たしつつ、Nginxを独立させた場合の常駐費・依存更新・障害点を省ける。現在必要なのは/apiとその他の振り分けであり、Nginx固有の機能要求は未確認。AWSの標準機能の組合せで実現する設計で、公開例があるだけで普及率や本番適合を保証しない。
+
+専用プロキシ推奨からの変更理由は「本人が3タスクを好んだから」ではなく、タスクを分離する前提では、1サービス1レジストリの制約が回避され、AWS側の直接転送が比較上有利になるため。今までの1タスク同居は低コスト集約案として履歴に残すが、標準の必須配置とは扱わない。
+
+未検証：Node/Goの必要CPU/RAM、外部Host/Origin、Cookie、静的配信、本文HTML、30秒/10MB、Cloud Map更新・障害・ロールバック、DB接続/バックアップ同時負荷。GoはNodeとVPC Linkからの必要通信を許可するが、認証APIを無認証で操作可能にしない。Nginxに置いていたセキュリティレスポンスヘッダーはAWSまたはアプリへ移す設計が必要。VPC Link長期無通信対策も残る。
+HTTP APIの制約が要件に合わない場合は、まずALB直接転送へ再評価する。Nginxを追加してもHTTP APIの制約は消えない。コード・AWS設定・課金は変更していない。判断は設計案として提示し、今回の調査だけで配備に進まない。
+
+一次情報：
+
+- [AWS同居/分離の基準](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/container-considerations.html)、[画面とAPIの分割・権限](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/application_architecture.html)
+- [HTTP APIのルート](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-routes.html)、[Cloud Map私有統合](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-private.html)、[ECSサービス発見](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/service-discovery.html)
+- [東京Fargate公式料金JSON](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/ap-northeast-1/index.json)、[Fargate割当枠・料金](https://aws.amazon.com/fargate/pricing/)、[公開IPv4料金](https://aws.amazon.com/vpc/pricing/)
