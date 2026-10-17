@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-17",
+  "region": "ap-northeast-1",
+  "hours": 730,
+  "status": "scenario only; capacity not proven; no spending approved",
+  "assumptions": {
+    "tasks": "2x 0.25 vCPU/1GiB ARM64, no Spot, no commitments",
+    "db": "single-AZ db.t4g.micro, PostgreSQL normal support, gp3 20GiB",
+    "egress": "30GiB; AWS aggregate free allowance remaining; no NAT",
+    "storage": "S3 all object versions and dumps combined 6GiB; ECR total 2GiB",
+    "usage": "100k external HTTP calls and 100k DiscoverInstances calls; DNS100k; these are scenario counts, not measured",
+    "fees": "USD pretax; domain renewal/CI excluded; probes/notification allowance not actual implemented system cost"
+  },
+  "monthlyItemsUSD": {
+    "NodeCompute": 10.608725,
+    "GoCompute": 10.608725,
+    "PublicIPv4x2": 7.3,
+    "RDSInstance": 18.25,
+    "RDSgp3_20GiB": 2.7600000000000002,
+    "RDSAdminSecret": 0.4,
+    "SecretApiCalls1000": 0.005,
+    "PublicAndPrivateHostedZones": 1,
+    "DNSqueries100k": 0.04,
+    "CloudMap2Resources": 0.2,
+    "CloudMapDiscovery100k": 0.1,
+    "CloudMapRegistration1000": 0.001,
+    "HTTP_API_100k": 0.129,
+    "S3_6GiB": 0.15000000000000002,
+    "S3write10k": 0.047,
+    "S3read100k": 0.037,
+    "ECR_2GiB": 0.2,
+    "LogIngest1GiB": 0.76,
+    "LogStorage1GiB": 0.033,
+    "StandardAlarms6": 0.6,
+    "CrossAZ10GiBAllowance": 0.1,
+    "ProbeAndNotificationAllowance": 0.05
+  },
+  "monthlyTotalUSD": 53.37945,
+  "without30GiBEgressAllowanceExtraUSD": 3.42,
+  "dailyExampleUSD": 1.7549408219178084,
+  "sizingSensitivityUSD": {
+    "oneTaskExtra0_25vCPU_1GiB": 10.608725,
+    "oneTaskExtra1GiB": 3.2266000000000004,
+    "nodeAndGoEach0_5vCPU_2GiB_TotalMonthly": 74.5969
+  },
+  "sources": "aws-price-evidence-2026-10-17.json plus linked official pricing pages; hosted zones/IPv4/global egress checked on public pricing pages; probe allowance is budget reserve"
+}

@@ -13,6 +13,8 @@
 
 ## 資料
 
+- [2タスクAWS配備前レビュー・月額・撤去復旧](aws-deployment-review.md)
+
 - [現在の機能・作業台帳（10月15日時点）](blog-current-taskboard-2026-10-15.md)
 - [実装と結合検証の記録](blog-prototype-progress-2026-10-15.md)
 - [ECS＋Fargateの採用範囲](ecs-fargate-decision-2026-10-15.md)
