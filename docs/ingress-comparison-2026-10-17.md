@@ -24,7 +24,7 @@
 Node経由の根拠：[TanStack Server Routes](https://tanstack.com/start/latest/docs/framework/react/guide/server-routes)はHTTPハンドラーを提供するが、完成された汎用プロキシ機能の確認とは別。[Next.js rewrites](https://nextjs.org/docs/app/api-reference/config/next-config-js/rewrites)には外部転送例があるが、TanStackの同等機能として流用しない。
 AWSの制約：[CreateService serviceRegistries](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_CreateService.html)、[HTTP API private integration](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-private.html)。
 
-## 専用プロキシの製品比較と推奨案
+## 初回調査時の製品比較（後述の再評価を優先）
 
 [Nginx](https://nginx.org/en/docs/beginners_guide.html)・[Caddy](https://caddyserver.com/docs/quick-starts/reverse-proxy)とも公式にHTTP転送を扱い、今回のパス振り分けを実現できる。性能・メモリーの比較測定はしていない。
 
@@ -36,3 +36,55 @@ AWSの制約：[CreateService serviceRegistries](https://docs.aws.amazon.com/Ama
 推奨の採用・置換は未実施。本人との設計確認後、実装する場合にOrigin/Cookie、SSR本文、静的ファイル、404・5xx、パスとクエリ、送信サイズ、タイムアウト、転送ヘッダー、コンテナ資源・AWS経路を確認する。入口の費用は新たに再計算していない。
 
 LLMは一次情報の検索・読取・比較整理に使用。外部リポジトリのコード取り込みや実行、AWS作成、アプリ変更はしていない。
+
+
+## 本番の負担を優先した再評価
+
+2026年10月17日。本人の「ローカルとの一致は重視しない」「基準を適用した技術評価を任せたい」という意向を反映。以下を現在の評価とする。実装・課金操作は行っていない。
+
+### 評価の前提と順序
+
+React SSR＋Go APIとECS/Fargateは維持。1タスク同居、HTTP API＋Cloud Mapは比較用の設計候補で、本人の必須要件には昇格させない。別配置・ALBも検討対象に含める。要件・保護を満たせない案は除外し、その上で運用全体の負担と費用、保守・習熟、変更容易性を評価。ローカルとの一致、既存コードの存在は主たる加点にしない。実測していない性能を数値点数で評価しない。
+
+### 同じ目的を満たす経路の比較
+
+| 案 | 本番の経路 | 増える管理対象・結合 | 費用の違い | 判断 |
+|---|---|---|---|---|
+| ALBで直接振り分け | ALB→Node/Goを別ターゲットグループへ。1タスクでも複数登録できる | リスナールール・ターゲットグループ・正常性確認。専用プロキシ不要、マネージドの登録機能を利用可能 | ALB時間料金＋LCU、公開方式ならIPv4。HTTP API案の料金を残したまま二重加算せず、入口全体を置換して比較する必要 | 正攻法の有力案。費用よりマネージド入口と標準的な更新経路を優先するなら選択。ただし低頻度の個人運用では入口固定費を受け入れる価値が現状小さいと評価 |
+| HTTP API/Cloud Mapで直接二分 | APIのルートごとにNode/Goの登録先へ | ECS標準サービス発見は1サービス1レジストリ。サービス分割または別の登録ライフサイクル設計が必要 | 分割なら各タスク割当・場合によりIPv4などが変わる。同じ合計資源にできる場合もあるので必ず倍とはしない | 実現不可ではないが、プロキシ1個を省く目的だけで独自登録やサービス分割を導入しない |
+| NodeでGoへ転送 | HTTP API/Cloud Map→Node→Go | 転送ハンドラー/ライブラリ選定、Cookie・ヘッダー・タイムアウト・切断検証。画面サーバーがAPIの通過点にもなる | 同じタスク枠なら独立の追加計算資源課金なし。Nodeの転送負荷を測る | コンテナ最小化を優先するなら妥当。TanStackのHTTPハンドラーがあることと、検証済み汎用転送機能があることを混同しない。現状では追加の転送実装・ライブラリを選ぶ利得が小さい |
+| GoでNodeへ転送 | HTTP API/Cloud Map→Go。APIは自分で処理、それ以外をNodeへ | Go標準httputil.ReverseProxyを使用可能。業務APIがSSR・静的配信の通過点にもなり、現APIのOrigin/JSON制限を転送へ誤適用しない設計が必要 | 同じタスク枠なら独立の追加計算資源課金なし。Goの転送負荷を測る | 技術的に十分成立する。プロキシをゼロから書く必要はない。サーバー数最小化の次点案。ただし転送と業務APIを同じプロセスへ結合する |
+| 専用プロキシ | HTTP API/Cloud Map→プロキシ→Node/Go | コンテナの更新・ログ・正常性確認が1つ増える。転送は製品設定で扱い、業務/画面から独立 | 同じタスク割当で収まればコンテナ追加による別のFargate最低枠・公開IPは不要。CPU/RAM、ログ・保管・転送はゼロでなく、増量すれば費用増 | 本番でも推奨。理由はローカル一致ではなく、AWSの登録先を1つに保ち、自作の経路処理を増やさず、画面と業務APIへの結合を避けるため |
+
+専用プロキシは同居タスクの入口になるが、同居コンテナ同士が独立障害ドメインになるわけではない。Node入口案・Go入口案でも業務ルールの所有権はGoのまま保てるため、「責務分離が不可能」とは評価していない。
+
+### NginxとCaddyの再評価
+
+両者とも今回必要なパス転送、Cookieを含むHTTP応答、転送ヘッダー、タイムアウト等を設定できる。どちらも採用可能で、今回の機能適合に決定的な差は確認していない。
+
+- Nginx：proxy_pass、proxy_set_header、proxy_read_timeout等で明示的に設定する。既定の応答バッファリングがあり、逐次応答を要件とする経路では設定を検討する。公式SSR配置例と近い構成例を参照でき、本人の実務学習の目的では選好の根拠になる。
+- Caddy：reverse_proxyへ設定を集約でき、短い設定にできる。既定で設定される転送ヘッダー等の挙動も確認が必要。自動HTTPSは今回のAPI Gateway終端では利点に数えない。未知の製品だから安全性・保守性が低いとはしない。
+- 両者とも、名前や導入だけで入力保護・レート制限・適切な転送ヘッダー信頼が完成するわけではない。今回の設定と試験で確認する。メモリー・性能の勝者、利用率、セキュリティ優位は未確認。
+
+**最終提案：専用プロキシ方式を採り、Nginxを第一候補とする。** 方式は本番の登録・転送・保守の分担から選ぶ。製品は両方が適合した上で、本人の実務学習と具体的な構成例を参照できることを補助基準にNginxを選ぶ。Nginxが技術的に唯一の正解、Caddyより高性能・安全という主張ではない。製品差より、入口方式を決める方が今回の影響が大きい。
+
+受け入れる負担：コンテナ1つの依存更新・ログ・ヘルスチェック、入口障害の調査、資源測定。省く負担：独自のCloud Map登録更新処理、Node/Go内への汎用転送経路の組込み。ALBの新規固定費は初期案では避ける。
+
+### 未検証事項と判断を変える条件
+
+1. AWS HTTP API経由でSSR本文・静的アセット・Cookie・404/5xx・正しいHost/Originを確認。30秒/10MBの制約は入口プロキシを変えても残る。要件に合わない場合はALB入口へ再評価し、差額を提示する。
+2. 最終的な信頼済み転送元・ヘッダー処理、管理API非公開境界ではなく認証保護、リクエストサイズ・タイムアウト、ログの秘密値非出力を検証する。
+3. タスク切替・Cloud Mapの登録反映、DB一時障害、コンテナ停止、ロールバック、VPC Linkの長期無通信対策を確認する。
+4. 選定タスク枠で同時閲覧・編集・同期等を測る。プロキシを加えて枠を超える場合は、増量費用とGo入口等の代案を比較し直す。
+5. 正確な円/月の差・必要メモリーは未算出。今回は公式課金方式と既存割当枠での増減を評価したもの。最新の東京単価でALBを含めた月額全体を再試算したとは扱わない。
+
+### 今回再確認した一次情報
+
+- [ECS CreateService](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_CreateService.html)：serviceRegistries制約。
+- [ECS複数ターゲットグループ](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/register-multiple-targetgroups.html)：ALBから同じサービスの複数コンテナ/ポートへ接続する公式案。
+- [HTTP API private integration](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-private.html)、[HTTP API quotas](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-quotas.html)。
+- [ALB料金](https://aws.amazon.com/elasticloadbalancing/pricing/)、[Fargate料金](https://aws.amazon.com/fargate/pricing/)：時間・LCUとタスク資源の課金構造。
+- [Go ReverseProxy](https://pkg.go.dev/net/http/httputil#ReverseProxy)、[TanStack Server Routes](https://tanstack.com/start/latest/docs/framework/react/guide/server-routes)。
+- [Nginx HTTP proxy](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)、[Caddy reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)。
+
+本人への確認対象は、この提案の「コンテナ1つの保守負担を受け入れ、AWSの独自登録やアプリ内転送の組込みを避ける」方針。Nginx設定の細部を本人へ逐一選ばせない。現在の試作は変更せず、採用確認後に必要な実装と検証へ進む。
