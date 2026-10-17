@@ -71,6 +71,11 @@
       "Type": "String",
       "AllowedPattern": "arn:aws:ssm:ap-northeast-1:[0-9]{12}:parameter/.+",
       "Description": "SSM SecureString with generated DB role password; no value in template."
+    },
+    "RuntimeBoundaryArn": {
+      "Type": "String",
+      "AllowedPattern": "arn:aws:iam::[0-9]{12}:policy/.+",
+      "Description": "Runtime role permission boundary from validation access bootstrap; operator cannot modify it."
     }
   },
   "Conditions": {
@@ -747,7 +752,10 @@
               ]
             }
           }
-        ]
+        ],
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
+        }
       },
       "Condition": "RunApplication"
     },
@@ -765,6 +773,9 @@
               "Action": "sts:AssumeRole"
             }
           ]
+        },
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
         }
       },
       "Condition": "RunApplication"
@@ -1008,7 +1019,10 @@
               ]
             }
           }
-        ]
+        ],
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
+        }
       },
       "Condition": "RunApplication"
     },
@@ -1026,6 +1040,9 @@
               "Action": "sts:AssumeRole"
             }
           ]
+        },
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
         }
       },
       "Condition": "RunApplication"
@@ -1578,7 +1595,10 @@
               ]
             }
           }
-        ]
+        ],
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
+        }
       },
       "Condition": "DatabaseTools"
     },
@@ -1723,7 +1743,10 @@
               ]
             }
           }
-        ]
+        ],
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
+        }
       }
     },
     "ProbeFunction": {
@@ -1893,6 +1916,9 @@
               "Action": "sts:AssumeRole"
             }
           ]
+        },
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
         }
       }
     },
@@ -1980,7 +2006,10 @@
               ]
             }
           }
-        ]
+        ],
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
+        }
       },
       "Condition": "DatabaseTools"
     },
