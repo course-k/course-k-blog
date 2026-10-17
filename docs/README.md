@@ -13,6 +13,8 @@
 
 ## 資料
 
+- [最新：AWS検証前の完了事項・負荷結果・容量/費用](aws-validation-ready-2026-10-18.md)
+
 - [配備準備の実装・検証記録](aws-readiness-implementation-2026-10-17.md)
 
 - [2タスクAWS配備前レビュー・月額・撤去復旧](aws-deployment-review.md)

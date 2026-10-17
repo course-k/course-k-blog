@@ -22,6 +22,8 @@ DO $$ BEGIN RAISE EXCEPTION 'bootstrap validation failed'; END $$;
 \endif
 BEGIN;
 CREATE ROLE blog_migrator LOGIN PASSWORD :'migrator_password';
+-- PostgreSQL 16+: CREATEROLE alone does not imply SET ROLE membership.
+GRANT blog_migrator TO CURRENT_USER WITH SET TRUE;
 CREATE ROLE blog_app LOGIN PASSWORD :'app_password';
 CREATE SCHEMA blog AUTHORIZATION blog_migrator;
 GRANT CONNECT ON DATABASE blog TO blog_migrator, blog_app;

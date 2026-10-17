@@ -1,13 +1,13 @@
 import { createServerFn } from '@tanstack/react-start'
 import { notFound } from '@tanstack/react-router'
-import type { PublicPost } from './types'
+import type { PublicPost, PublicPostSummary } from './types'
 
 export const listPosts = createServerFn({ method: 'GET' })
   .validator((page: number) => {
     if (!Number.isInteger(page) || page < 1 || page > 10000) throw new Error('invalid page')
     return page
   })
-  .handler(async ({ data }): Promise<PublicPost[]> => {
+  .handler(async ({ data }): Promise<PublicPostSummary[]> => {
     const base = process.env.API_BASE_URL || 'http://127.0.0.1:8081'
     const response = await fetch(`${base}/api/posts?page=${data}`, { signal: AbortSignal.timeout(5000) })
     if (!response.ok) throw new Error('記事を取得できませんでした。')

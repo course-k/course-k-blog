@@ -115,9 +115,11 @@ PC・スマホ、キーボード、長いコード・表、失敗時の復帰を
 
 [比較と採用理由](ingress-comparison-2026-10-17.md)、[具体的な設定と成立性検証の準備](aws-two-task-validation.md)を参照。必要資源・AWS実経路は未実証。以前の専用プロキシ優先案は1タスク同居前提の履歴。ローカルのCaddy構成は既存動作を維持し、本番の採用構成と区別する。
 
-配置全体の具体化は[配備前レビュー・全体費用・撤去復旧](aws-deployment-review.md)と[CloudFormation草案](../infra/review/two-task-stack.template.json)を参照。試算は月53.58ドルの利用例。必要容量と本番適合は未検証、課金未承認。
+配置全体の具体化は[配備前レビュー・全体費用・撤去復旧](aws-deployment-review.md)と[CloudFormation草案](../infra/review/two-task-stack.template.json)を参照。試算は月60.96ドルの利用例（2026年10月18日のローカル負荷結果によりNodeだけ0.5vCPU/1GiB、Goは0.25vCPU/1GiB）。必要容量と本番適合は未検証、課金未承認。
 
 配備準備の最新状態は[実装・検証記録](aws-readiness-implementation-2026-10-17.md)を参照。生存確認・保護ヘッダー・RDS CA・移行/疎通設定を実装し、AWS配備はしていない。
+
+最新の[Docker検証・制限付き負荷結果・AWS検証提案](aws-validation-ready-2026-10-18.md)を参照。Docker再ビルドの中断は解消し、DBの制限付き管理者とTLSの負の試験も確認。AWS未配備。
 
 ### ローカルの現在の実装
 
@@ -153,7 +155,7 @@ API Gateway入口はALB固定費を避ける案だが、制約・構成要素は
 |---|---|---|---|---|
 | GET | `/api/healthz` | 不要 | なし | 200 `{ok:true}`（プロセス応答） |
 | GET | `/api/readyz` | 不要 | なし | 200 `{ok:true}`（DB疎通）、失敗503 |
-| GET | `/api/posts` | 不要 | page=1〜10000、省略1 | 200 PublicPost配列、20件ずつ |
+| GET | `/api/posts` | 不要 | page=1〜10000、省略1 | 200 PublicPostSummary配列、20件ずつ |
 | GET | `/api/posts/{id}` | 不要 | 記事ID | 200 PublicPost、非公開・不存在404 |
 | POST | `/api/session` | 不要 | `{password}` | 200 `{authenticated:true}`、Cookie発行 |
 | GET | `/api/session` | 必須 | なし | 200 `{authenticated:true}` |
@@ -165,7 +167,8 @@ API Gateway入口はALB固定費を避ける案だが、制約・構成要素は
 | POST | `/api/admin/posts/{id}/publish` | 必須 | `{version}` | 200 Post |
 | POST | `/api/admin/posts/{id}/unpublish` | 必須 | `{version}` | 200 Post |
 
-- PublicPost：`id,title,markdown,publishedAt,updatedAt`。公開スナップショットを返し、作業版を返さない。現在は一覧にも本文を含むため、外部混在の一覧用データ設計で見直す候補。
+- PublicPostSummary：`id,title,publishedAt,updatedAt`。一覧専用で本文は取得・返却しない。
+- PublicPost：`id,title,markdown,publishedAt,updatedAt`。公開スナップショットを返し、作業版を返さない。2026年10月18日、一覧への不要な本文転送はSummary型への分離で解消。
 - Post：`id,title,markdown,published,publishedAt,updatedAt,version,hasUnpublishedChanges`。title/markdown/updatedAtは作業版。公開版本文の列は直接JSONへ出さない。
 - 日時は時刻付きJSON、画面では日本時間。IDは32バイト乱数のbase64url文字列（43文字）。タイトル変更でIDを変えない。
 - エラー本文は `{error:文字列}`。入力400、認証401、Origin拒否403、未存在404、競合409、JSON以外415、ログイン試行制限429、内部失敗500。

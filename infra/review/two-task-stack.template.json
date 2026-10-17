@@ -23,12 +23,14 @@
     "NodeImage": {
       "Type": "String",
       "Default": "",
-      "Description": "ECR image pinned by digest; required before runtime activation."
+      "Description": "ECR image pinned by digest; required before runtime activation.",
+      "AllowedPattern": "^$|^.+@sha256:[a-f0-9]{64}$"
     },
     "GoImage": {
       "Type": "String",
       "Default": "",
-      "Description": "ECR image pinned by digest; required before runtime activation."
+      "Description": "ECR image pinned by digest; required before runtime activation.",
+      "AllowedPattern": "^$|^.+@sha256:[a-f0-9]{64}$"
     },
     "DatabaseUrlParameterArn": {
       "Type": "String",
@@ -44,6 +46,31 @@
       "Type": "String",
       "AllowedPattern": "arn:aws:ssm:ap-northeast-1:[0-9]{12}:parameter/.+",
       "Description": "Existing SSM SecureString for a dedicated schema owner, not the application DB user."
+    },
+    "EnableDatabaseTools": {
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": [
+        "false",
+        "true"
+      ],
+      "Description": "Creates one-off DB tool definitions before app services; does not run them."
+    },
+    "BootstrapImage": {
+      "Type": "String",
+      "Default": "",
+      "Description": "ARM64 bootstrap image pinned by digest; required when database tools enabled.",
+      "AllowedPattern": "^$|^.+@sha256:[a-f0-9]{64}$"
+    },
+    "AppPasswordParameterArn": {
+      "Type": "String",
+      "AllowedPattern": "arn:aws:ssm:ap-northeast-1:[0-9]{12}:parameter/.+",
+      "Description": "SSM SecureString with generated DB role password; no value in template."
+    },
+    "MigrationPasswordParameterArn": {
+      "Type": "String",
+      "AllowedPattern": "arn:aws:ssm:ap-northeast-1:[0-9]{12}:parameter/.+",
+      "Description": "SSM SecureString with generated DB role password; no value in template."
     }
   },
   "Conditions": {
@@ -64,6 +91,21 @@
             },
             ""
           ]
+        }
+      ]
+    },
+    "DatabaseTools": {
+      "Fn::Or": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "EnableDatabaseTools"
+            },
+            "true"
+          ]
+        },
+        {
+          "Condition": "RunApplication"
         }
       ]
     }
@@ -737,7 +779,7 @@
           "FARGATE"
         ],
         "NetworkMode": "awsvpc",
-        "Cpu": "256",
+        "Cpu": "512",
         "Memory": "1024",
         "RuntimePlatform": {
           "CpuArchitecture": "ARM64",
@@ -1538,7 +1580,7 @@
           }
         ]
       },
-      "Condition": "RunApplication"
+      "Condition": "DatabaseTools"
     },
     "MigrationTask": {
       "Type": "AWS::ECS::TaskDefinition",
@@ -1564,7 +1606,7 @@
         },
         "TaskRoleArn": {
           "Fn::GetAtt": [
-            "GoTaskRole",
+            "MigrationTaskRole",
             "Arn"
           ]
         },
@@ -1630,7 +1672,7 @@
           }
         ]
       },
-      "Condition": "RunApplication"
+      "Condition": "DatabaseTools"
     },
     "AlarmTopic": {
       "Type": "AWS::SNS::Topic"
@@ -1821,6 +1863,242 @@
           }
         ]
       }
+    },
+    "BootstrapRepository": {
+      "Type": "AWS::ECR::Repository",
+      "Properties": {
+        "ImageTagMutability": "IMMUTABLE",
+        "ImageScanningConfiguration": {
+          "ScanOnPush": true
+        },
+        "EncryptionConfiguration": {
+          "EncryptionType": "AES256"
+        }
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "MigrationTaskRole": {
+      "Type": "AWS::IAM::Role",
+      "Condition": "DatabaseTools",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }
+      }
+    },
+    "BootstrapExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "execution",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:GetAuthorizationToken"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "BootstrapRepository",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "GoLogs",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:GetParameters"
+                  ],
+                  "Resource": [
+                    {
+                      "Ref": "AppPasswordParameterArn"
+                    },
+                    {
+                      "Ref": "MigrationPasswordParameterArn"
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "Database",
+                      "MasterUserSecret.SecretArn"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "Condition": "DatabaseTools"
+    },
+    "BootstrapTask": {
+      "Type": "AWS::ECS::TaskDefinition",
+      "Properties": {
+        "Family": {
+          "Fn::Sub": "${AWS::StackName}-bootstrap"
+        },
+        "RequiresCompatibilities": [
+          "FARGATE"
+        ],
+        "NetworkMode": "awsvpc",
+        "Cpu": "256",
+        "Memory": "1024",
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX"
+        },
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "BootstrapExecutionRole",
+            "Arn"
+          ]
+        },
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "MigrationTaskRole",
+            "Arn"
+          ]
+        },
+        "ContainerDefinitions": [
+          {
+            "Name": "bootstrap",
+            "Image": {
+              "Ref": "BootstrapImage"
+            },
+            "Essential": true,
+            "PortMappings": [
+              {
+                "ContainerPort": 8081,
+                "Protocol": "tcp"
+              }
+            ],
+            "Environment": [
+              {
+                "Name": "PGHOST",
+                "Value": {
+                  "Fn::GetAtt": [
+                    "Database",
+                    "Endpoint.Address"
+                  ]
+                }
+              },
+              {
+                "Name": "PGPORT",
+                "Value": "5432"
+              },
+              {
+                "Name": "PGDATABASE",
+                "Value": "blog"
+              },
+              {
+                "Name": "PGUSER",
+                "Value": "blogowner"
+              },
+              {
+                "Name": "PGSSLMODE",
+                "Value": "verify-full"
+              }
+            ],
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "GoLogs"
+                },
+                "awslogs-region": {
+                  "Ref": "AWS::Region"
+                },
+                "awslogs-stream-prefix": "go"
+              }
+            },
+            "Secrets": [
+              {
+                "Name": "PGPASSWORD",
+                "ValueFrom": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "Database",
+                          "MasterUserSecret.SecretArn"
+                        ]
+                      },
+                      ":password::"
+                    ]
+                  ]
+                }
+              },
+              {
+                "Name": "BLOG_APP_PASSWORD",
+                "ValueFrom": {
+                  "Ref": "AppPasswordParameterArn"
+                }
+              },
+              {
+                "Name": "BLOG_MIGRATOR_PASSWORD",
+                "ValueFrom": {
+                  "Ref": "MigrationPasswordParameterArn"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "Condition": "DatabaseTools"
     }
   },
   "Outputs": {
@@ -1878,6 +2156,136 @@
       "Value": {
         "Ref": "AlarmTopic"
       }
+    },
+    "BootstrapRepository": {
+      "Value": {
+        "Fn::GetAtt": [
+          "BootstrapRepository",
+          "RepositoryUri"
+        ]
+      }
+    },
+    "BootstrapTaskDefinition": {
+      "Condition": "DatabaseTools",
+      "Value": {
+        "Ref": "BootstrapTask"
+      }
+    },
+    "MigrationTaskDefinition": {
+      "Condition": "DatabaseTools",
+      "Value": {
+        "Ref": "MigrationTask"
+      }
+    }
+  },
+  "Rules": {
+    "NodeImageRequired": {
+      "RuleCondition": {
+        "Fn::Equals": [
+          {
+            "Ref": "EnableRuntime"
+          },
+          "true"
+        ]
+      },
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "NodeImage"
+                  },
+                  ""
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "NodeImage must be a digest-pinned image when runtime is enabled."
+        }
+      ]
+    },
+    "GoImageRequired": {
+      "RuleCondition": {
+        "Fn::Equals": [
+          {
+            "Ref": "EnableRuntime"
+          },
+          "true"
+        ]
+      },
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "GoImage"
+                  },
+                  ""
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "GoImage must be a digest-pinned image when runtime is enabled."
+        }
+      ]
+    },
+    "ToolImagesRequired": {
+      "RuleCondition": {
+        "Fn::Or": [
+          {
+            "Fn::Equals": [
+              {
+                "Ref": "EnableDatabaseTools"
+              },
+              "true"
+            ]
+          },
+          {
+            "Fn::Equals": [
+              {
+                "Ref": "EnableRuntime"
+              },
+              "true"
+            ]
+          }
+        ]
+      },
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "BootstrapImage"
+                  },
+                  ""
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "BootstrapImage must be specified before creating database tool definitions."
+        },
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "GoImage"
+                  },
+                  ""
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "GoImage must be specified before creating database tool definitions."
+        }
+      ]
     }
   }
 }
