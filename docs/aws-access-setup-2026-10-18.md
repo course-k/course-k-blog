@@ -2,7 +2,33 @@
 
 2026-10-18。本人が最大72時間・予算目安10 USD（税別、上限保証ではない）のAWS検証を承認。その後、既存のCLIプロファイルは全て別用途と確認した。
 
-## 確認済み
+## 再開時の確認（オレゴン採用後）
+
+本人のオレゴン採用に合わせ、配備/権限テンプレートをus-west-2へ変更。SSM ARNの検査、権限のリージョン条件とARN、KMS ViaServiceも揃え、cfn-lintをオレゴン指定で確認済み。
+
+公開/非公開サブネットは、アカウントごとに対応が変わるAZ名の並び順ではなく、VPC Link対応表にあるusw2-az1/usw2-az2を既定のAZ IDとした。同じAZを二つ選べない検査を加え、ECSのFargateプラットフォームを1.4.0と明示。
+
+AWS STSでcourse-k-deployの本人接続を再確認。配備用ロールへのAssumeRoleはAccessDenied。この結果だけでロールの存在/不存在は断定しない。管理者側でアクセス用スタックの作成または更新が必要。アプリのAWS資源はまだ作成していない。
+
+過去に東京用ファイルをダウンロード済みの場合、そのコピーを使わず、更新したファイルを再アップロードする。アクセス用スタックをすでに東京へ作成した場合は、IAMはグローバルのためオレゴンに同名ロールを二重作成せず、既存スタックを更新する。作成場所と許可する実行地域を区別する。
+
+## 再開用の事前確認ツール
+
+[scripts/aws-validation-preflight.py](../scripts/aws-validation-preflight.py)を追加した。専用のローカル設定に、ブラウザ認証の`course-k-blog`を参照する`course-k-validation-operator`プロファイルを設定済み。既存のグローバルプロファイルは変更していない。
+
+このツールはAWS資源を変更しない。想定アカウントと操作者ロールをSTSで照合した後、オレゴンのAZ、PostgreSQL 17の提供版、db.t4g.micro/gp3/20GiBの注文可否、FargateのOn-Demand vCPU枠、CloudFormationテンプレートの検証を行う。認証情報は出力・保存しない。結果はGit無視対象の`config/aws-validation/preflight-result.json`へ保存する。枠の値は空き容量や配備成功の保証ではない。
+
+```sh
+python3 scripts/aws-validation-preflight.py \
+  --cli /tmp/course-k-aws-cli/expanded/aws-cli.pkg/Payload/aws-cli/aws \
+  --expected-account 757412973334
+```
+
+2026-10-18の再実行はAssumeRoleのAccessDeniedで停止。想定外アカウントを渡すローカル検査でも、最初のSTS照合後に後続処理へ進まないことを確認した。AWS上のAZ・DB・枠・テンプレート検証は権限設定後に実施する。権限変更なしで同じ失敗を繰り返さない。
+
+権限設定後の順序は、事前確認→新規資源だけのChange Set確認→基盤作成→イメージ登録と秘密値設定→DB初期化/移行→Node/Go起動→実経路の操作/SSR/復帰検証→撤去と保持物確認。課金対象を初めて作成した時刻と撤去期限を記録する。現時点で72時間の稼働検証を開始した扱いにはしない。
+
+## 初回の確認履歴
 
 - 本人はルートでコンソールを利用していた。`course-k-deploy` を新設し、本人がパスワードを変更した。
 - 同ユーザーには IAMUserChangePassword と SignInLocalDevelopmentAccess を付与。
@@ -14,7 +40,7 @@
 
 ## 用意した権限の構成
 
-[アクセス設定テンプレート](../infra/access/validation-access.template.json)を、本人が管理者のコンソールから東京リージョンへ配備する。スタック名は `course-k-validation-access`。
+[アクセス設定テンプレート](../infra/access/validation-access.template.json)を、本人が管理者のコンソールからオレゴン（us-west-2）へ配備する。スタック名は `course-k-validation-access`。
 
 作るのはIAMの設定のみで、アプリ・DB・ネットワークは作成しない。
 
@@ -23,7 +49,7 @@
 - `course-k-deploy` に上記ロールのAssumeRole権限だけを追加するインラインポリシー。
 - アプリ/実行/疎通確認ロールに必須となる権限境界。操作者は境界の変更・削除権限を持たない。
 
-通常の配備は操作者ロールを使い、CloudFormationへサービスロールを渡さず、その呼出元権限で実行する。ネットワーク等の変更操作は `aws:CalledVia` でCloudFormation経由に制限した。新規環境のロール名・ECR・SSM・S3等はプレフィックスで制限。リージョンを持つ操作は東京を基本とする。
+通常の配備は操作者ロールを使い、CloudFormationへサービスロールを渡さず、その呼出元権限で実行する。ネットワーク等の変更操作は `aws:CalledVia` でCloudFormation経由に制限した。新規環境のロール名・ECR・SSM・S3等はプレフィックスで制限。リージョンを持つ操作はオレゴンに制限する。
 
 IAMの新規ロールは `course-k-blog-validation-*` だけで、指定の境界が必須。操作者自身、既存ユーザー、境界ポリシーは変更できない。PassRole先はECSタスク/Lambdaのみ。長期アクセスキー発行権限も追加しない。
 
@@ -33,7 +59,7 @@ RDS管理者権限はBootstrapにのみ、通常DSNと管理者ハッシュはGo
 
 ## 本人に必要な操作
 
-1. ルートでログインしたウィンドウから東京のCloudFormationを開く。
+1. ルートでログインしたウィンドウからオレゴンのCloudFormationを開く。
 2. 「スタックの作成」→「新しいリソースを使用（標準）」。
 3. 「既存のテンプレートを選択」→「テンプレートファイルのアップロード」で上記JSONを選択。
 4. スタック名 `course-k-validation-access`。DeployUserNameは `course-k-deploy` のまま。

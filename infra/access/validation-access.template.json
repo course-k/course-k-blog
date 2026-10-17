@@ -1,6 +1,6 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "Validation access bootstrap only. Creates no application infrastructure. Run by account administrator in Tokyo.",
+  "Description": "Validation access bootstrap only. Creates no application infrastructure. Run by account administrator in Oregon.",
   "Parameters": {
     "DeployUserName": {
       "Type": "String",
@@ -26,7 +26,7 @@
               "Resource": "*",
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             },
@@ -38,7 +38,7 @@
                 "ecr:BatchGetImage"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:ecr:ap-northeast-1:${AWS::AccountId}:repository/course-k-blog-validation-*"
+                "Fn::Sub": "arn:${AWS::Partition}:ecr:us-west-2:${AWS::AccountId}:repository/course-k-blog-validation-*"
               }
             },
             {
@@ -48,7 +48,7 @@
                 "logs:PutLogEvents"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:logs:ap-northeast-1:${AWS::AccountId}:log-group:course-k-blog-validation-*"
+                "Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:course-k-blog-validation-*"
               }
             },
             {
@@ -57,7 +57,7 @@
                 "ssm:GetParameters"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:ssm:ap-northeast-1:${AWS::AccountId}:parameter/course-k/blog-validation/*"
+                "Fn::Sub": "arn:${AWS::Partition}:ssm:us-west-2:${AWS::AccountId}:parameter/course-k/blog-validation/*"
               }
             },
             {
@@ -66,7 +66,7 @@
                 "secretsmanager:GetSecretValue"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:ap-northeast-1:${AWS::AccountId}:secret:rds!db-*"
+                "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:us-west-2:${AWS::AccountId}:secret:rds!db-*"
               }
             }
           ]
@@ -156,15 +156,15 @@
               ],
               "Resource": [
                 {
-                  "Fn::Sub": "arn:${AWS::Partition}:cloudformation:ap-northeast-1:${AWS::AccountId}:stack/course-k-blog-validation-*/*"
+                  "Fn::Sub": "arn:${AWS::Partition}:cloudformation:us-west-2:${AWS::AccountId}:stack/course-k-blog-validation-*/*"
                 },
                 {
-                  "Fn::Sub": "arn:${AWS::Partition}:cloudformation:ap-northeast-1:${AWS::AccountId}:changeSet/course-k-blog-validation-*/*"
+                  "Fn::Sub": "arn:${AWS::Partition}:cloudformation:us-west-2:${AWS::AccountId}:changeSet/course-k-blog-validation-*/*"
                 }
               ],
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             },
@@ -190,7 +190,7 @@
               "Resource": "*",
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             },
@@ -226,7 +226,7 @@
               "Resource": "*",
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 },
                 "ForAnyValue:StringEquals": {
                   "aws:CalledVia": "cloudformation.amazonaws.com"
@@ -248,11 +248,11 @@
                 "rds:ListTagsForResource"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:rds:ap-northeast-1:${AWS::AccountId}:*:course-k-blog-validation-*"
+                "Fn::Sub": "arn:${AWS::Partition}:rds:us-west-2:${AWS::AccountId}:*:course-k-blog-validation-*"
               },
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 },
                 "ForAnyValue:StringEquals": {
                   "aws:CalledVia": "cloudformation.amazonaws.com"
@@ -273,7 +273,7 @@
               "Resource": "*",
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 },
                 "ForAnyValue:StringEquals": {
                   "aws:CalledVia": "cloudformation.amazonaws.com"
@@ -297,7 +297,7 @@
               "Resource": "*",
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 },
                 "ForAnyValue:StringEquals": {
                   "aws:CalledVia": "cloudformation.amazonaws.com"
@@ -316,18 +316,18 @@
               ],
               "Resource": [
                 {
-                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:ap-northeast-1::/apis*"
+                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:us-west-2::/apis*"
                 },
                 {
-                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:ap-northeast-1::/vpclinks*"
+                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:us-west-2::/vpclinks*"
                 },
                 {
-                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:ap-northeast-1::/tags/*"
+                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:us-west-2::/tags/*"
                 }
               ],
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 },
                 "ForAnyValue:StringEquals": {
                   "aws:CalledVia": "cloudformation.amazonaws.com"
@@ -349,7 +349,7 @@
               "Resource": "*",
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 },
                 "ForAnyValue:StringEquals": {
                   "aws:CalledVia": "cloudformation.amazonaws.com"
@@ -399,11 +399,11 @@
                 "ecr:ListTagsForResource"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:ecr:ap-northeast-1:${AWS::AccountId}:repository/course-k-blog-validation-*"
+                "Fn::Sub": "arn:${AWS::Partition}:ecr:us-west-2:${AWS::AccountId}:repository/course-k-blog-validation-*"
               },
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 },
                 "ForAnyValue:StringEquals": {
                   "aws:CalledVia": "cloudformation.amazonaws.com"
@@ -484,7 +484,7 @@
               "Resource": "*",
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 },
                 "ForAnyValue:StringEquals": {
                   "aws:CalledVia": "cloudformation.amazonaws.com"
@@ -584,11 +584,11 @@
                 "ecr:BatchDeleteImage"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:ecr:ap-northeast-1:${AWS::AccountId}:repository/course-k-blog-validation-*"
+                "Fn::Sub": "arn:${AWS::Partition}:ecr:us-west-2:${AWS::AccountId}:repository/course-k-blog-validation-*"
               },
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             },
@@ -605,11 +605,11 @@
                 "ssm:ListTagsForResource"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:ssm:ap-northeast-1:${AWS::AccountId}:parameter/course-k/blog-validation/*"
+                "Fn::Sub": "arn:${AWS::Partition}:ssm:us-west-2:${AWS::AccountId}:parameter/course-k/blog-validation/*"
               },
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             },
@@ -623,18 +623,18 @@
               ],
               "Resource": [
                 {
-                  "Fn::Sub": "arn:${AWS::Partition}:ecs:ap-northeast-1:${AWS::AccountId}:task-definition/course-k-blog-validation-*"
+                  "Fn::Sub": "arn:${AWS::Partition}:ecs:us-west-2:${AWS::AccountId}:task-definition/course-k-blog-validation-*"
                 },
                 {
-                  "Fn::Sub": "arn:${AWS::Partition}:ecs:ap-northeast-1:${AWS::AccountId}:task/course-k-blog-validation-*/*"
+                  "Fn::Sub": "arn:${AWS::Partition}:ecs:us-west-2:${AWS::AccountId}:task/course-k-blog-validation-*/*"
                 },
                 {
-                  "Fn::Sub": "arn:${AWS::Partition}:ecs:ap-northeast-1:${AWS::AccountId}:service/course-k-blog-validation-*/*"
+                  "Fn::Sub": "arn:${AWS::Partition}:ecs:us-west-2:${AWS::AccountId}:service/course-k-blog-validation-*/*"
                 }
               ],
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             }
@@ -657,11 +657,11 @@
                 "logs:FilterLogEvents"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:logs:ap-northeast-1:${AWS::AccountId}:log-group:course-k-blog-validation-*"
+                "Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:course-k-blog-validation-*"
               },
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             },
@@ -673,15 +673,15 @@
               ],
               "Resource": [
                 {
-                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:ap-northeast-1::/apis*"
+                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:us-west-2::/apis*"
                 },
                 {
-                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:ap-northeast-1::/vpclinks*"
+                  "Fn::Sub": "arn:${AWS::Partition}:apigateway:us-west-2::/vpclinks*"
                 }
               ],
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             },
@@ -696,7 +696,7 @@
               "Resource": "*",
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             },
@@ -707,11 +707,11 @@
                 "lambda:InvokeFunction"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:lambda:ap-northeast-1:${AWS::AccountId}:function:course-k-blog-validation-*"
+                "Fn::Sub": "arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:course-k-blog-validation-*"
               },
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             },
@@ -722,11 +722,11 @@
                 "ecr:DeleteRepository"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:ecr:ap-northeast-1:${AWS::AccountId}:repository/course-k-blog-validation-*"
+                "Fn::Sub": "arn:${AWS::Partition}:ecr:us-west-2:${AWS::AccountId}:repository/course-k-blog-validation-*"
               },
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             },
@@ -757,11 +757,11 @@
                 "logs:DeleteLogGroup"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:logs:ap-northeast-1:${AWS::AccountId}:log-group:course-k-blog-validation-*"
+                "Fn::Sub": "arn:${AWS::Partition}:logs:us-west-2:${AWS::AccountId}:log-group:course-k-blog-validation-*"
               },
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             },
@@ -772,11 +772,11 @@
                 "rds:DeleteDBSnapshot"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:rds:ap-northeast-1:${AWS::AccountId}:snapshot:course-k-blog-validation-*"
+                "Fn::Sub": "arn:${AWS::Partition}:rds:us-west-2:${AWS::AccountId}:snapshot:course-k-blog-validation-*"
               },
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             },
@@ -790,11 +790,11 @@
                 "sns:Publish"
               ],
               "Resource": {
-                "Fn::Sub": "arn:${AWS::Partition}:sns:ap-northeast-1:${AWS::AccountId}:course-k-blog-validation-*"
+                "Fn::Sub": "arn:${AWS::Partition}:sns:us-west-2:${AWS::AccountId}:course-k-blog-validation-*"
               },
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1"
+                  "aws:RequestedRegion": "us-west-2"
                 }
               }
             },
@@ -808,10 +808,10 @@
               "Resource": "*",
               "Condition": {
                 "StringEquals": {
-                  "aws:RequestedRegion": "ap-northeast-1",
+                  "aws:RequestedRegion": "us-west-2",
                   "kms:ViaService": [
-                    "rds.ap-northeast-1.amazonaws.com",
-                    "secretsmanager.ap-northeast-1.amazonaws.com"
+                    "rds.us-west-2.amazonaws.com",
+                    "secretsmanager.us-west-2.amazonaws.com"
                   ]
                 }
               }

@@ -1,6 +1,6 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "REVIEW DRAFT ONLY. No AWS deployment performed. See docs/aws-deployment-review.md blockers before use.",
+  "Description": "Blog AWS validation in Oregon (us-west-2). Two ECS services, private RDS, HTTP API with Cloud Map. See deployment record before execution.",
   "Parameters": {
     "EnableRuntime": {
       "Type": "String",
@@ -13,7 +13,7 @@
     },
     "PostgresVersion": {
       "Type": "String",
-      "Description": "Explicit currently supported Tokyo PostgreSQL version; verify before deployment."
+      "Description": "Explicit currently supported Oregon PostgreSQL version; verify before deployment."
     },
     "PublicOrigin": {
       "Type": "String",
@@ -35,16 +35,16 @@
     "DatabaseUrlParameterArn": {
       "Type": "String",
       "Description": "Existing SSM SecureString ARN under the AWS-managed SSM key; contains no value here.",
-      "AllowedPattern": "arn:aws:ssm:ap-northeast-1:[0-9]{12}:parameter/.+"
+      "AllowedPattern": "arn:aws:ssm:us-west-2:[0-9]{12}:parameter/.+"
     },
     "AdminHashParameterArn": {
       "Type": "String",
       "Description": "Existing SSM SecureString ARN under the AWS-managed SSM key; contains no value here.",
-      "AllowedPattern": "arn:aws:ssm:ap-northeast-1:[0-9]{12}:parameter/.+"
+      "AllowedPattern": "arn:aws:ssm:us-west-2:[0-9]{12}:parameter/.+"
     },
     "MigrationUrlParameterArn": {
       "Type": "String",
-      "AllowedPattern": "arn:aws:ssm:ap-northeast-1:[0-9]{12}:parameter/.+",
+      "AllowedPattern": "arn:aws:ssm:us-west-2:[0-9]{12}:parameter/.+",
       "Description": "Existing SSM SecureString for a dedicated schema owner, not the application DB user."
     },
     "EnableDatabaseTools": {
@@ -64,18 +64,40 @@
     },
     "AppPasswordParameterArn": {
       "Type": "String",
-      "AllowedPattern": "arn:aws:ssm:ap-northeast-1:[0-9]{12}:parameter/.+",
+      "AllowedPattern": "arn:aws:ssm:us-west-2:[0-9]{12}:parameter/.+",
       "Description": "SSM SecureString with generated DB role password; no value in template."
     },
     "MigrationPasswordParameterArn": {
       "Type": "String",
-      "AllowedPattern": "arn:aws:ssm:ap-northeast-1:[0-9]{12}:parameter/.+",
+      "AllowedPattern": "arn:aws:ssm:us-west-2:[0-9]{12}:parameter/.+",
       "Description": "SSM SecureString with generated DB role password; no value in template."
     },
     "RuntimeBoundaryArn": {
       "Type": "String",
       "AllowedPattern": "arn:aws:iam::[0-9]{12}:policy/.+",
       "Description": "Runtime role permission boundary from validation access bootstrap; operator cannot modify it."
+    },
+    "AvailabilityZone1Id": {
+      "Type": "String",
+      "Default": "usw2-az1",
+      "AllowedValues": [
+        "usw2-az1",
+        "usw2-az2",
+        "usw2-az3",
+        "usw2-az4"
+      ],
+      "Description": "Stable Oregon AZ ID supported by API Gateway VPC Link; distinct from the other zone."
+    },
+    "AvailabilityZone2Id": {
+      "Type": "String",
+      "Default": "usw2-az2",
+      "AllowedValues": [
+        "usw2-az1",
+        "usw2-az2",
+        "usw2-az3",
+        "usw2-az4"
+      ],
+      "Description": "Stable Oregon AZ ID supported by API Gateway VPC Link; distinct from the other zone."
     }
   },
   "Conditions": {
@@ -167,15 +189,10 @@
           "Ref": "Vpc"
         },
         "CidrBlock": "10.42.0.0/24",
-        "AvailabilityZone": {
-          "Fn::Select": [
-            0,
-            {
-              "Fn::GetAZs": ""
-            }
-          ]
-        },
-        "MapPublicIpOnLaunch": false
+        "MapPublicIpOnLaunch": false,
+        "AvailabilityZoneId": {
+          "Ref": "AvailabilityZone1Id"
+        }
       }
     },
     "Public1Routes": {
@@ -196,15 +213,10 @@
           "Ref": "Vpc"
         },
         "CidrBlock": "10.42.10.0/24",
-        "AvailabilityZone": {
-          "Fn::Select": [
-            0,
-            {
-              "Fn::GetAZs": ""
-            }
-          ]
-        },
-        "MapPublicIpOnLaunch": false
+        "MapPublicIpOnLaunch": false,
+        "AvailabilityZoneId": {
+          "Ref": "AvailabilityZone1Id"
+        }
       }
     },
     "Public2": {
@@ -214,15 +226,10 @@
           "Ref": "Vpc"
         },
         "CidrBlock": "10.42.1.0/24",
-        "AvailabilityZone": {
-          "Fn::Select": [
-            1,
-            {
-              "Fn::GetAZs": ""
-            }
-          ]
-        },
-        "MapPublicIpOnLaunch": false
+        "MapPublicIpOnLaunch": false,
+        "AvailabilityZoneId": {
+          "Ref": "AvailabilityZone2Id"
+        }
       }
     },
     "Public2Routes": {
@@ -243,15 +250,10 @@
           "Ref": "Vpc"
         },
         "CidrBlock": "10.42.11.0/24",
-        "AvailabilityZone": {
-          "Fn::Select": [
-            1,
-            {
-              "Fn::GetAZs": ""
-            }
-          ]
-        },
-        "MapPublicIpOnLaunch": false
+        "MapPublicIpOnLaunch": false,
+        "AvailabilityZoneId": {
+          "Ref": "AvailabilityZone2Id"
+        }
       }
     },
     "LinkSg": {
@@ -916,7 +918,8 @@
             "ContainerPort": 3000
           }
         ],
-        "HealthCheckGracePeriodSeconds": 60
+        "HealthCheckGracePeriodSeconds": 60,
+        "PlatformVersion": "1.4.0"
       },
       "Condition": "RunApplication",
       "DependsOn": "InternetRoute"
@@ -1202,7 +1205,8 @@
             "ContainerPort": 8081
           }
         ],
-        "HealthCheckGracePeriodSeconds": 60
+        "HealthCheckGracePeriodSeconds": 60,
+        "PlatformVersion": "1.4.0"
       },
       "Condition": "RunApplication",
       "DependsOn": "InternetRoute"
@@ -2313,6 +2317,27 @@
             ]
           },
           "AssertDescription": "GoImage must be specified before creating database tool definitions."
+        }
+      ]
+    },
+    "DistinctAvailabilityZones": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "AvailabilityZone1Id"
+                  },
+                  {
+                    "Ref": "AvailabilityZone2Id"
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "Choose two different Oregon Availability Zone IDs."
         }
       ]
     }

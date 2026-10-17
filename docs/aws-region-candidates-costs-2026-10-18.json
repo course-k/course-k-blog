@@ -1,0 +1,164 @@
+{
+  "date": "2026-10-18",
+  "method": "Identical previous full-operation scenario; no infrastructure/configuration changes. Tokyo, Virginia, Ohio and Oregon prices retrieved. Not a global cheapest-region survey.",
+  "assumptions": {
+    "tasks": "Node 0.5vCPU/1GiB, Go 0.25vCPU/1GiB, ARM64 on-demand. Revised after 2026-10-18 local constrained test; AWS unverified.",
+    "db": "single-AZ db.t4g.micro, PostgreSQL normal support, gp3 20GiB",
+    "egress": "30GiB; AWS aggregate free allowance remaining; no NAT",
+    "storage": "S3 all object versions and dumps combined 6GiB; ECR total 2GiB",
+    "usage": "100k external HTTP calls and 100k DiscoverInstances calls; DNS100k; these are scenario counts, not measured",
+    "fees": "USD pretax; domain renewal/CI excluded; probes/notification allowance not actual implemented system cost"
+  },
+  "hours": 730,
+  "regions": {
+    "ap-northeast-1": {
+      "unitRates": {
+        "fargateARMvCPUHour": 0.04045,
+        "fargateARMGiBHour": 0.00442
+      },
+      "monthlyItemsUSD": {
+        "NodeCompute": 17.99085,
+        "GoCompute": 10.608725,
+        "PublicIPv4x2": 7.3,
+        "RDSInstance": 18.25,
+        "RDSgp3_20GiB": 2.76,
+        "RDSAdminSecret": 0.4,
+        "SecretApiCalls1000": 0.005,
+        "PublicAndPrivateHostedZones": 1.0,
+        "DNSqueries100k": 0.04,
+        "CloudMap2Resources": 0.2,
+        "CloudMapDiscovery100k": 0.1,
+        "CloudMapRegistration1000": 0.001,
+        "HTTP_API_100k": 0.129,
+        "S3_6GiB": 0.15,
+        "S3write10k": 0.047,
+        "S3read100k": 0.037,
+        "ECR_2GiB": 0.2,
+        "LogIngest1GiB": 0.76,
+        "LogStorage1GiB": 0.033,
+        "CrossAZ10GiBAllowance": 0.1,
+        "ProbeAndNotificationAllowance": 0.05,
+        "StandardAlarms8": 0.8
+      },
+      "monthlyTotalUSD": 60.961575,
+      "without30GiBEgressAllowanceExtraUSD": 3.42,
+      "monthlyWithoutEgressAllowanceUSD": 64.381575,
+      "same72HoursProrataUSD": 6.012648493150685
+    },
+    "us-east-1": {
+      "unitRates": {
+        "fargateARMvCPUHour": 0.03238,
+        "fargateARMGiBHour": 0.00356
+      },
+      "monthlyItemsUSD": {
+        "NodeCompute": 14.4175,
+        "GoCompute": 8.50815,
+        "PublicIPv4x2": 7.3,
+        "RDSInstance": 11.68,
+        "RDSgp3_20GiB": 2.3,
+        "RDSAdminSecret": 0.4,
+        "SecretApiCalls1000": 0.005,
+        "PublicAndPrivateHostedZones": 1.0,
+        "DNSqueries100k": 0.04,
+        "CloudMap2Resources": 0.2,
+        "CloudMapDiscovery100k": 0.1,
+        "CloudMapRegistration1000": 0.001,
+        "HTTP_API_100k": 0.1,
+        "S3_6GiB": 0.138,
+        "S3write10k": 0.05,
+        "S3read100k": 0.04,
+        "ECR_2GiB": 0.2,
+        "LogIngest1GiB": 0.5,
+        "LogStorage1GiB": 0.03,
+        "CrossAZ10GiBAllowance": 0.1,
+        "ProbeAndNotificationAllowance": 0.05,
+        "StandardAlarms8": 0.8
+      },
+      "monthlyTotalUSD": 47.95965,
+      "without30GiBEgressAllowanceExtraUSD": 2.7,
+      "monthlyWithoutEgressAllowanceUSD": 50.65965,
+      "same72HoursProrataUSD": 4.730266849315068
+    },
+    "us-east-2": {
+      "unitRates": {
+        "fargateARMvCPUHour": 0.03238,
+        "fargateARMGiBHour": 0.00356
+      },
+      "monthlyItemsUSD": {
+        "NodeCompute": 14.4175,
+        "GoCompute": 8.50815,
+        "PublicIPv4x2": 7.3,
+        "RDSInstance": 11.68,
+        "RDSgp3_20GiB": 2.3,
+        "RDSAdminSecret": 0.4,
+        "SecretApiCalls1000": 0.005,
+        "PublicAndPrivateHostedZones": 1.0,
+        "DNSqueries100k": 0.04,
+        "CloudMap2Resources": 0.2,
+        "CloudMapDiscovery100k": 0.1,
+        "CloudMapRegistration1000": 0.001,
+        "HTTP_API_100k": 0.1,
+        "S3_6GiB": 0.138,
+        "S3write10k": 0.05,
+        "S3read100k": 0.04,
+        "ECR_2GiB": 0.2,
+        "LogIngest1GiB": 0.5,
+        "LogStorage1GiB": 0.03,
+        "CrossAZ10GiBAllowance": 0.1,
+        "ProbeAndNotificationAllowance": 0.05,
+        "StandardAlarms8": 0.8
+      },
+      "monthlyTotalUSD": 47.95965,
+      "without30GiBEgressAllowanceExtraUSD": 2.7,
+      "monthlyWithoutEgressAllowanceUSD": 50.65965,
+      "same72HoursProrataUSD": 4.730266849315068
+    },
+    "us-west-2": {
+      "unitRates": {
+        "fargateARMvCPUHour": 0.03238,
+        "fargateARMGiBHour": 0.00356
+      },
+      "monthlyItemsUSD": {
+        "NodeCompute": 14.4175,
+        "GoCompute": 8.50815,
+        "PublicIPv4x2": 7.3,
+        "RDSInstance": 11.68,
+        "RDSgp3_20GiB": 2.3,
+        "RDSAdminSecret": 0.4,
+        "SecretApiCalls1000": 0.005,
+        "PublicAndPrivateHostedZones": 1.0,
+        "DNSqueries100k": 0.04,
+        "CloudMap2Resources": 0.2,
+        "CloudMapDiscovery100k": 0.1,
+        "CloudMapRegistration1000": 0.001,
+        "HTTP_API_100k": 0.1,
+        "S3_6GiB": 0.138,
+        "S3write10k": 0.05,
+        "S3read100k": 0.04,
+        "ECR_2GiB": 0.2,
+        "LogIngest1GiB": 0.5,
+        "LogStorage1GiB": 0.03,
+        "CrossAZ10GiBAllowance": 0.1,
+        "ProbeAndNotificationAllowance": 0.05,
+        "StandardAlarms8": 0.8
+      },
+      "monthlyTotalUSD": 47.95965,
+      "without30GiBEgressAllowanceExtraUSD": 2.7,
+      "monthlyWithoutEgressAllowanceUSD": 50.65965,
+      "same72HoursProrataUSD": 4.730266849315068
+    }
+  },
+  "savingsUSD": {
+    "monthly": 13.001925,
+    "yearly": 156.0231,
+    "percentageOfTokyo": 21.328066080969858
+  },
+  "notes": [
+    "Public+private hosted zones and public query allowance retained from prior full-operation scenario; current no-domain validation does not create public zone.",
+    "CrossAZ10GiBAllowance and ProbeAndNotificationAllowance remain same budget reserves, not measured use or newly verified regional tariffs.",
+    "Same-region API, app, DB, storage assumed. No Tokyo-US cross-region traffic or CDN added.",
+    "Monthly baseline assumes 30GiB internet egress covered by remaining account-level 100GB/month allowance; other resource free allowances not subtracted.",
+    "Reserved contracts, Spot and temporary credits not used; tax, FX, domain renewal and paid CI excluded. Updates, CPU credits, excess snapshots/backup/storage and increased usage can add costs.",
+    "User selected us-east-1; alternatives compared before creation. Templates still target Tokyo and require revision before use."
+  ]
+}
