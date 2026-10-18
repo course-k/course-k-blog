@@ -19,7 +19,7 @@ README・設計書・履歴に別の「現在地」が残っていても、進�
 - [配備準備の実装](aws-readiness-implementation-2026-10-17.md)／[ローカル負荷・TLS確認](aws-validation-ready-2026-10-18.md)
 - [ブラウザの拒否・調査記録](browser-access-investigation.md)
 
-新UIの実装・画面画像・固定API試験は、別ブランチの[引き継ぎ](https://github.com/course-k/course-k-blog/blob/feat/adopted-blog-ui/docs/ui-ux-review-handoff-2026-10-18.md)にある。未統合ファイルをこのブランチにもコピーして二重管理しない。
+採用UIの[引き継ぎ](ui-ux-review-handoff-2026-10-18.md)、[実装・画面画像・固定API試験](ui-ux-implementation-2026-10-18.md)も同じツリーへ統合する。ブランチ別の文書をコピーして正本を二重管理せず、進捗は公開台帳へ記録する。
 
 ## 比較・判断の履歴
 
