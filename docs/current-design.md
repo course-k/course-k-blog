@@ -1,6 +1,6 @@
 # 独自ブログ：現行設計書
 
-2026年10月16日作成。状態：**レビュー用の基準案**。既存の要望・合意と実装を照合した文書。文書の作成・PRへの保存は、新しい仕様の承認や追加実装の開始を意味しない。
+最終更新：2026-10-18。現行の要件、採用構成、比較と選定理由をまとめる。提案・未決と記した項目は採用済みではない。
 
 ## 1. この文書の読み方
 
@@ -9,11 +9,9 @@
 - **実装済み**：現在のコードが持つ動作。採用承認とは区別する。
 - **未決・未実装**：判断や作業が残るもの。
 
-本書は現行仕様・責務・設計理由の正本とする。**進捗・残作業・次の着手点は[公開台帳](blog-publication-roadmap-2026-10-18.md)だけで管理する。** UI/UXの採用方針は2026年10月18日更新の[最新の採用事項](ui-ux-decisions-current.md)を優先し、[設計判断・比較履歴](history/ui-ux-design.md)に理由と検証状況を残す。過去資料と相違する場合、仕様・責務は本書、UIの採用値はUI採用事項、進捗は公開台帳を優先する。実装と違う場合は相違を修正課題にし、実装に合わせて要望を変更しない。個別のコード定数は現状値であり、恒久的な要件ではない。
+本書は現行仕様・責務・設計理由の正本とする。進捗と未完了事項は[公開台帳](blog-publication-roadmap-2026-10-18.md)、画面の採用仕様と理由は[UI設計](ui-ux-decisions-current.md)を参照する。実装と要望の差は修正課題として扱い、実装に合わせて要望を変更しない。個別のコード定数は現状値であり、恒久的な要件ではない。
 
 ## 2. 目的・範囲・決定事項
-
-**確認記録（2026年10月16日）：本人が第2節を読み「良いと思います」と了承。目的・範囲の整理を確認済みとする。節内で提案・未決とした具体方式や数値まで確定した扱いにはしない。第3節以降の了承・追加実装の再開は含まない。**
 
 目的は、自分のドメインで自作記事と外部媒体の本人記事を案内し、継続して執筆・運用できるサイトを作ること。学習を兼ね、設計・コード・UI/UXの判断理由、比較案、検証結果、LLM利用を説明できる記録を残す。技術面接のためだけに複雑な機能を増やさない。
 
@@ -28,9 +26,9 @@
 | R07 | AWSを軸に、実行基盤はECS＋Fargate | 決定済み。最安を意味しない |
 | R08 | 変更内容に応じたバックアップと復元 | 変更時の取得と別環境への復元を対象とし、毎日の自前フルダンプを既定にしない |
 | R09 | 個人GitHubの非公開リポジトリで管理 | course-k/course-k-blog。変更はブランチとPR |
-| R10 | UI/UXを本人と検討し、選択理由を記録 | 一覧・本文B・目次・管理配置・外部別タブ・配色方向を採用済み。詳細は最新の採用事項を参照 |
+| R10 | UI/UXを本人と検討し、選択理由を記録 | 一覧・本文の文字組み・目次・管理配置・外部別タブ・配色方向を採用済み。詳細は最新の採用事項を参照 |
 
-2026年10月18日、UI/UXについて本人から追加方針：配色・書体・ボタン配置・レイアウトを生成時の習慣で決めず、目的、参照した知見、比較案、採用理由を説明できる設計とする。catnoseさんのNani翻訳・Zenn・しずかなインターネット等を参考に挙げたが、見た目の模倣や個別スタイルの採用指示ではない。主要判断の根拠と仮説・好みを区別し、全数値を形式的に理論化する運用にはしない。詳細は[UI/UX引継ぎ指示書](history/ui-ux-handoff-2026-10-18.md)に反映。
+UI/UXは配色・書体・操作配置を目的と比較理由から決める。参考サイトの外観を模倣せず、本人の好み、一般的な知見、未検証の仮説を区別する。すべての数値を形式的に理論化する運用にはしない。
 
 初回公開の提案範囲：閲覧、自作記事の執筆・公開管理、外部記事同期、画像、認証、バックアップ・復元、運用上の異常把握。
 検索・SNS投稿連携・コメント・会員登録・複数執筆者・予約公開は初回必須に追加しない。通常のURL共有とSNS専用機能は区別する。
@@ -38,7 +36,7 @@
 
 ## 3. 画面と操作の設計
 
-以下は画面の役割と機能の境界。見た目の採用値は[UI採用事項](ui-ux-decisions-current.md)、実装・受入の進捗は公開台帳で管理する。2026年10月16日の本人指摘により、独立したページとページ内の機能を分ける。
+以下は画面の役割と機能の境界。見た目の採用値は[UI採用事項](ui-ux-decisions-current.md)、実装・受入の進捗は公開台帳で管理する。独立したページとページ内の機能を分ける。
 
 ### 独立したページ
 
@@ -67,8 +65,6 @@ PC・スマホ、キーボード、長いコード・表、失敗時の復帰を
 
 ## 4. 記事の状態と公開の意味
 
-確認記録：本人が第3節のページ構成を「いまの機能でいうと、これでいいかな」と確認。その後、以下の3操作の整理を「よい」と了承。UIの配置・意匠や、第5節以降の詳細方式の了承は含まない。
-
 | 操作 | 動作 | 読者への影響 |
 |---|---|---|
 | 下書きを保存 | 編集内容を保存。初回は記事IDを発行する | 未公開なら公開しない。公開中なら以前の公開内容を維持 |
@@ -83,77 +79,91 @@ PC・スマホ、キーボード、長いコード・表、失敗時の復帰を
 同じversionの条件付き更新で競合を409にする。自動マージや過去版の編集履歴は未実装。
 完全削除は未実装。導入する場合は明示確認と変更前バックアップ成功を条件にする。
 
-## 5. 構成・責務・通信
+## 5. 採用構成と選定理由
 
-### 判断記録：Reactで画面を実装し、TanStack StartでSSRする理由
+### 画面：React / TypeScript / TanStack Start、業務処理：Go
 
-2026年10月17日。既存実装後の設計レビューで代案を比較し、本人が整理した選定理由を記録した。実装前からこの比較を済ませていたという意味ではない。
+公開画面と編集画面をReactで実装し、TanStack Startで公開記事をSSRする。認証・公開判断・保存・DBアクセスはGo APIへ集約する。SSRはJavaScriptを実行しない取得元にも本文HTMLを返すために採用する。現在は要求時SSRで、ISRは採用していない。
 
-**判断**：公開画面と編集画面をReact／TypeScriptで実装し、公開記事のSSRにTanStack Startを使う。認証・記事の公開判断・保存・DBアクセスはGo APIへ集約する。Node.jsはReactのSSRを実行する役割であり、業務処理をGoと二重に実装するためのものではない。
-
-| 比較した案 | 利点 | 今回の判断で考慮した負担 |
+| 比較案 | 利点 | 採用判断・負担 |
 |---|---|---|
-| GoのHTMLテンプレートで公開・編集画面を生成 | Go側にHTML生成と業務処理をまとめられる。単純な記事表示のSSR要件は満たせる | 操作の多い編集画面にはブラウザー側の処理を組み合わせる。本人のReact習熟を画面全体では活かしにくい |
-| 公開記事はGoでSSR、編集画面はReact | 公開側のReact SSR用Node.jsを省きつつ、編集にReactを使える | GoテンプレートとReactという二つの画面実装を維持。公開側にも操作を追加する場合は、JavaScriptや部分的なReactとの境界を設計する |
-| 公開・編集ともReact、公開記事はTanStack StartでSSR（選択） | 本人のReact習熟を活かし、画面の実装方法を揃えられる。編集の状態管理や公開画面への操作追加を同じ技術で扱える | Node.jsとGoの運用、API接続・データ型の整合、SSRとブラウザーの初期表示一致の検証が必要 |
+| GoのHTMLテンプレートで画面全体を生成 | HTML生成とAPIをGoへ集約できる | 単純な記事表示なら成立する。編集時の入力・プレビュー・保存状態の連動にはブラウザ側の実装が必要 |
+| 公開画面はGo、編集画面はReact | 公開側のNode.jsを省ける | GoテンプレートとReactの二つの画面実装を維持する |
+| 公開・編集ともReact、StartでSSR（採用） | Reactへの習熟を活かし、表示・編集の実装方法を揃える | Node.jsとGoの運用、API型の整合、初期HTMLとブラウザ表示の一致を検証する必要がある |
 
-**選定理由**：GoでもSSRできることを確認したうえで、編集画面の入力・プレビュー・保存状態等の連動、将来の公開画面へのコメント・いいね等の追加可能性、本人のReactへの習熟度と画面実装の一貫性を重視した。構成をGoへまとめる利点より、Reactで画面を開発・改良する利点を優先する。
+本人のReact習熟、編集画面の状態管理、公開画面を含む改良の一貫性を優先する。GoでもSSRやコメント等は実現できる。Reactの性能・工数優位を実測した判断ではない。コメント・いいねは初回必須にしない。
 
-**判断の限界**：コメント・いいね・SNS共有を初回必須へ追加しない。Goでもこれらの機能は実現でき、状態管理やSSR自体がReact専用という意味ではない。React採用による工数削減や性能優位は未測定であり、習熟度・保守方針に基づく判断と、実測した効果を区別する。単純な共有リンクのためだけにReactが必要とはしない。
+TanStack Routerは本人の学習対象・選好として採用し、そのSSR実行にStartを用いる。React RouterやNext.jsより普遍的に優れるという判断ではない。TypeScriptは画面側の型確認、GoはAPIと業務処理の学習・責務分離を目的とする。
 
-**関連する未決事項**：Node.jsとGoの役割分担と、Caddyを採用する判断は別。Caddyは現在の試作で振り分けを担当するが、本番で専用プロキシを置く必要性と製品選定は未確定。今回の判断をCaddyやAWS入口の採用承認に拡張しない。
+### 基盤：AWS / ECS Fargate / RDS PostgreSQL
 
-確認した一次情報：
+AWSはブログ以外のWebサービス、情報収集・LINE連携・モバイル向けAPI等を同じベンダーへ展開できる幅と、実務学習へのつながりを重視して採用する。Railway等の簡便さより、提供サービスの幅と構成の選択余地を優先した。将来の全要件に無変更で対応できる保証ではない。
 
-- [Go公式のWebアプリ教材](https://go.dev/doc/articles/wiki/)：net/httpとhtml/templateによる閲覧・編集・保存。
-- [Go html/template](https://pkg.go.dev/html/template)：GoでのHTML生成。
-- [ReactのSSR](https://react.dev/reference/react-dom/server/renderToPipeableStream)と[ハイドレーション](https://react.dev/reference/react-dom/client/hydrateRoot)：サーバー生成HTMLとブラウザー側の操作の接続、初期表示一致の制約。
-- [Reactの部分導入](https://react.dev/learn/add-react-to-an-existing-project)：Goで生成したページの一部にReactを組み込む代案も成立する。
+| 比較案 | 今回の選定理由と受け入れる負担 |
+|---|---|
+| EC2 / Lightsail上の自営 | 低い固定費を狙えるが、ホストOS・更新・障害対応を自分で担う |
+| ECS on EC2 | コンテナ配置はECSで管理できるが、EC2ホストの容量と保守が残る |
+| ECS Fargate（採用） | コンテナの配置・更新・必要数の維持をECS、実行ホストの管理をFargateへ委ねる。常時実行の資源課金とAWS設定の管理を受け入れる。最安の選択ではない |
+| PostgreSQL自営 | 費用・設定の裁量は大きいが、DB更新・障害復旧・保存基盤を自分で管理する |
+| RDS PostgreSQL（採用） | 通常のリレーショナルDB構成を保ち、基盤保守を委ねる。権限・SQL移行・アプリ整合性・復元確認は自分で担う |
 
+Aurora/MySQL等へ変更する必要性は現要件では示されておらず、採用済みPostgreSQLを維持する。全DB製品の優劣を証明した選択ではない。
 
-### 入口とタスク配置：2タスク案で検証を進める
-
-2026年10月17日、本人の「はい、進めましょう」により、NodeとGoを別ECSサービス・タスクとし、HTTP API＋VPC Link＋各Cloud Map登録先で直接振り分ける方針で検証準備を進める。独立Nginxタスクは初期案に含めない。容量・費用・課金操作まで一括承認した扱いにはしない。
-
-[比較と採用理由](history/ingress-comparison-2026-10-17.md)、[具体的な設定と成立性検証の準備](history/aws-two-task-validation.md)を参照。AWSで確認済みの範囲と限界は[公開台帳C4/R5](blog-publication-roadmap-2026-10-18.md)を参照。以前の専用プロキシ優先案は1タスク同居前提の履歴。ローカルのCaddy構成は既存動作を維持し、本番の採用構成と区別する。
-
-配置全体の具体化は[配備前レビュー・全体費用・撤去復旧](history/aws-deployment-review.md)と[CloudFormation草案](../infra/review/two-task-stack.template.json)を参照。Node 0.5vCPU/1GiB、Go 0.25vCPU/1GiBを試験の開始値とした。本番必要容量と継続費用は、完成機能の負荷とオレゴンの条件で判断する。過去の東京試算を現在のオレゴン費用として使わない。
-
-生存確認・保護ヘッダー・RDS CA・移行/疎通設定の実装理由は[配備準備の記録](history/aws-readiness-implementation-2026-10-17.md)に残す。実配備と撤去の結果は[AWS実行記録](history/aws-validation-execution-2026-10-18.md)を参照。
-
-[Docker検証・制限付き負荷・TLS試験](history/aws-validation-ready-2026-10-18.md)はローカル段階の証拠であり、本番容量の確定値ではない。
-
-### AWSリージョンの決定（2026年10月18日）
-
-本人が広域の料金・公開遅延比較を踏まえ、**オレゴン（us-west-2）**を採用。理由は、同構成の米国3地域は月約47.96ドルで同額、公開地域間遅延ではオレゴンが短めであること。算出可能な33地域で最安のインドとの差は月約1.91ドルのため、費用と通信待ち時間のバランスを重視した選択。家庭回線での性能や将来の全サービスの提供を保証する判断ではない。
-
-[比較と限界](history/aws-regions-wide-comparison-2026-10-18.md)を参照。地域の採用、仮データでの実配備検証、正式公開の準備を区別する。進捗・対象ブランチは公開台帳、個別の実行結果はAWS実行記録を参照する。
-
-### ローカルの現在の実装
+### AWSの入口と配置：Node / Goの2サービス
 
 ```text
-ブラウザー → Caddy :8080
-               ├─ /api・/api/* → Go :8081 → PostgreSQL
-               └─ その他 → TanStack Start/Node :3000
-                                └─ サーバー側取得 → Go
+ブラウザ → HTTPS / API Gateway HTTP API
+           ├─ /api・/api/* → VPC Link → Cloud Map → Goタスク → 非公開RDS
+           └─ その他      → VPC Link → Cloud Map → Nodeタスク
+                                                     └─ 内部DNS → Go（SSR取得）
 ```
 
-フロントは画面・SSR・Markdown描画、Goは認証・公開状態・保存・DBアクセス、Caddyは経路分岐。管理画面からは同じオリジンのGo APIへアクセスする。
-Composeではサービスごとにネットワークが別なのでサービス名で接続する。ローカルDBは開発用であり、本番DB自営への方針変更ではない。
+NodeとGoを別ECSサービスとし、それぞれタスク定義・Cloud Map登録先を持つ。VPC Linkは共有する。ブラウザから見たオリジンは一つ。通常各1タスクを維持し、意図的なアイドル停止は行わない。
 
-### 以前のAWS同居案（比較履歴・未配備）
+| 比較案 | 採用判断・トレードオフ |
+|---|---|
+| NodeとGoを同じタスクに置く | 小さく集約できるが、更新・増減・タスク停止の単位が一緒になる |
+| 独立Nginx＋Node＋Goの3タスク | 高度な変換・キャッシュ等が必要なら候補。今回必要なパス分岐のために常駐費・保守・障害点を追加する利得が小さい |
+| ALBからNode / Goへ直接転送 | 有力な標準構成。ただし低頻度の個人運用では入口の時間・LCU等の固定的な負担を避けたい |
+| HTTP APIから2サービスへ直接転送（採用） | 各アプリを独立に更新でき、専用プロキシと独自の接続先登録処理を省ける。AWSのルート・サービス発見・通信制限の管理が必要 |
+| NodeまたはGoに相手への転送を持たせる | 専用プロキシは省けるが、画面または業務APIがもう一方の通過点になる。Cookie・ヘッダー・切断等の転送責務を増やす |
+
+タスクは常に1コンテナにする規則ではなく、ライフサイクルと独立更新の必要性で分ける。各1タスク・RDS Single-AZは高可用構成ではない。
+HTTP APIの時間・送信サイズ等の制約が要件に合わなくなればALB等へ見直す。Nginxを追加しても入口の制約は消えない。画像は認証後のS3直接アップロードが候補で、詳細は未決。
+
+設定は[スタック定義](../infra/review/two-task-stack.template.json)と[入口定義](../infra/review/http-api-routing.template.json)を参照。本番設定・配備手順の整備は公開台帳R5へ残す。
+
+### 地域・容量
+
+オレゴン（us-west-2）を採用する。地域選定時の同条件比較では、米国東部候補と同程度の費用で、東京AWS発の公開遅延データはオレゴンが短めだったため、費用と通信待ち時間のバランスを重視した。これは家庭・モバイル回線の実測でも現在価格の保証でもない。日本近傍の低遅延を最優先するなら東京等が比較対象となる。
+
+検証開始値はNode 0.5vCPU/1GiB、Go 0.25vCPU/1GiB、Linux ARM64。ローカルで200記事×50KiB、一覧と本文を交互に10req/sで60秒間取得した試験では、Nodeの0.25から0.5vCPUへの増量でp95が約5.609秒から約0.095秒へ改善したため選んだ。Goは同じ0.25vCPU/1GiB、ローカルPostgreSQLとCaddy、Dockerの資源制限下での比較であり、本番の応答時間ではない。画像・同期・バックアップ・実AWS全経路を含む必要容量は未確定。RDSはSingle-AZ db.t4g.micro / gp3 20GiBを検証値とする。本番の容量と月額は完成機能の条件で算出する。
+
+### ローカル構成
 
 ```text
-読者 → HTTPS/API Gateway HTTP API
-     → VPC Link → Cloud Map → Fargateタスク（Caddy・SSR・Go）
-                                            ├─ 非公開RDS PostgreSQL
-                                            └─ 非公開S3（画像・バックアップ）
+ブラウザ → Caddy :8080
+           ├─ /api・/api/* → Go :8081 → PostgreSQL
+           └─ その他      → Node :3000 → Go（SSR取得）
 ```
 
-ECS＋Fargateの採用以外は配置の提案。RDS Single-AZ、0.5vCPU/2GiBの1タスク、DB micro/20GB、SSMから秘密値注入が候補。同一タスク内はlocalhost接続。コンテナ同居は強い権限分離ではなく、更新・増減も一緒になる。
-API Gateway入口はALB固定費を避ける案だが、制約・構成要素は増える。完成HTML、Cookie、静的配信、更新時の接続を実AWSで検証する。画像の大容量送信は認証後のS3直接アップロードが候補。
-本番容量・月額は未確定。過去の約49〜53ドル/月・税別は設計例の試算で、費用承認や上限保証ではない。最新料金の再調査は今回行っていない。
-詳細・比較履歴は [AWS配置設計案](history/ecs-fargate-deployment-design-2026-10-15.md) に残す。公開URLは未決で、blog.course-k.comは推奨案。
+Caddyはローカルの同一オリジンへの経路分岐に使用し、短い設定で必要な転送を表せる。Nginxでも実現可能で、本番へCaddyを置く要件はない。Composeの各コンテナは共有ネットワーク上のサービス名で接続する。DBコンテナはローカル開発用。
+
+### 実装上の保護・運用境界
+
+- 生存確認とDB準備状態を分離し、DB障害だけでアプリ再起動を繰り返さない。Nodeは `/healthz`、Goは `/api/healthz` と `/api/readyz` を持つ。
+- Nodeの実行入口はSSRのfetchエントリーと静的配信を接続し、API転送を担わない。SSR・静的・404・例外の外側で保護ヘッダーを適用する。
+- RDS接続は `verify-full` と同梱する公開CAで署名・ホスト名を検証する。CAは公開情報であり秘密鍵ではない。更新情報は[証明書の説明](../backend/certs/README.md)を参照。
+- [DB初期化](../infra/database/bootstrap.psql)は移行用DDLロールと通常アプリ用DMLロールを分離する。初期化・移行は明示的な単発タスクとし、アプリ起動より前に完了させる。
+- イメージはdigestで固定し、秘密値はSSM SecureStringから役割別に注入する。管理・移行用の値を通常アプリへ渡さない。
+- [疎通監視](../infra/monitoring/probe.py)はNode・API・SSRの応答を確認し、失敗と未実行を区別する。SNS購読先と通知到達は未整備。設定の存在だけでは通知運用完了としない。
+
+### 選定に関係する一次資料
+
+- [GoのHTMLテンプレート](https://pkg.go.dev/html/template)、[React SSR](https://react.dev/reference/react-dom/server/renderToPipeableStream)、[ハイドレーション](https://react.dev/reference/react-dom/client/hydrateRoot)
+- [AWSのコンテナ同居・分離の基準](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/container-considerations.html)、[ECSサービス発見](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/service-discovery.html)
+- [HTTP APIの私有統合](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-private.html)、[HTTP APIの制限](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-quotas.html)
+- [Fargate料金](https://aws.amazon.com/fargate/pricing/)、[ALB料金](https://aws.amazon.com/elasticloadbalancing/pricing/)、[公開地域間遅延データ](https://cloudping.co/)
 
 ## 6. API：現在の実装契約
 
@@ -176,7 +186,7 @@ API Gateway入口はALB固定費を避ける案だが、制約・構成要素は
 | POST | `/api/admin/posts/{id}/unpublish` | 必須 | `{version}` | 200 Post |
 
 - PublicPostSummary：`id,title,publishedAt,updatedAt`。一覧専用で本文は取得・返却しない。
-- PublicPost：`id,title,markdown,publishedAt,updatedAt`。公開スナップショットを返し、作業版を返さない。2026年10月18日、一覧への不要な本文転送はSummary型への分離で解消。
+- PublicPost：`id,title,markdown,publishedAt,updatedAt`。公開スナップショットを返し、作業版を返さない。本文が必要ない一覧への転送量を抑えるためSummary型を分離する。
 - Post：`id,title,markdown,published,publishedAt,updatedAt,version,hasUnpublishedChanges`。title/markdown/updatedAtは作業版。公開版本文の列は直接JSONへ出さない。
 - 日時は時刻付きJSON、画面では日本時間。IDは32バイト乱数のbase64url文字列（43文字）。タイトル変更でIDを変えない。
 - エラー本文は `{error:文字列}`。入力400、認証401、Origin拒否403、未存在404、競合409、JSON以外415、ログイン試行制限429、内部失敗500。
@@ -216,11 +226,10 @@ DB移行は`migrate`コマンド。トランザクションとDBロックを使�
 
 ## 8. 外部記事の取り込み案
 
-対象は本人のQiita course_k、note course__k、Wantedly course_k。外部本文の転載は目的にしない。QiitaのAPI応答が本文を含んでも、必要なメタデータだけ保存する。
-2026年10月15日の調査はQiita92・note1・Wantedly14、計107件。調査時点の取得結果であり、現在の件数・DB登録・継続同期の証拠ではない。
+対象は本人の[Qiita](https://qiita.com/course_k)、[note](https://note.com/course__k)、[Wantedly](https://www.wantedly.com/id/course_k)。外部本文の転載は目的にしない。QiitaのAPI応答が本文を含んでも、必要なメタデータだけ保存する。
 Qiita公式API・note RSS・Wantedly公開一覧HTMLの取得を候補とする。Wantedlyは非公式形式依存で、利用条件と継続取得の範囲が未確定。技術的取得成功だけで定期運用の条件を満たしたとしない。
 日次＋手動同期を提案。外部障害・429・形式変更でも既存記事を保持する。フィードに現れなくなっただけで削除しない。手動補正・非表示を保持し、複数実行で重複登録しない。
-RSSや一覧の取得範囲外を含め「全件」と断言しない。Wantedlyで前回との連続性が失われたら補完待ちを明示する。詳細は [取得調査](history/external-integration-verification-2026-10-15.md)。
+RSSや一覧の取得範囲外を含め「全件」と断言しない。Wantedlyで前回との連続性が失われたら補完待ちを明示する。Wantedlyは公開一覧HTMLの内部データに依存するため、取得上限を超える増加や前回取得分との連続性喪失を検知する設計が必要。外部本文・画像は転載しない。
 
 ## 9. 認証・保護・保存運用
 
@@ -233,9 +242,9 @@ RDS自動バックアップ7日、ダンプ4世代、復旧作業4時間は提�
 
 ## 10. 受入条件
 
-仕様として確認する条件を以下に置く。どこまで確認済みか、次に何をするかは[公開台帳](blog-publication-roadmap-2026-10-18.md)へ集約し、本書で進捗表を複製しない。各試験の事実と限界は、台帳が参照する実行記録で確認する。
+仕様として確認する条件を以下に置く。どこまで確認済みか、次に何をするかは[公開台帳](blog-publication-roadmap-2026-10-18.md)へ集約し、本書で進捗表を複製しない。確認済みの範囲と限界も公開台帳へまとめる。
 
-| 対象 | 確認する証拠 |
+| 対象 | 確認する結果 |
 |---|---|
 | 閲覧・SSR | JavaScriptなしの公開本文HTML、非公開/不存在404、一覧・ページ移動、静的配信 |
 | 執筆・公開 | 作業/公開版分離、競合、固定URL・初回公開日、保存成功/公開失敗、非公開 |
@@ -255,13 +264,10 @@ RDS自動バックアップ7日、ダンプ4世代、復旧作業4時間は提�
 オレゴンでの最大72時間・目安10 USDの仮データ検証承認を、正式公開の継続課金へ拡張しない。次の作業順・判断待ち・担当境界は公開台帳へ記載する。通常の実装判断は理由・比較・検証を記録し、仕様・選好・費用・公開範囲を変える判断は具体案を示して確認する。
 
 
-## 12. 根拠と記録の限界
+## 12. 実装参照とLLM利用
 
-本人の対話で提示された要望・選択、既存の仕様案・配置案・検証記録と、以下の実ソースを照合した。
-
-- [画面](../frontend/src/routes)、[SSR取得](../frontend/src/lib/posts.ts)、[共通Markdown](../frontend/src/components/Markdown.tsx)
-- [API](../backend/internal/httpapi/server.go)、[記事型](../backend/internal/blog/blog.go)、[保存SQL・移行処理](../backend/internal/postgres/store.go)、[初期DDL](../backend/internal/postgres/migrations/001_initial.sql)
+- [画面](../frontend/src/routes)、[SSR取得](../frontend/src/lib/posts.ts)、[共通Markdown](../frontend/src/components/Markdown.tsx)、[編集画面](../frontend/src/components/Editor.tsx)
+- [API](../backend/internal/httpapi/server.go)、[記事型](../backend/internal/blog/blog.go)、[保存・移行処理](../backend/internal/postgres/store.go)、[初期DDL](../backend/internal/postgres/migrations/001_initial.sql)
 - [起動時検証](../backend/cmd/api/main.go)、[ローカル構成](../compose.yaml)
-- [実施済み検証記録](history/blog-prototype-progress-2026-10-15.md)、[採用決定の範囲](history/ecs-fargate-decision-2026-10-15.md)
 
-LLMは今回の整理・文章化・コードとの照合に使用。既存コードの全てを本人がレビューしたとは扱わない。過去の実装を遡って事前合意済みとせず、今回確認できた事実と残る判断を記載した。
+LLMを要件整理、代案比較、UI案、コード・設定・テストの生成と修正、検証結果の整理に利用している。技術・費用・UIの主要な選択は本人が判断する。コードの確認は実行したテストとソース照合の範囲に限り、本人による全行レビューや全機能の完成を意味しない。各PRには変更目的、主要な選定理由、検証範囲・未確認事項、LLMの利用範囲を記載する。文書は最終的な仕様と理由を更新し、会話・失敗の順序や一時的な出力を保存するために増やさない。

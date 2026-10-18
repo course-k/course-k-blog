@@ -8,8 +8,8 @@
 |---|---|
 | 今どこまで終わり、何が残るか | [公開までの進捗台帳](docs/blog-publication-roadmap-2026-10-18.md) |
 | 何を作り、なぜこの設計にするか | [現行設計](docs/current-design.md) |
-| 何をどこに保存し、どのブランチを見るか | [リポジトリ構成・情報の棚卸し](docs/repository-organization.md) |
-| 過去の比較・検証結果を探す | [文書索引](docs/README.md) |
+| 何をどこに保存し、どう管理するか | [リポジトリ構成と保存方針](docs/repository-organization.md) |
+| 文書の役割と読む順序 | [文書索引](docs/README.md) |
 
 進捗は台帳だけで更新する。このREADMEに試験件数・未完了一覧・料金を複製しない。採用UI・AWS対応・設計記録はmainへ統合済み。以後はmainを共通の基準とし、変更は作業ブランチとPRで管理する。
 
@@ -20,7 +20,7 @@ frontend/       Reactの画面、SSR、Markdown、フロントのテスト
 backend/        Go API、業務処理、認証、DBアクセス、SQL移行とテスト
 infra/          AWS設定、DB初期化、監視コードとそのテスト
 scripts/        開発・検証の補助処理
-docs/          現行設計、進捗台帳、判断・検証の記録
+docs/          現行設計と採用理由、進捗台帳、保存方針
 .github/        PR運用設定
 config/         ローカル秘密値・キャッシュ・作業ファイル（Git対象外）
 ```
@@ -65,6 +65,6 @@ npm run typecheck
 npm run test:runtime
 ```
 
-ルート型はビルドで生成される。`npm run test:e2e` は実Go・DBとブラウザを必要とし、固定APIによる画面試験と区別する。環境のブラウザアクセス拒否を回避する目的で実行しない。固定APIのSSR試験は `npm run test:ssr`、画面試験は `npm run test:ui`。後者は対応ブラウザを必要とする。詳細は[UI実装記録](docs/history/ui-ux-implementation-2026-10-18.md)を参照する。
+ルート型はビルドで生成される。`npm run test:e2e` は実Go・DBとブラウザを必要とし、固定APIによる画面試験と区別する。環境のブラウザアクセス拒否を回避する目的で実行しない。固定APIのSSR試験は `npm run test:ssr`、画面試験は `npm run test:ui`。後者は対応ブラウザを必要とする。画面試験は固定APIの部品確認であり、実Go・DBへの接続確認ではない。
 
 AWS用設定は `infra/` にあるが、テンプレートの存在だけで本番配備済みとは判断しない。課金資源の作成、独自ドメイン変更、実記事の公開は、このREADMEのローカル起動手順に含まれない。
