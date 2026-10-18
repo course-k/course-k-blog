@@ -1,3 +1,5 @@
+> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](current-design.md)です。
+
 # 採用UIの引き継ぎ確認と結合検証
 
 2026-10-18。本人から[UI引き継ぎ](https://github.com/course-k/course-k-blog/blob/feat/adopted-blog-ui/docs/ui-ux-review-handoff-2026-10-18.md)を受領。対象はPR #3、実装07038b3／引継ぎを含むcb649c7。画面構成の採用は維持する。mainへのマージや正式公開は実施していない。

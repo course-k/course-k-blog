@@ -1,49 +1,40 @@
-# 設計・検証記録
+# 文書索引
 
-**現在の設計の入口：[現行設計書](current-design.md)**。レビュー用の基準案。要望・決定、提案、実装済み、未決を分けて記載しています。以下の10月15日資料は個別調査・検証の履歴です。
+## 正本を役割で分ける
 
-**公開までの進捗・残作業：[公開ロードマップ（2026年10月18日）](blog-publication-roadmap-2026-10-18.md)**。以下の古い状態記述は各時点の履歴として参照してください。
+| 用途 | 読む文書 | 更新する内容 |
+|---|---|---|
+| 進捗・残作業・次のチェックポイント | [公開までの進捗台帳](blog-publication-roadmap-2026-10-18.md) | 状態、完了証拠、依存、未決事項。進捗管理はこの1本 |
+| 要件・API・DB・アーキテクチャ | [現行設計](current-design.md) | 仕様と責務、採用／提案の区別。作業台帳を複製しない |
+| UIの採用仕様 | [採用事項](ui-ux-decisions-current.md) | 本人が選んだ配置・文字組み・配色。実装の進捗は台帳へ |
+| リポジトリ内の保存場所と量 | [構成・棚卸し](repository-organization.md) | 保存境界、ブランチ差、整理の判断理由 |
 
-## UI/UXの採用方針（2026年10月18日）
+README・設計書・履歴に別の「現在地」が残っていても、進捗は台帳を優先する。日付付きの実行記録は、その日に何を確認したかの証拠であり、独立した現在の作業計画ではない。
 
-一覧・本文・管理の配置、外部別タブ、配色の方向を本人との比較で採用済み。別チャットのPR #3で画面実装・固定API検証済み。実APIとの結合検証・残機能の画面接続は未完了。
+## 実装・検証の証拠
 
-- [UI実装の引き継ぎ確認・APIとの照合](ui-ux-backend-integration-review-2026-10-18.md)
+- [AWS一時配備・HTTP31項目・再配置・撤去](aws-validation-execution-2026-10-18.md)／[機械可読の選択済み証拠](aws-validation-evidence-2026-10-18.json)
+- [採用UIの受領とバックエンド接続確認](ui-ux-backend-integration-review-2026-10-18.md)
+- [初期のローカル基本機能](blog-prototype-progress-2026-10-15.md)
+- [配備準備の実装](aws-readiness-implementation-2026-10-17.md)／[ローカル負荷・TLS確認](aws-validation-ready-2026-10-18.md)
+- [ブラウザの拒否・調査記録](browser-access-investigation.md)
 
-- [最新の採用事項・暫定事項・残作業](ui-ux-decisions-current.md)
-- [設計判断・比較履歴](ui-ux-design.md)
-- [採用基準・確認項目](ui-ux-adoption-criteria.md)
-- [UIが必要とするAPI要件（未合意）](ui-ux-api-needs.md)
-- [ブラウザ確認・拒否・未検証の記録](browser-access-investigation.md)
+新UIの実装・画面画像・固定API試験は、別ブランチの[引き継ぎ](https://github.com/course-k/course-k-blog/blob/feat/adopted-blog-ui/docs/ui-ux-review-handoff-2026-10-18.md)にある。未統合ファイルをこのブランチにもコピーして二重管理しない。
 
-## 管理方針の履歴（2026年10月16日時点）
+## 比較・判断の履歴
 
-- 個人GitHub `course-k/course-k-blog`、非公開。ブログ単位のリポジトリにフロント・Go API・将来のインフラ設定・記録をまとめる。別サービスの管理単位は後で決める。
-- 初回コミットは既存のローカル実装の取り込み。実装開始と管理方針の合意順序が不明確だったため、追加実装は停止中。下記10月15日台帳の「次は外部連携」は候補であり、再開済みではない。
-- 今後の変更はブランチとPRで目的・判断理由・比較した案・検証結果・未解決点を記録する。細かな全行の説明や形式的な再承認は増やさない。
-- 機密情報・ローカルDB・依存パッケージ・ビルド生成物・作業用キャッシュは含めない。初回取り込みはGitHub公開、AWS配備、費用の承認ではない。
-- UI/UXは未採用。本人と後ほど比較・検討する。設計理由を後付けして採用済みにしない。
-- LLMが初期コードと記録を生成。現時点では既存のGit履歴はなく、過去の実装経緯を分割コミットで再現した扱いにしない。検証実績は元の実施日を残し、取り込み時に再実行したと主張しない。
+| 分野 | 主な資料 |
+|---|---|
+| AWS実行基盤 | [ECS＋Fargate採用](ecs-fargate-decision-2026-10-15.md)、[初期配置比較](ecs-fargate-deployment-design-2026-10-15.md) |
+| 入口・タスク分離 | [振り分けの比較](ingress-comparison-2026-10-17.md)、[2タスク検証計画](aws-two-task-validation.md)、[旧配備前レビュー](aws-deployment-review.md) |
+| AWS地域・料金 | [広域比較](aws-regions-wide-comparison-2026-10-18.md)、[東京とバージニア](aws-region-comparison-2026-10-18.md)、[米国内候補](aws-region-candidates-2026-10-18.md)、[遅延調査](aws-region-latency-research-2026-10-18.md) |
+| アクセス設定 | [設定・修正・管理者操作の経緯](aws-access-setup-2026-10-18.md) |
+| 外部記事 | [2026-10-15の取得調査](external-integration-verification-2026-10-15.md) |
+| UI | [設計・比較](ui-ux-design.md)、[採用基準](ui-ux-adoption-criteria.md)、[API相談事項](ui-ux-api-needs.md)、[担当への初期指示](ui-ux-handoff-2026-10-18.md) |
+| 初期計画 | [初期仕様案](blog-cp1-specification-2026-10-15.md)、[旧タスク台帳](blog-current-taskboard-2026-10-15.md) |
 
-## 資料
+料金JSON・CSVや `ui-ux-evidence/` は参照資料に付随する証拠。個別取得時の単価・画面であり、現在の本番費用や全機能の完成を表すものではない。
 
-- [ローカル検証時点の完了事項・負荷結果・容量/費用](aws-validation-ready-2026-10-18.md)
+## 文書を増やすとき
 
-- [配備準備の実装・検証記録](aws-readiness-implementation-2026-10-17.md)
-
-- [2タスクAWS配備前レビュー・月額・撤去復旧](aws-deployment-review.md)
-
-- [現在の機能・作業台帳（10月15日時点）](blog-current-taskboard-2026-10-15.md)
-- [実装と結合検証の記録](blog-prototype-progress-2026-10-15.md)
-- [ECS＋Fargateの採用範囲](ecs-fargate-decision-2026-10-15.md)
-- [AWS配置設計案](ecs-fargate-deployment-design-2026-10-15.md)
-- [初期仕様案](blog-cp1-specification-2026-10-15.md)
-- [外部記事の取得調査](external-integration-verification-2026-10-15.md)
-
-設計案は採用決定と区別する。過去の失敗や未実施試験は削除せず、後続の成功・未解決事項と区別して読む。実装と判断が変わったら同じ変更のPRで記録も更新する。
-
-- [AWS接続・配備用権限の設定](aws-access-setup-2026-10-18.md)
-
-- [UI/UX担当チャットへの指示書](ui-ux-handoff-2026-10-18.md)
-
-- [AWSオレゴンの実検証・開始時刻・撤去の記録](aws-validation-execution-2026-10-18.md)
+通常の作業進捗だけで新しい台帳を作らず、公開台帳の該当項目を更新する。設計変更は現行設計、主要な比較・失敗・検証は対象を絞った記録へ残し、台帳からリンクする。秘密値・生の認証応答・未整理の巨大ログはコミットしない。
