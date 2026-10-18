@@ -173,5 +173,155 @@
     "course-k-blog-validation-20261018": "Deleted (DescribeStacks confirms absence)",
     "course-k-blog-validation-20261018b": "Deleted (DescribeStacks confirms absence)",
     "remainingTrialLogGroups": []
+  },
+  "afterGatewayRevision": {
+    "failedResources": [
+      {
+        "Timestamp": "2026-10-18T07:34:55.745000+00:00",
+        "LogicalResourceId": "Stage",
+        "ResourceStatus": "CREATE_FAILED",
+        "ResourceStatusReason": "Resource handler returned message: \"Insufficient permissions to enable logging. User: arn:aws:sts::757412973334:assumed-role/course-k-validation-operator/blog-validation is not authorized to perform: logs:CreateLogDelivery because no identity-based policy allows the logs:CreateLogDelivery action (Service: ApiGatewayV2, Status Code: 400, Request ID: 57954351-d885-4399-9a64-e15c4c10717b) (SDK Attempt Count: 1)\" (RequestToken: 89a7e7b4-7b50-d7c3-72a7-865d38f288e3, HandlerErrorCode: InvalidRequest)"
+      }
+    ],
+    "gatewayRevisionConfirmedInConsole": true,
+    "tagPermissionFailureResolved": true,
+    "nextBlocker": "logs:CreateLogDelivery",
+    "note": "Earlier same-error commentary was incorrect; full failure event shows a different missing permission."
+  },
+  "loggingRevisionPolicyValidation": {
+    "RuntimeBoundary": [],
+    "OperatorPolicy1": [],
+    "OperatorPolicy2": [
+      {
+        "findingDetails": "The 2 resource ARN(s) are redundant because they reference the same resource. Review the use of wildcards (*), or remove the resource arn:aws:s3:::course-k-blog-validation-*/* to remove the redundancy.",
+        "findingType": "SUGGESTION",
+        "issueCode": "REDUNDANT_RESOURCE",
+        "learnMoreLink": "https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-reference-policy-checks.html#access-analyzer-reference-policy-checks-suggestion-redundant-resource",
+        "locations": [
+          {
+            "path": [
+              {
+                "value": "Statement"
+              },
+              {
+                "index": 1
+              },
+              {
+                "value": "Resource"
+              },
+              {
+                "index": 0
+              }
+            ],
+            "span": {
+              "start": {
+                "line": 1,
+                "column": 766,
+                "offset": 766
+              },
+              "end": {
+                "line": 1,
+                "column": 807,
+                "offset": 807
+              }
+            }
+          },
+          {
+            "path": [
+              {
+                "value": "Statement"
+              },
+              {
+                "index": 1
+              },
+              {
+                "value": "Resource"
+              },
+              {
+                "index": 1
+              }
+            ],
+            "span": {
+              "start": {
+                "line": 1,
+                "column": 809,
+                "offset": 809
+              },
+              "end": {
+                "line": 1,
+                "column": 852,
+                "offset": 852
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "OperatorPolicy3": [
+      {
+        "findingDetails": "The 2 resource ARN(s) are redundant because they reference the same resource. Review the use of wildcards (*), or remove the resource arn:aws:s3:::course-k-blog-validation-*/* to remove the redundancy.",
+        "findingType": "SUGGESTION",
+        "issueCode": "REDUNDANT_RESOURCE",
+        "learnMoreLink": "https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-reference-policy-checks.html#access-analyzer-reference-policy-checks-suggestion-redundant-resource",
+        "locations": [
+          {
+            "path": [
+              {
+                "value": "Statement"
+              },
+              {
+                "index": 5
+              },
+              {
+                "value": "Resource"
+              },
+              {
+                "index": 0
+              }
+            ],
+            "span": {
+              "start": {
+                "line": 1,
+                "column": 1506,
+                "offset": 1506
+              },
+              "end": {
+                "line": 1,
+                "column": 1547,
+                "offset": 1547
+              }
+            }
+          },
+          {
+            "path": [
+              {
+                "value": "Statement"
+              },
+              {
+                "index": 5
+              },
+              {
+                "value": "Resource"
+              },
+              {
+                "index": 1
+              }
+            ],
+            "span": {
+              "start": {
+                "line": 1,
+                "column": 1549,
+                "offset": 1549
+              },
+              "end": {
+                "line": 1,
+                "column": 1592,
+                "offset": 1592
+              }
+            }
+          }
+        ]
+      }
+    ]
   }
 }

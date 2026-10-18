@@ -4,7 +4,9 @@
 
 ## 最新のアップロード対象
 
-更新連絡後の最小構成試験でも同じ拒否を確認した。取り違えを避け、今回の管理者更新には[validation-access-gateway-fix-20261018.template.json](../infra/access/validation-access-gateway-fix-20261018.template.json)を使う。確認画面の説明に`gateway permission revision 2026-10-18`があることを確かめる。元の手元ファイルは修正前へ戻る変更が残っているため、自動で上書きしない。日付付きファイルの内容・検査・限界は実検証記録を参照。
+現在は[validation-access-logging-fix-20261018.template.json](../infra/access/validation-access-logging-fix-20261018.template.json)を使用する。説明に`gateway logging revision 2026-10-18`があることを確認する。
+
+Gateway修正版の反映はCloudFormationとIAMで確認済み。タグ権限は解消し、最新試験の不足はログ配信のCreateLogDeliveryだった。「同じタグエラー」とした前の説明は訂正する。ログ配信に必要な公式の権限セットを追加し、cfn-lint・Access Analyzerで検査済み。既存アクセス用スタックへの反映待ち。詳細は実検証記録の最新節を参照。
 
 ## 最新：実配備で確認した追加修正
 

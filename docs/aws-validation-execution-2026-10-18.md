@@ -2,7 +2,9 @@
 
 ## 現在地
 
-事前確認は成功したが、API Gateway Stageの作成時権限で二回ともロールバック。両試験スタックの削除完了（DescribeStacksで不存在）を確認し、Retainされた空のS3/ECR/ログを個別削除済み。今回の接頭辞を持つロググループも残っていない。DB/アプリタスクは未作成。現在はアクセス用スタックの修正版反映待ちで、アプリ環境を稼働させたまま待ってはいない。
+**最新の訂正：API Gatewayのタグ権限は解消済み。** 修正版はCloudFormationとIAMの両画面で反映を確認。最新の最小構成試験はStageのアクセスログ設定で`logs:CreateLogDelivery`不足となった。先の応答で同じタグエラーと説明したのは、失敗イベント本文を最後まで確認せずロールバック状態から判断した誤りであり、本人の更新ミスとは扱わない。
+
+追加のログ配信権限を公式資料から補ったアップロード用修正版を用意し、本人による既存アクセス用スタックの更新待ち。今回の確認用スタックも撤去済み。DB・アプリタスクは未作成。
 
 ## 範囲と開始履歴
 
@@ -69,3 +71,17 @@ DB/VPC/ECSを含む全体の再作成はせず、HttpApi/Stage/GatewayLogsの3�
 アップロード用修正版のSHA-256：`e03ae95dcc6bec9c9eea6f0c47d3d4d2bae626d74bf36dfeb44e19593ea8ac82`。
 
 最小構成試験の3資源は全てDELETE_COMPLETEを確認し、スタック削除後のDescribeStacksでも不存在を確認。保持資源なし。
+
+## 最新の最小構成試験：タグ権限解消後のログ権限不足
+
+本人の更新連絡後、新しいSTSセッションでHttpApi/Stage/GatewayLogsだけを作成。全体のDB/VPC/ECSを再作成しなかった。Stageの失敗理由は`Insufficient permissions to enable logging`、不足アクションは`logs:CreateLogDelivery`。タグエラーの再発ではない。
+
+ネイティブのブラウザ操作で、本人の管理コンソールを読み取り確認した。CloudFormationはUPDATE_COMPLETE、テンプレート説明はgateway permission revision 2026-10-18、IAMのOperatorPolicy1にもapigateway:*と元のResource/Conditionが反映されていた。これらの画面では権限の編集・保存操作を行っていない。API Gateway V2のコンソール上の許可要約だけから不許可と断定せず、実際のJSONと失敗イベントを優先した。
+
+[HTTP APIログ設定の公式資料](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-logging.html)と照合し、[ログ配信用のアップロード修正版](../infra/access/validation-access-logging-fix-20261018.template.json)を準備した。元のGateway修正版を維持し、OperatorPolicy2へCreate/Get/Update/Delete/ListLogDelivery、PutResourcePolicy、DescribeResourcePoliciesの7操作を追加。変更操作はus-west-2かつCloudFormation/API Gatewayからの代理呼出しに限定。API Gatewayが内部でログ配信を設定するため、CalledVia条件はCloudFormationまたはAPI Gatewayとした。ReadPreflightには配信・ポリシー状態の読み取り3操作を追加し、オレゴンのまま制限。Resource=*が必要な配信APIを含むので、今回のロググループだけにIAMで完全限定したとは言わない。
+
+RuntimeBoundary、信頼先、PassRole、DB/S3の権限は変更しない。全4ポリシーをAccess Analyzerで確認しERROR/SECURITY_WARNING/WARNINGなし（従来のS3重複SUGGESTIONのみ）。cfn-lint成功、管理ポリシー文字数も上限内。静的検査・公式資料との照合は成功したが、この追加権限による実ログ配信は反映後に検証する。
+
+以前のGateway修正版や元ファイルは上書きせず残した。日付付きファイルは各管理者更新の再現用スナップショットで、採用済みの最新ファイルは本段落で明示する。
+
+今後は、ロールバックという状態だけで前と同じ原因と判断しない。失敗イベントのアクション・対象・理由を最初に確認し、管理者の更新を再依頼する前にAWSに反映済みの内容を照合する。
