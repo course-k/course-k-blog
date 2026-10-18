@@ -116,13 +116,16 @@ volumes:
     if (logs.status !== 0 || `${logs.stdout}${logs.stderr}`.includes(sentinel)) throw new Error('Router credential-log check failed')
   }
   // Fixed metadata isolates acceptance tests from upstream availability and article changes.
-  await run('docker', [...compose, 'exec', '-T', 'db', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'blog', '-d', 'blog_test', '-c',
-    "INSERT INTO external_posts(source,source_id,title,url,published_at) VALUES('qiita','e2e-external','外部の記事の元タイトル','https://qiita.com/course_k/items/e2e-external','2020-01-01T00:00:00Z')"])
+  // Supply credentials through the container environment, never CLI arguments.
+  await run('docker', [...compose, 'exec', '-T', 'db', 'sh', '-c',
+    'export MYSQL_PWD="$(cat /run/secrets/db_password)"; exec mysql -u blog blog_test -e "$1"', 'seed',
+    "INSERT INTO external_posts(source,source_id,title,url,published_at) VALUES('qiita','e2e-external','外部の記事の元タイトル','https://qiita.com/course_k/items/e2e-external','2020-01-01 00:00:00')"])
   await run('npm', ['run', 'test:e2e'], {
     cwd: `${root}frontend`, env: { ...process.env, RUN_LOCAL_E2E: '1',
       BLOG_E2E_ORIGIN: origin, BLOG_E2E_LOGIN_FILE: join(directory, 'local-login.txt') },
   })
 } catch (error) {
+  if (configured) spawnSync('docker', [...compose, 'logs', '--no-color', '--tail', '20', 'migrate'], { cwd: root, stdio: 'inherit', timeout: 10_000 })
   if (singleTask && configured) spawnSync('docker', [...compose, 'logs', '--no-color', '--tail', '30', 'gateway'], { cwd: root, stdio: 'inherit', timeout: 10_000 })
   throw error
 } finally {

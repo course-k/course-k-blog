@@ -1,4 +1,4 @@
-package postgres
+package mysql
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 func TestImageReferencesFollowPublishedSnapshot(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("dedicated PostgreSQL not configured")
+		t.Skip("dedicated MySQL not configured")
 	}
 	// Open uses the same dedicated-DB guard as the persistence suite.
 	if !strings.Contains(dsn, "_test?") {
@@ -35,12 +35,12 @@ func TestImageReferencesFollowPublishedSnapshot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	defer store.db.ExecContext(ctx, "DELETE FROM images WHERE id=$1 OR id=$2", ids[0], ids[1])
+	defer store.db.ExecContext(ctx, "DELETE FROM images WHERE id=? OR id=?", ids[0], ids[1])
 	post := blog.Post{ID: "image-integration", Title: "image test", Markdown: "![first](/api/images/" + ids[0] + ")", Version: 1, UpdatedAt: time.Now()}
 	if err = store.Create(ctx, post); err != nil {
 		t.Fatal(err)
 	}
-	defer store.db.ExecContext(ctx, "DELETE FROM posts WHERE id=$1", post.ID)
+	defer store.db.ExecContext(ctx, "DELETE FROM posts WHERE id=?", post.ID)
 	visible := func(id string, want bool) {
 		t.Helper()
 		got, err := store.ImagePublic(ctx, id)

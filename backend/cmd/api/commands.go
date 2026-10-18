@@ -9,18 +9,18 @@ import (
 	"strings"
 
 	"coursek/blog/backend/internal/backup"
-	"coursek/blog/backend/internal/postgres"
+	"coursek/blog/backend/internal/mysql"
 )
 
 func restoreTarget(dsn string) bool {
 	target, err := url.Parse(dsn)
-	if err != nil || (target.Scheme != "postgres" && target.Scheme != "postgresql") {
+	if err != nil || target.Scheme != "mysql" {
 		return false
 	}
 	database := strings.TrimPrefix(target.Path, "/")
 	return strings.HasSuffix(database, "_restore") || strings.HasSuffix(database, "_test")
 }
-func runDataCommand(ctx context.Context, command string, args []string, dsn string, store *postgres.Store, service *backup.Service) error {
+func runDataCommand(ctx context.Context, command string, args []string, dsn string, store *mysql.Store, service *backup.Service) error {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	switch command {

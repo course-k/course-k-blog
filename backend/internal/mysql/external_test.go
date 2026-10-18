@@ -1,4 +1,4 @@
-package postgres
+package mysql
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 func TestExternalSyncPersistenceAndTimeline(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("dedicated PostgreSQL not configured")
+		t.Skip("dedicated MySQL not configured")
 	}
 	target, err := url.Parse(dsn)
 	if err != nil || !strings.HasSuffix(target.Path, "_test") {
@@ -32,7 +32,7 @@ func TestExternalSyncPersistenceAndTimeline(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Only this disposable test DB is modified. Other sources are deferred to isolate leases.
-	if _, err = store.db.ExecContext(ctx, "UPDATE sync_sources SET next_run=now()+interval '1 day',lease_until=NULL,run_id=NULL,last_attempt=NULL"); err != nil {
+	if _, err = store.db.ExecContext(ctx, "UPDATE sync_sources SET next_run=now()+INTERVAL 1 DAY,lease_until=NULL,run_id=NULL,last_attempt=NULL"); err != nil {
 		t.Fatal(err)
 	}
 	defer store.db.ExecContext(ctx, "DELETE FROM external_posts WHERE source_id LIKE 'integration-%'")
@@ -131,7 +131,7 @@ func TestExternalSyncPersistenceAndTimeline(t *testing.T) {
 func TestLimitedSyncKeepsGapUntilFullCoverageAndDoesNotConflictOnUnchangedMetadata(t *testing.T) {
 	store := isolatedStore(t)
 	ctx := context.Background()
-	if _, err := store.db.ExecContext(ctx, "UPDATE sync_sources SET next_run=now()+interval '1 day'"); err != nil {
+	if _, err := store.db.ExecContext(ctx, "UPDATE sync_sources SET next_run=now()+INTERVAL 1 DAY"); err != nil {
 		t.Fatal(err)
 	}
 	finish := func(run string, posts []external.Post, coverage string) {

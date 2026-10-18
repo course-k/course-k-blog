@@ -61,21 +61,21 @@ jobs:
           PLAYWRIGHT_CHANNEL: chromium
 
   backend:
-    name: Go and real PostgreSQL
+    name: Go and real MySQL
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     services:
-      postgres:
-        image: postgres:17-alpine
+      mysql:
+        image: mysql:8.4
         env:
-          POSTGRES_DB: blog_test
-          POSTGRES_USER: blog
+          MYSQL_DATABASE: blog_test
+          MYSQL_ROOT_HOST: "%"
           # Disposable CI service; no production credentials or data.
-          POSTGRES_HOST_AUTH_METHOD: trust
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
         ports:
-          - 5432/tcp
+          - 3306/tcp
         options: >-
-          --health-cmd "pg_isready -U blog -d blog_test"
+          --health-cmd "mysqladmin ping -h 127.0.0.1 --silent"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
@@ -90,6 +90,10 @@ jobs:
         with:
           go-version: '1.27.2'
           cache: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
       - run: go mod download
       - run: go test -race -v ./...
         env:
@@ -97,13 +101,14 @@ jobs:
           TEST_TLS_DATABASE_URL: ''
       - run: go vet ./...
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
-      - run: go test -count=1 -race -v ./internal/postgres
+      - run: go test -count=1 -race -v ./internal/mysql
         env:
-          TEST_DATABASE_URL: postgres://blog@127.0.0.1:${{ job.services.postgres.ports[5432] }}/blog_test?sslmode=disable
+          TEST_DATABASE_URL: mysql://root@127.0.0.1:${{ job.services.mysql.ports[3306] }}/blog_test?tls=false
           TEST_TLS_DATABASE_URL: ''
+      - run: node ../scripts/test-mysql-tls.mjs
 
   acceptance:
-    name: Browser, SSR, Go and PostgreSQL
+    name: Browser, SSR, Go and MySQL
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

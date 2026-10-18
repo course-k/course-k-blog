@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
-test("reader and owner flow against real PostgreSQL and production SSR", async ({
+test("reader and owner flow against real MySQL and production SSR", async ({
   page,
   browser,
 }) => {

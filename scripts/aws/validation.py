@@ -207,7 +207,7 @@ def put_secrets(session, path):
         raise ConfigurationError('Secret initialization requires a stable, not-yet-running validation stack.')
     endpoint = outputs(stack)['DbEndpoint']
     def dsn(user, password):
-        return f'postgresql://{user}:{quote(password, safe="")}@{endpoint}:5432/blog?sslmode=verify-full'
+        return f'mysql://{user}:{quote(password, safe="")}@{endpoint}:3306/blog?tls=verify-full'
     payloads = {'DatabaseUrlParameterArn': dsn('blog_app', values['appPassword']),
                 'MigrationUrlParameterArn': dsn('blog_migrator', values['migrationPassword']),
                 'AdminHashParameterArn': values['adminHash'], 'AppPasswordParameterArn': values['appPassword'],

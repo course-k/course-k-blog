@@ -2,6 +2,8 @@
 
 **コードとオフライン検査は準備済み。AWSへの適用、通知の受信確認、本番復元は未実施。** 進捗は[公開台帳](../docs/blog-publication-roadmap-2026-10-18.md)、仕様と理由は[現行設計](../docs/current-design.md)で管理する。
 
+MySQL移行後のローカル結合試験・TLS・権限分離・通し試験と、本番での配置確認は分けて扱う。以下にある以前の性能測定値はPostgreSQL時点のもので、MySQLの同一性能を保証しない。MySQL 8.4の正確なマイナー版とmicro/gp3の提供可否は配置前に読み取り確認する。
+
 ## 使用する定義
 
 [scripts/aws/production.py](../scripts/aws/production.py)が、旧検証のネットワーク・RDS・監視の[共通定義](aws/validation-stack.template.json)を読み、本番用の認証・保存・通知・独自ホスト名を追加し、[常駐部分を1タスクへ変換](../scripts/aws/single_task.py)する。旧検証の2サービスを、そのまま本番へ使う構成ではない。巨大なテンプレートを2本手修正する案より、共通構成の修正を両方へ反映できる。生成処理はAWS SDK・資格情報を使わず、配置しない。生成物をGitへ重複保存しない。
@@ -42,7 +44,7 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 | 段階 | 作業と終了条件 |
 |---|---|
 | 1. 承認する計画 | 確定した公開URL、全資源の月額見込み、IAM差分、保持方針を確認。継続課金とDNS変更の対象を示して承認を得る |
-| 2. 証明書・基盤 | オレゴンの対応PostgreSQL版とアカウントを確認。ACMの証明書を発行・DNS検証し、EnableRuntime=falseで基盤を配置。まだアプリは稼働しないが、DB等の課金は始まる |
+| 2. 証明書・基盤 | オレゴンの対応MySQL版とアカウントを確認。ACMの証明書を発行・DNS検証し、EnableRuntime=falseで基盤を配置。まだアプリは稼働しないが、DB等の課金は始まる |
 | 3. 本人・データ準備 | 自己登録を使わずCognitoに本人だけを作る。本人所有メールを確認し、subをAdminSubjectへ設定。初期認証情報は本人が安全に保持し、パスワード変更・TOTP登録は接続後の段階6で行う。本人の秘密値をチャットへ送らない |
 | 4. ビルド・DB移行 | 同じDockerfileからLinux ARM64のNode/Go/Nginx/DB初期化イメージを作り、ECRへ登録してdigestを固定。新規DBのロールを初期化後、001〜006の移行を単発タスクで実行。実データがあるDBを再初期化しない |
 | 5. 配置 | 公開URL、DB用SSM ARN、Cognito本人sub、digestを設定し、変更セットを確認してEnableRuntime=true。1サービス・通常1タスク（0.5vCPU/2GiB）の常時稼働・ヘルスチェック・DB接続を確認 |
@@ -55,7 +57,7 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 
 ## 保存と回復の操作
 
-ローカルは`postgres_data`・`media_data`・`backup_data`の3ボリュームを保持する。`docker compose down -v`は通常停止に使わない。同一端末の別ボリュームは端末故障への独立バックアップではない。本番は別の非公開S3バケットへ保存する。
+ローカルは`mysql_data`・`media_data`・`backup_data`の3ボリュームを保持する。`docker compose down -v`は通常停止に使わない。同一端末の別ボリュームは端末故障への独立バックアップではない。本番は別の非公開S3バケットへ保存する。
 
 管理画面に「バックアップ待ち」「前回失敗」「最終成功」「保存済みID」を表示する。変更を今取得する要求もできる。変更なしは新世代を増やさない。保存失敗を公開失敗や成功へ置き換えない。削除/期限超過/形式変更/保存量の増加は通知と状態表示で確認し、保存先の失敗・取得上限を解消して再取得する。
 
@@ -96,6 +98,6 @@ api revoke-sessions --confirm
 | 小額処理・通信の予備 | 監視Lambda・通知・更新/単発タスク・AZ間通信等の予算枠。固定単価ではない | 1.20 |
 | **例の合計** | インターネット転送30GiBをアカウントの月100GB無償枠内と仮定 | **約39.03** |
 
-[Fargate](https://aws.amazon.com/fargate/pricing/)、[RDS](https://aws.amazon.com/rds/postgresql/pricing/)、[S3](https://aws.amazon.com/s3/pricing/)、[CloudWatch](https://aws.amazon.com/cloudwatch/pricing/)、[Cloud Map](https://aws.amazon.com/cloud-map/pricing/)、[Route 53](https://aws.amazon.com/route53/pricing/)、[Cognito](https://aws.amazon.com/cognito/pricing/)を参照。Cognitoの直接ログイン1MAUは通常10,000MAUの共通枠に収まるが、組織/アカウント全体の残枠は未確認。private hosted zoneの問い合わせはRoute 53で追加料金なし。公開DNSは既存サービスを使う前提で、新しいRoute 53公開ゾーンを必須にしない。
+[Fargate](https://aws.amazon.com/fargate/pricing/)、[RDS](https://aws.amazon.com/rds/mysql/pricing/)、[S3](https://aws.amazon.com/s3/pricing/)、[CloudWatch](https://aws.amazon.com/cloudwatch/pricing/)、[Cloud Map](https://aws.amazon.com/cloud-map/pricing/)、[Route 53](https://aws.amazon.com/route53/pricing/)、[Cognito](https://aws.amazon.com/cognito/pricing/)を参照。Cognitoの直接ログイン1MAUは通常10,000MAUの共通枠に収まるが、組織/アカウント全体の残枠は未確認。private hosted zoneの問い合わせはRoute 53で追加料金なし。公開DNSは既存サービスを使う前提で、新しいRoute 53公開ゾーンを必須にしない。
 
 税・為替・ドメイン更新・有償CI、転送枠を超える通信、増えた画像/ログ/旧版/スナップショット、RDSの追加CPUクレジット等は別。通常のSSM Standardパラメーターと既存VPCを使い、Spot・予約割引・期限付きクレジットで安く見せない。概算を月額上限の保証にはしない。実公開前にアカウントの料金条件と残枠を照合し、予算通知を設定して、本人が許容した額に収まる計画にする。

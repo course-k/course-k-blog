@@ -9,7 +9,7 @@
 | ファイル | 役割・適用状態 |
 |---|---|
 | aws/validation-stack.template.json | Node / Go別サービス、非公開RDS、S3、入口、監視を含む一つの検証スタック。基本構成の実AWS検証に使った定義を移動したもの。本番用ではない |
-| aws/validation-environment.example.json | 資格情報を含まない環境設定の例。アカウント・接続元プロファイル・新しい検証スタック名・ARN・PostgreSQL版・ローカルイメージを指定する |
+| aws/validation-environment.example.json | 資格情報を含まない環境設定の例。アカウント・接続元プロファイル・新しい検証スタック名・ARN・MySQL版・ローカルイメージを指定する |
 | access/validation-access-applied.template.json | 記録上、AWSへ反映済みのログ配信対応版。移動のみで権限は変更していない。現在のAWSとの再照合は未実施 |
 | access/validation-access-pending.template.json | 未反映の修正候補。反映済み版との差は、限定されたCloudFormation経由DB操作にrds:CreateDBSnapshotを追加する1件 |
 | database/ | 新規検証DB用のロール初期化と、その単発コンテナ |
@@ -27,7 +27,7 @@
 
 DB用パスワードは異なる24文字以上、管理者ハッシュはGoの `cmd/password` で生成する。通常用・移行用のDSNはRDS出力から組み立て、SSM SecureStringへ新規登録する。既存の同名パラメーターがあれば上書きせず停止する。途中失敗では一部だけ作成済みになり得るため、再実行前に所有と作成状態を確認する。
 
-AWS CLIはPATH、`--cli`、または `AWS_VALIDATION_CLI` で指定する。CLI 2.32.0以上、Python 3.10以上、Docker（ARM64ビルド可能な環境）が前提。例のアカウント000000000000やPostgreSQLの仮値ではAWSへ接続できない。
+AWS CLIはPATH、`--cli`、または `AWS_VALIDATION_CLI` で指定する。CLI 2.32.0以上、Python 3.10以上、Docker（ARM64ビルド可能な環境）が前提。例のアカウント000000000000やMySQLの仮値ではAWSへ接続できない。
 
 ## オフラインの確認
 
@@ -57,7 +57,7 @@ python3 scripts/aws-validation-preflight.py --config config/aws-validation/envir
 
 プロファイルは環境設定に指定したものを使用する。共通セッション処理は指定アカウントの `course-k-validation-operator` をAssumeRoleし、取得した短期資格情報はメモリー内だけで扱う。継承したキー・仕事用プロファイル・接続先上書きを使わず、STSでアカウントとロールを照合する。
 
-preflightはAZ、指定PostgreSQL版、micro/gp3 20GiB、Fargate枠、CloudFormation構文を読み取り確認する。設定したDB版が提供されなければ、別版へ自動変更せず停止する。枠の総量は実配置の成功や空き容量を保証しない。
+preflightはAZ、指定MySQL版、micro/gp3 20GiB、Fargate枠、CloudFormation構文を読み取り確認する。設定したDB版が提供されなければ、別版へ自動変更せず停止する。枠の総量は実配置の成功や空き容量を保証しない。
 
 ## 配置・更新の順序
 

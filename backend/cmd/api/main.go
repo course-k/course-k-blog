@@ -17,8 +17,8 @@ import (
 	"coursek/blog/backend/internal/external"
 	"coursek/blog/backend/internal/httpapi"
 	"coursek/blog/backend/internal/images"
+	"coursek/blog/backend/internal/mysql"
 	"coursek/blog/backend/internal/oidclogin"
-	"coursek/blog/backend/internal/postgres"
 )
 
 // Health checks must not initialize a DB connection or require credentials.
@@ -58,9 +58,9 @@ func run() error {
 		if err != nil {
 			return errors.New("cannot read database password file")
 		}
-		u := &url.URL{Scheme: "postgres", Host: os.Getenv("DATABASE_HOST"), Path: "/" + os.Getenv("DATABASE_NAME"), User: url.UserPassword(os.Getenv("DATABASE_USER"), strings.TrimSpace(string(password)))}
+		u := &url.URL{Scheme: "mysql", Host: os.Getenv("DATABASE_HOST"), Path: "/" + os.Getenv("DATABASE_NAME"), User: url.UserPassword(os.Getenv("DATABASE_USER"), strings.TrimSpace(string(password)))}
 		q := u.Query()
-		q.Set("sslmode", os.Getenv("DATABASE_SSLMODE"))
+		q.Set("tls", os.Getenv("DATABASE_TLS"))
 		u.RawQuery = q.Encode()
 		dsn = u.String()
 	}
@@ -77,15 +77,15 @@ func run() error {
 	}
 	if u.Scheme == "https" {
 		dbURL, e := url.Parse(dsn)
-		if e != nil || dbURL.Scheme != "postgres" && dbURL.Scheme != "postgresql" || dbURL.Query().Get("sslmode") != "verify-full" {
-			return errors.New("HTTPS deployment requires a PostgreSQL URL with sslmode=verify-full")
+		if e != nil || dbURL.Scheme != "mysql" || dbURL.Query().Get("tls") != "verify-full" {
+			return errors.New("HTTPS deployment requires a MySQL URL with tls=verify-full")
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	store, err := postgres.Open(ctx, dsn)
+	store, err := mysql.Open(ctx, dsn)
 	if err != nil {
-		return errors.New("cannot connect to PostgreSQL")
+		return errors.New("cannot connect to MySQL")
 	}
 	defer store.Close()
 	if len(os.Args) == 2 && os.Args[1] == "migrate" {

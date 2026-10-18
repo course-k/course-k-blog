@@ -1,4 +1,4 @@
-package postgres
+package mysql
 
 import (
 	"context"
@@ -12,11 +12,11 @@ import (
 	"time"
 )
 
-// Opt-in real PostgreSQL test. Never silently replace PostgreSQL with a fake.
-func TestPostgreSQLPersistenceAndPublishedSnapshot(t *testing.T) {
+// Opt-in real MySQL test. Never silently replace MySQL with a fake.
+func TestMySQLPersistenceAndPublishedSnapshot(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL is not set: PostgreSQL integration not executed")
+		t.Skip("TEST_DATABASE_URL is not set: MySQL integration not executed")
 	}
 	u, err := url.Parse(dsn)
 	if err != nil || !strings.HasSuffix(u.Path, "_test") {
@@ -40,7 +40,7 @@ func TestPostgreSQLPersistenceAndPublishedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	id = "integration-" + id
-	defer s.db.ExecContext(context.Background(), "DELETE FROM posts WHERE id=$1", id)
+	defer s.db.ExecContext(context.Background(), "DELETE FROM posts WHERE id=?", id)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	p := blog.Post{ID: id, Title: "公開前", Markdown: "draft secret", UpdatedAt: now, Version: 1}
 	if err = s.Create(ctx, p); err != nil {

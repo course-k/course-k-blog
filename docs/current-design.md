@@ -95,7 +95,7 @@ PC・スマホ、キーボード、長いコード・表、失敗時の復帰を
 
 TanStack Routerは本人の学習対象・選好として採用し、そのSSR実行にStartを用いる。React RouterやNext.jsより普遍的に優れるという判断ではない。TypeScriptは画面側の型確認、GoはAPIと業務処理の学習・責務分離を目的とする。
 
-### 基盤：AWS / ECS Fargate / RDS PostgreSQL
+### 基盤：AWS / ECS Fargate / RDS MySQL
 
 AWSはブログ以外のWebサービス、情報収集・LINE連携・モバイル向けAPI等を同じベンダーへ展開できる幅と、実務学習へのつながりを重視して採用する。Railway等の簡便さより、提供サービスの幅と構成の選択余地を優先した。将来の全要件に無変更で対応できる保証ではない。
 
@@ -104,10 +104,14 @@ AWSはブログ以外のWebサービス、情報収集・LINE連携・モバイ�
 | EC2 / Lightsail上の自営 | 低い固定費を狙えるが、ホストOS・更新・障害対応を自分で担う |
 | ECS on EC2 | コンテナ配置はECSで管理できるが、EC2ホストの容量と保守が残る |
 | ECS Fargate（採用） | コンテナの配置・更新・必要数の維持をECS、実行ホストの管理をFargateへ委ねる。常時実行の資源課金とAWS設定の管理を受け入れる。最安の選択ではない |
-| PostgreSQL自営 | 費用・設定の裁量は大きいが、DB更新・障害復旧・保存基盤を自分で管理する |
-| RDS PostgreSQL（採用） | 通常のリレーショナルDB構成を保ち、基盤保守を委ねる。権限・SQL移行・アプリ整合性・復元確認は自分で担う |
+| MySQL自営 | 費用・設定の裁量は大きいが、DB更新・障害復旧・保存基盤を自分で管理する |
+| RDS MySQL（採用） | 通常のリレーショナルDB構成を保ち、基盤保守を委ねる。権限・SQL移行・アプリ整合性・復元確認は自分で担う |
 
-Aurora/MySQL等へ変更する必要性は現要件では示されておらず、採用済みPostgreSQLを維持する。全DB製品の優劣を証明した選択ではない。
+MySQL 8.4 LTSを採用する。記事・下書き・公開版・外部記事・画像参照を扱う要件はMySQLとPostgreSQLの双方で実現でき、比較したオレゴンのRDS db.t4g.micro通常料金は同額だった。PostgreSQL固有の機能を必要とする要件はなく、本人のMySQL習熟によって実装理解・保守・障害調査の負担を抑えることを優先する。DB基盤保守をRDSへ委ねる判断と、DBエンジンをMySQLにする判断は分ける。MySQLの普遍的な性能優位を主張する選択ではない。
+
+DB接続はGo標準のdatabase/sqlとgo-sql-driver/mysqlを使う。UTC・マイクロ秒精度・utf8mb4の大文字小文字を区別する照合順序を揃える。更新と更新後の読み取り、画像参照の更新を同じトランザクションに置き、楽観的な版管理を維持する。DDLの暗黙コミットを踏まえ、移行は専用接続の名前付きロックで直列化し、各DDLを再実行可能にする。部分失敗を全体ロールバック済みとは扱わない。
+
+MySQLのスナップショットは明示した列だけをJSONへ保存し、生成列を除外し、エンジン名とスキーマ版を照合する。復元は専用の空DBで行う。エンジン名を含まない旧PostgreSQLのアプリバックアップやデータボリュームをMySQLへ直接流用しない。旧ローカルDBは削除しない。本番DBは未配置であり、AWS上の既存DBの置換は今回行わない。
 
 ### AWSの入口と配置：1サービス・1タスク
 
@@ -152,7 +156,7 @@ HTTP APIの時間・送信サイズ等の制約が要件に合わなくなれば
 
 #### タスク統合候補の性能確認
 
-2026-10-19に現行のNode/GoのDockerfileからARM64イメージをビルドし、ローカルDockerのCPUクォータ・メモリ上限で比較した。専用PostgreSQLへ200記事を作成し、作業版・公開版の本文をそれぞれ50KiBとした。本文は見出し・リスト・コードブロックを多数含む反復データで、すべての実記事の代表ではない。一覧と記事本文を交互に取得し、HTTP 200とHTML内の記事タイトルを確認した。応答時間はHTML全体の受信完了までで、ブラウザ描画や日本からAWSまでの通信時間を含まない。
+2026-10-19に現行のNode/GoのDockerfileからARM64イメージをビルドし、ローカルDockerのCPUクォータ・メモリ上限で比較した。この性能計測はPostgreSQL時点の結果で、MySQL移行後の同一負荷の性能を証明しない。専用PostgreSQLへ200記事を作成し、作業版・公開版の本文をそれぞれ50KiBとした。本文は見出し・リスト・コードブロックを多数含む反復データで、すべての実記事の代表ではない。一覧と記事本文を交互に取得し、HTTP 200とHTML内の記事タイトルを確認した。応答時間はHTML全体の受信完了までで、ブラウザ描画や日本からAWSまでの通信時間を含まない。
 
 | 比較構成 | 表示のみ5req/sのp95 | 表示のみ10req/sのp95 | 表示5req/s＋管理操作のp95 |
 |---|---:|---:|---:|
@@ -174,7 +178,7 @@ HTTP APIの時間・送信サイズ等の制約が要件に合わなくなれば
 
 ```text
 ブラウザ → Caddy :8080
-           ├─ /api・/api/* → Go :8081 → PostgreSQL
+           ├─ /api・/api/* → Go :8081 → MySQL
            └─ その他      → Node :3000 → Go（SSR取得）
 ```
 
@@ -186,7 +190,7 @@ Caddyはローカルの同一オリジンへの経路分岐に使用し、短い
 管理ルート → AdminPage（表示・ルーターの離脱確認）
               └─ useAdminEditor（入力・認証状態・操作の順序と結果）
                    └─ adminApi（HTTPパス・入力・応答とエラー）
-                        └─ Go httpapi → blog.Store契約 → postgres（SQL）
+                        └─ Go httpapi → blog.Store契約 → mysql（SQL）
                               └─ auth（パスワード・トークン）
 公開ルート → SSR取得 → Goの公開API
 本文・編集プレビュー → 共通Markdown
@@ -197,10 +201,10 @@ Caddyはローカルの同一オリジンへの経路分岐に使用し、短い
 | [AdminPage](../frontend/src/components/AdminPage.tsx) | 採用済みの画面を表示し、操作をフックへ渡す。ルーターによる離脱確認を接続する。HTTPパスや公開操作の順序は持たない |
 | [useAdminEditor](../frontend/src/features/editor/useAdminEditor.ts) | 入力、選択、認証状態、処理中、成功・失敗・結果不明を管理する。保存後の公開、再取得、確認ダイアログを含む操作の順序を扱う。公開の可否を決定する業務ルールはGoに委ねる |
 | [adminApi](../frontend/src/features/editor/adminApi.ts) | Cookie付きの同一オリジン通信、APIパス・入力と応答型、HTTPエラーを扱う。Reactの状態や表示配置を持たない。型定義は実行時検証の代用ではない |
-| Go httpapi / blog / postgres / auth | HTTP・認証境界、記事型と保存契約、DBアクセスと原子的な条件付き更新、暗号処理を分ける。httpapiはStore契約を介してDB保存へ依存し、画面の配色や配置へ依存しない |
+| Go httpapi / blog / mysql / auth | HTTP・認証境界、記事型と保存契約、DBアクセスと原子的な条件付き更新、暗号処理を分ける。httpapiはStore契約を介してDB保存へ依存し、画面の配色や配置へ依存しない |
 
 一つの画面ファイルに通信と保存・公開の手順を置く案に対し、表示変更・操作フロー変更・API変更の理由が異なるため3つに分ける。単純に行数を減らす分割や、各入力ごとの細分化はしない。現在は一つの編集画面で閉じる状態のため、共有状態ライブラリや汎用的な通信基盤を追加せずReactのフックを使う。
-Go側はすでにStore契約とDB実装が分かれ、公開版の保存をSQLの条件付き更新で扱っているため、記事保存だけを包むサービス層は増やさない。外部同期・画像・バックアップ・OIDCは、それぞれ固有のI/Oと失敗条件を持つため独立したパッケージと保存契約を置く。HTTPは認証と契約、postgresはトランザクション、各機能は処理の順序を担う。編集の入力・認証と、操作の `idle / running / unknown` は分けて持つ。専用状態管理ライブラリを追加する案に対し、現在は一画面の操作に閉じるため判別可能な型と共通の実行関数で扱う。
+Go側はすでにStore契約とDB実装が分かれ、公開版の保存をSQLの条件付き更新で扱っているため、記事保存だけを包むサービス層は増やさない。外部同期・画像・バックアップ・OIDCは、それぞれ固有のI/Oと失敗条件を持つため独立したパッケージと保存契約を置く。HTTPは認証と契約、mysqlはトランザクション、各機能は処理の順序を担う。編集の入力・認証と、操作の `idle / running / unknown` は分けて持つ。専用状態管理ライブラリを追加する案に対し、現在は一画面の操作に閉じるため判別可能な型と共通の実行関数で扱う。
 
 - 切替・新規・離脱・ログアウトは同じ破棄確認を使う。結果不明なら未変更の入力でも確認し、取消時は入力と未確認状態を保持する。明示して破棄した場合だけ新しい編集へ移る。
 - 既存記事はIDで最新状態を取得してから開く。結果の再確認もIDで取得し、現在の入力は書き換えない。確認失敗やセッション切れ・再ログインでは未確認状態を解除しない。
@@ -212,12 +216,13 @@ Go側はすでにStore契約とDB実装が分かれ、公開版の保存をSQL�
 - 生存確認とDB準備状態を分離し、DB障害だけでアプリ再起動を繰り返さない。Nodeは `/healthz`、Goは `/api/healthz` と `/api/readyz` を持つ。
 - Nodeの実行入口はSSRのfetchエントリーと静的配信を接続し、API転送を担わない。SSR・静的・404・例外の外側で保護ヘッダーを適用する。
 - RDS接続は `verify-full` と同梱する公開CAで署名・ホスト名を検証する。CAは公開情報であり秘密鍵ではない。更新情報は[証明書の説明](../backend/certs/README.md)を参照。
-- [DB初期化](../infra/database/bootstrap.psql)は移行用DDLロールと通常アプリ用DMLロールを分離する。初期化・移行は明示的な単発タスクとし、アプリ起動より前に完了させる。
+- [DB初期化](../backend/cmd/bootstrap/main.go)は移行用DDLロールと通常アプリ用DMLロールを分離する。初期化・移行は明示的な単発タスクとし、アプリ起動より前に完了させる。
 - イメージはdigestで固定し、秘密値はSSM SecureStringから役割別に注入する。管理・移行用の値を通常アプリへ渡さない。
 - [疎通監視](../infra/monitoring/probe.py)はNode・API・SSRの応答を確認し、失敗と未実行を区別する。本番定義にはSNSメール購読と運用失敗ログのアラームを含める。購読先の確定・受信確認は未実施。設定の存在だけでは通知運用完了としない。CIは試験対象の監視ソースとテンプレート内の配備コピーの一致も検査する。
 
 ### 選定に関係する一次資料
 
+- [Go公式のMySQL接続入門](https://go.dev/doc/tutorial/database-access)、[MySQLドライバー](https://github.com/go-sql-driver/mysql)、[MySQLのDDL暗黙コミット](https://dev.mysql.com/doc/refman/8.4/en/implicit-commit.html)
 - [GoのHTMLテンプレート](https://pkg.go.dev/html/template)、[React SSR](https://react.dev/reference/react-dom/server/renderToPipeableStream)、[ハイドレーション](https://react.dev/reference/react-dom/client/hydrateRoot)
 - [AWSのコンテナ同居・分離の基準](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/container-considerations.html)、[ECSサービス発見](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/service-discovery.html)
 - [HTTP APIの私有統合](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-private.html)、[HTTP APIの制限](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-quotas.html)
@@ -266,7 +271,7 @@ Go側はすでにStore契約とDB実装が分かれ、公開版の保存をSQL�
 
 ## 7. DB：現在の永続モデル
 
-参照：[移行SQL](../backend/internal/postgres/migrations/001_initial.sql)、[保存処理](../backend/internal/postgres/store.go)。画像参照は記事と画像、作成キーは記事に外部キーを持つ。単一管理者のためユーザーテーブルはない。
+参照：[移行SQL](../backend/internal/mysql/migrations/001_initial.sql)、[保存処理](../backend/internal/mysql/store.go)。画像参照は記事と画像、作成キーは記事に外部キーを持つ。単一管理者のためユーザーテーブルはない。
 
 | テーブル | 主な列・型 | 意味・制約 |
 |---|---|---|
@@ -339,9 +344,9 @@ S3は非公開で、公開済み本文の画像参照をDBで照合してから�
 
 バックアップは変更世代をDBで記録する。公開反映後は速やかに、下書き・外部記事だけの変更はDBの日付境界（標準UTC）でまとめる。変更がなければ作らない。非公開化は変更前のバックアップ成功を待ち、失敗なら503で記事を変えない。通常の再試行は15分後。公開成功とバックアップ成功は区別して画面に表示する。
 
-pg_dump専用の実行環境を増やす案に対し、初回はアプリ管理データを一貫したDBスナップショットから論理JSONとして出力し、圧縮・ハッシュ検証し、画像本体も独立した非公開のバックアップ保存先へ複製する。認証セッション・一時リースは復元対象にしない。形式・スキーマ版を明示し、対応していない版は黙って復元しない。
+mysqldump専用の実行環境を増やす案に対し、初回はアプリ管理データを一貫したDBスナップショットから論理JSONとして出力し、圧縮・ハッシュ検証し、画像本体も独立した非公開のバックアップ保存先へ複製する。認証セッション・一時リースは復元対象にしない。形式・スキーマ版を明示し、対応していない版は黙って復元しない。
 
-DB JSONの見積もり合計64MiB、展開アーカイブ128MiBを上限にし、超過は失敗として保持・通知する。画像は1点ずつ最大5MiBで検証してコピーする。これは小規模ブログ向けの論理バックアップで、DBロール・全スキーマ・任意の旧版を戻すpg_dumpの代替全般ではない。RDS自動バックアップ7日も併用する。
+DB JSONの出力合計64MiB、展開アーカイブ128MiBを上限にし、超過は失敗として保持・通知する。画像は1点ずつ最大5MiBで検証してコピーする。これは小規模ブログ向けの論理バックアップで、DBロール・全スキーマ・任意の旧版を戻すmysqldumpの代替全般ではない。RDS自動バックアップ7日も併用する。
 
 開始値は取得済みアーカイブ4世代（BACKUP_RETAINで1〜30）。非公開S3は画像用とバックアップ用を分ける。本番案では旧アーカイブの非現行S3版を7日後に削除し、4世代制御で発生する保存費用を抑える。現行の画像コピーへ日数だけの削除期限を付けない。暗号化とSHA256は完全性確認に使い、WORMやアカウント侵害への保証とは扱わない。
 
@@ -374,7 +379,7 @@ DB JSONの見積もり合計64MiB、展開アーカイブ128MiBを上限にし�
 ## 12. 実装参照とLLM利用
 
 - [画面](../frontend/src/routes)、[SSR取得](../frontend/src/lib/posts.ts)、[共通Markdown](../frontend/src/components/Markdown.tsx)、[編集画面](../frontend/src/components/AdminPage.tsx)、[編集操作](../frontend/src/features/editor/useAdminEditor.ts)、[管理API通信](../frontend/src/features/editor/adminApi.ts)
-- [API](../backend/internal/httpapi/server.go)、[記事型](../backend/internal/blog/blog.go)、[保存・移行処理](../backend/internal/postgres/store.go)、[初期DDL](../backend/internal/postgres/migrations/001_initial.sql)
+- [API](../backend/internal/httpapi/server.go)、[記事型](../backend/internal/blog/blog.go)、[保存・移行処理](../backend/internal/mysql/store.go)、[初期DDL](../backend/internal/mysql/migrations/001_initial.sql)
 - [起動時検証](../backend/cmd/api/main.go)、[ローカル構成](../compose.yaml)
 
 LLMを要件整理、代案比較、UI案、コード・設定・テストの生成と修正、検証結果の整理に利用している。技術・費用・UIの主要な選択は本人が判断する。コードの確認は実行したテストとソース照合の範囲に限り、本人による全行レビューや全機能の完成を意味しない。各PRには変更目的、主要な選定理由、検証範囲・未確認事項、LLMの利用範囲を記載する。文書は最終的な仕様と理由を更新し、会話・失敗の順序や一時的な出力を保存するために増やさない。

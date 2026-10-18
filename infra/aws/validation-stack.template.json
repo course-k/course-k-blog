@@ -11,10 +11,6 @@
       "Default": "false",
       "Description": "Keep false until application prerequisites and charges are approved."
     },
-    "PostgresVersion": {
-      "Type": "String",
-      "Description": "Explicit currently supported Oregon PostgreSQL version; verify before deployment."
-    },
     "PublicOrigin": {
       "Type": "String",
       "Default": "",
@@ -98,6 +94,10 @@
         "usw2-az4"
       ],
       "Description": "Stable Oregon AZ ID supported by API Gateway VPC Link; distinct from the other zone."
+    },
+    "MysqlVersion": {
+      "Type": "String",
+      "Description": "Explicit available Oregon MySQL 8.4 LTS minor version; verify with preflight before deployment."
     }
   },
   "Conditions": {
@@ -368,8 +368,8 @@
           "Ref": "GoSg"
         },
         "IpProtocol": "tcp",
-        "FromPort": 5432,
-        "ToPort": 5432
+        "FromPort": 3306,
+        "ToPort": 3306
       }
     },
     "DbSubnets": {
@@ -389,9 +389,9 @@
     "Database": {
       "Type": "AWS::RDS::DBInstance",
       "Properties": {
-        "Engine": "postgres",
+        "Engine": "mysql",
         "EngineVersion": {
-          "Ref": "PostgresVersion"
+          "Ref": "MysqlVersion"
         },
         "DBInstanceClass": "db.t4g.micro",
         "AllocatedStorage": "20",
@@ -413,7 +413,10 @@
         "BackupRetentionPeriod": 7,
         "DeletionProtection": true,
         "CopyTagsToSnapshot": true,
-        "AutoMinorVersionUpgrade": true
+        "AutoMinorVersionUpgrade": true,
+        "DBParameterGroupName": {
+          "Ref": "DatabaseParameters"
+        }
       },
       "DeletionPolicy": "Snapshot",
       "UpdateReplacePolicy": "Snapshot"
@@ -2060,7 +2063,7 @@
             ],
             "Environment": [
               {
-                "Name": "PGHOST",
+                "Name": "DATABASE_HOST",
                 "Value": {
                   "Fn::GetAtt": [
                     "Database",
@@ -2069,19 +2072,19 @@
                 }
               },
               {
-                "Name": "PGPORT",
-                "Value": "5432"
+                "Name": "DATABASE_PORT",
+                "Value": "3306"
               },
               {
-                "Name": "PGDATABASE",
+                "Name": "DATABASE_NAME",
                 "Value": "blog"
               },
               {
-                "Name": "PGUSER",
+                "Name": "DATABASE_USER",
                 "Value": "blogowner"
               },
               {
-                "Name": "PGSSLMODE",
+                "Name": "DATABASE_TLS",
                 "Value": "verify-full"
               }
             ],
@@ -2099,7 +2102,7 @@
             },
             "Secrets": [
               {
-                "Name": "PGPASSWORD",
+                "Name": "DATABASE_PASSWORD",
                 "ValueFrom": {
                   "Fn::Join": [
                     "",
@@ -2132,6 +2135,19 @@
         ]
       },
       "Condition": "DatabaseTools"
+    },
+    "DatabaseParameters": {
+      "Type": "AWS::RDS::DBParameterGroup",
+      "Properties": {
+        "Description": "Require verified TLS clients and permit migrator-owned content triggers.",
+        "Family": "mysql8.4",
+        "Parameters": {
+          "require_secure_transport": "1",
+          "log_bin_trust_function_creators": "1",
+          "character_set_server": "utf8mb4",
+          "collation_server": "utf8mb4_0900_bin"
+        }
+      }
     }
   },
   "Outputs": {
