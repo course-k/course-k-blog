@@ -330,5 +330,26 @@
   "evidenceHandling": {
     "policy": "Publish selected verification facts and structured error summaries, not raw AWS failure responses.",
     "rawResponses": "Kept only in the ignored local validation directory; request identifiers and credentials are excluded from this document."
+  },
+  "loggingPermissionRevision": {
+    "region": "us-west-2",
+    "accessStack": "course-k-validation-access",
+    "changeSetName": "course-k-validation-logging-20261018",
+    "changedResources": [
+      "OperatorPolicy1",
+      "OperatorPolicy2"
+    ],
+    "replacement": false,
+    "executionApprovedByUser": true,
+    "stackUpdateCompleteAt": "2026-10-18T17:05:10+09:00",
+    "logPolicyReadAllowed": true,
+    "minimalCheck": {
+      "resourceCount": 3,
+      "databaseOrAppTasksCreated": false,
+      "stackStatus": "CREATE_COMPLETE",
+      "accessLogSettingsPresent": true,
+      "cleanup": "All 3 resources DELETE_COMPLETE; stack absent."
+    },
+    "limitation": "Stage configuration creation verified; actual request log delivery and application deployment not yet verified."
   }
 }
