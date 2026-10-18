@@ -10,6 +10,7 @@
 | 今どこまでできていて、何が残るか | [公開までの進捗台帳](blog-publication-roadmap-2026-10-18.md) |
 | コードと文書をどう分け、何をGitへ保存するか | [リポジトリ構成と保存方針](repository-organization.md) |
 | 本番の認証・保存・回復・配置と費用 | [本番配置と運用](../infra/production.md) |
+| 後日検討する静的配信・Lambda化の構成と費用 | [静的配信への移行構想](future-static-delivery.md)（未採用・今回の公開作業には含めない） |
 | AWS設定・検証配置・撤去の手順 | [AWS手順](../infra/README.md) |
 | ローカル起動・検証の方法 | [リポジトリREADME](../README.md) |
 
