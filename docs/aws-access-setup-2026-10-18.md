@@ -2,6 +2,10 @@
 
 2026-10-18。本人が最大72時間・予算目安10 USD（税別、上限保証ではない）のAWS検証を承認。その後、既存のCLIプロファイルは全て別用途と確認した。
 
+## 最新のアップロード対象
+
+更新連絡後の最小構成試験でも同じ拒否を確認した。取り違えを避け、今回の管理者更新には[validation-access-gateway-fix-20261018.template.json](../infra/access/validation-access-gateway-fix-20261018.template.json)を使う。確認画面の説明に`gateway permission revision 2026-10-18`があることを確かめる。元の手元ファイルは修正前へ戻る変更が残っているため、自動で上書きしない。日付付きファイルの内容・検査・限界は実検証記録を参照。
+
 ## 最新：実配備で確認した追加修正
 
 初回のアクセス設定は反映され、AssumeRoleと事前確認は成功した。ただしAPI Gateway Stageの作成時タグ操作がAccessDeniedとなり、実配備はロールバックした。利用者タグなしでも再現。アクセス用テンプレートはGatewayThroughStackの操作をapigateway:*へ修正し、元の対象リソース・オレゴン・CloudFormation経由の条件を維持した。修正版のcfn-lint・Access Analyzerは成功。本人による既存アクセス用スタックの更新待ち。検証記録の二回目の結果を参照。

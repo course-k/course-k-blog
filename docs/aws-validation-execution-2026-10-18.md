@@ -55,3 +55,17 @@ ECRへのDocker loginも端末の資格情報ストアへの書込み制限で�
 費用停止の判断はスタック削除完了と保持物の個別削除まで確認してから行う。請求の確定額は現時点で未確認であり、DB/タスク未作成だから実請求ゼロとは断定しない。
 
 LLMは権限・配置案、読み取り専用事前確認、変更セット照合、実APIの実行・失敗分析、撤去と記録に使用。本人はアクセス用スタックの管理者操作を担当。静的検査・事前確認の成功と、実配備の失敗を区別して記録する。
+
+## 更新連絡後の最小構成確認
+
+本人の更新連絡を受け、新しいSTSセッションで確認。手元の元テンプレートはGatewayThroughStackがHTTP動詞列挙へ戻る未コミット変更となっていたため、そのファイルを自動上書きしなかった。AWSに実際に反映されたポリシー本文を操作者は参照できず、原因を断定しない。
+
+DB/VPC/ECSを含む全体の再作成はせず、HttpApi/Stage/GatewayLogsの3資源のみの検証スタック`course-k-blog-validation-permission-check`で確認した。同じTagResourceのAccessDeniedが再現し、ロールバック。DB・アプリタスクは作成していない。
+
+取り違え防止のため、[日付付きのアップロード用修正版](../infra/access/validation-access-gateway-fix-20261018.template.json)を別名で用意。内容はコミット済みの修正版と説明以外が同一で、IAM資源は同じ6件、RuntimeBoundaryや出力に変更なし。元ファイルに残った変更は保持した。日付付きファイルはこの管理者更新用スナップショットであり、将来の編集対象を二つへ増やす意図ではない。
+
+修正版はcfn-lintとAWS Access Analyzer（findingsなし）を確認。本人へ確認画面の説明に`gateway permission revision 2026-10-18`が表示されることを確かめて、既存アクセス用スタックを更新するよう依頼した。反映・実動作の成功は未確認。
+
+アップロード用修正版のSHA-256：`e03ae95dcc6bec9c9eea6f0c47d3d4d2bae626d74bf36dfeb44e19593ea8ac82`。
+
+最小構成試験の3資源は全てDELETE_COMPLETEを確認し、スタック削除後のDescribeStacksでも不存在を確認。保持資源なし。
