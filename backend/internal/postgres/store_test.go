@@ -50,6 +50,19 @@ func TestPostgreSQLPersistenceAndPublishedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	summaries, err := s.ListPublic(ctx, 20, 0)
+	if err != nil {
+		t.Fatal("public list query", err)
+	}
+	foundSummary := false
+	for _, summary := range summaries {
+		if summary.ID == id {
+			foundSummary = summary.Title == "公開前"
+		}
+	}
+	if !foundSummary {
+		t.Fatal("published summary missing")
+	}
 	first := *p.PublishedAt
 	p, err = s.Save(ctx, id, "編集中", "new secret", p.Version, now.Add(time.Hour))
 	if err != nil {

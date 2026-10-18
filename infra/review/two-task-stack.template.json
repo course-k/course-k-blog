@@ -1,0 +1,2345 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Blog AWS validation in Oregon (us-west-2). Two ECS services, private RDS, HTTP API with Cloud Map. See deployment record before execution.",
+  "Parameters": {
+    "EnableRuntime": {
+      "Type": "String",
+      "AllowedValues": [
+        "false",
+        "true"
+      ],
+      "Default": "false",
+      "Description": "Keep false until application prerequisites and charges are approved."
+    },
+    "PostgresVersion": {
+      "Type": "String",
+      "Description": "Explicit currently supported Oregon PostgreSQL version; verify before deployment."
+    },
+    "PublicOrigin": {
+      "Type": "String",
+      "Default": "",
+      "Description": "HTTPS origin with no trailing slash; empty uses generated API endpoint."
+    },
+    "NodeImage": {
+      "Type": "String",
+      "Default": "",
+      "Description": "ECR image pinned by digest; required before runtime activation.",
+      "AllowedPattern": "^$|^.+@sha256:[a-f0-9]{64}$"
+    },
+    "GoImage": {
+      "Type": "String",
+      "Default": "",
+      "Description": "ECR image pinned by digest; required before runtime activation.",
+      "AllowedPattern": "^$|^.+@sha256:[a-f0-9]{64}$"
+    },
+    "DatabaseUrlParameterArn": {
+      "Type": "String",
+      "Description": "Existing SSM SecureString ARN under the AWS-managed SSM key; contains no value here.",
+      "AllowedPattern": "arn:aws:ssm:us-west-2:[0-9]{12}:parameter/.+"
+    },
+    "AdminHashParameterArn": {
+      "Type": "String",
+      "Description": "Existing SSM SecureString ARN under the AWS-managed SSM key; contains no value here.",
+      "AllowedPattern": "arn:aws:ssm:us-west-2:[0-9]{12}:parameter/.+"
+    },
+    "MigrationUrlParameterArn": {
+      "Type": "String",
+      "AllowedPattern": "arn:aws:ssm:us-west-2:[0-9]{12}:parameter/.+",
+      "Description": "Existing SSM SecureString for a dedicated schema owner, not the application DB user."
+    },
+    "EnableDatabaseTools": {
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": [
+        "false",
+        "true"
+      ],
+      "Description": "Creates one-off DB tool definitions before app services; does not run them."
+    },
+    "BootstrapImage": {
+      "Type": "String",
+      "Default": "",
+      "Description": "ARM64 bootstrap image pinned by digest; required when database tools enabled.",
+      "AllowedPattern": "^$|^.+@sha256:[a-f0-9]{64}$"
+    },
+    "AppPasswordParameterArn": {
+      "Type": "String",
+      "AllowedPattern": "arn:aws:ssm:us-west-2:[0-9]{12}:parameter/.+",
+      "Description": "SSM SecureString with generated DB role password; no value in template."
+    },
+    "MigrationPasswordParameterArn": {
+      "Type": "String",
+      "AllowedPattern": "arn:aws:ssm:us-west-2:[0-9]{12}:parameter/.+",
+      "Description": "SSM SecureString with generated DB role password; no value in template."
+    },
+    "RuntimeBoundaryArn": {
+      "Type": "String",
+      "AllowedPattern": "arn:aws:iam::[0-9]{12}:policy/.+",
+      "Description": "Runtime role permission boundary from validation access bootstrap; operator cannot modify it."
+    },
+    "AvailabilityZone1Id": {
+      "Type": "String",
+      "Default": "usw2-az1",
+      "AllowedValues": [
+        "usw2-az1",
+        "usw2-az2",
+        "usw2-az3",
+        "usw2-az4"
+      ],
+      "Description": "Stable Oregon AZ ID supported by API Gateway VPC Link; distinct from the other zone."
+    },
+    "AvailabilityZone2Id": {
+      "Type": "String",
+      "Default": "usw2-az2",
+      "AllowedValues": [
+        "usw2-az1",
+        "usw2-az2",
+        "usw2-az3",
+        "usw2-az4"
+      ],
+      "Description": "Stable Oregon AZ ID supported by API Gateway VPC Link; distinct from the other zone."
+    }
+  },
+  "Conditions": {
+    "RunApplication": {
+      "Fn::Equals": [
+        {
+          "Ref": "EnableRuntime"
+        },
+        "true"
+      ]
+    },
+    "CustomOrigin": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "PublicOrigin"
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "DatabaseTools": {
+      "Fn::Or": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "EnableDatabaseTools"
+            },
+            "true"
+          ]
+        },
+        {
+          "Condition": "RunApplication"
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "Vpc": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.42.0.0/16",
+        "EnableDnsHostnames": true,
+        "EnableDnsSupport": true
+      }
+    },
+    "Igw": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {}
+    },
+    "AttachIgw": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "InternetGatewayId": {
+          "Ref": "Igw"
+        }
+      }
+    },
+    "PublicRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        }
+      }
+    },
+    "InternetRoute": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "Igw"
+        }
+      },
+      "DependsOn": "AttachIgw"
+    },
+    "Public1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "CidrBlock": "10.42.0.0/24",
+        "MapPublicIpOnLaunch": false,
+        "AvailabilityZoneId": {
+          "Ref": "AvailabilityZone1Id"
+        }
+      }
+    },
+    "Public1Routes": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "Public1"
+        },
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        }
+      }
+    },
+    "Private1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "CidrBlock": "10.42.10.0/24",
+        "MapPublicIpOnLaunch": false,
+        "AvailabilityZoneId": {
+          "Ref": "AvailabilityZone1Id"
+        }
+      }
+    },
+    "Public2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "CidrBlock": "10.42.1.0/24",
+        "MapPublicIpOnLaunch": false,
+        "AvailabilityZoneId": {
+          "Ref": "AvailabilityZone2Id"
+        }
+      }
+    },
+    "Public2Routes": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "Public2"
+        },
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        }
+      }
+    },
+    "Private2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "CidrBlock": "10.42.11.0/24",
+        "MapPublicIpOnLaunch": false,
+        "AvailabilityZoneId": {
+          "Ref": "AvailabilityZone2Id"
+        }
+      }
+    },
+    "LinkSg": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "GroupDescription": "Link network boundary; ingress explicitly listed",
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "-1",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "NodeSg": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "GroupDescription": "Node network boundary; ingress explicitly listed",
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "-1",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "GoSg": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "GroupDescription": "Go network boundary; ingress explicitly listed",
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "-1",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "DbSg": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "GroupDescription": "Db network boundary; ingress explicitly listed",
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "-1",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "LinkToNode": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "NodeSg"
+        },
+        "SourceSecurityGroupId": {
+          "Ref": "LinkSg"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": 3000,
+        "ToPort": 3000
+      }
+    },
+    "LinkToGo": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "GoSg"
+        },
+        "SourceSecurityGroupId": {
+          "Ref": "LinkSg"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": 8081,
+        "ToPort": 8081
+      }
+    },
+    "NodeToGo": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "GoSg"
+        },
+        "SourceSecurityGroupId": {
+          "Ref": "NodeSg"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": 8081,
+        "ToPort": 8081
+      }
+    },
+    "GoToDb": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Ref": "DbSg"
+        },
+        "SourceSecurityGroupId": {
+          "Ref": "GoSg"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": 5432,
+        "ToPort": 5432
+      }
+    },
+    "DbSubnets": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupDescription": "Private database subnets",
+        "SubnetIds": [
+          {
+            "Ref": "Private1"
+          },
+          {
+            "Ref": "Private2"
+          }
+        ]
+      }
+    },
+    "Database": {
+      "Type": "AWS::RDS::DBInstance",
+      "Properties": {
+        "Engine": "postgres",
+        "EngineVersion": {
+          "Ref": "PostgresVersion"
+        },
+        "DBInstanceClass": "db.t4g.micro",
+        "AllocatedStorage": "20",
+        "StorageType": "gp3",
+        "StorageEncrypted": true,
+        "PubliclyAccessible": false,
+        "MultiAZ": false,
+        "DBName": "blog",
+        "MasterUsername": "blogowner",
+        "ManageMasterUserPassword": true,
+        "DBSubnetGroupName": {
+          "Ref": "DbSubnets"
+        },
+        "VPCSecurityGroups": [
+          {
+            "Ref": "DbSg"
+          }
+        ],
+        "BackupRetentionPeriod": 7,
+        "DeletionProtection": true,
+        "CopyTagsToSnapshot": true,
+        "AutoMinorVersionUpgrade": true
+      },
+      "DeletionPolicy": "Snapshot",
+      "UpdateReplacePolicy": "Snapshot"
+    },
+    "ImagesBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "IgnorePublicAcls": true,
+          "BlockPublicPolicy": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        }
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ImagesBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "ImagesBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "ImagesBucket",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Sub": "${ImagesBucket.Arn}/*"
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "BackupsBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "IgnorePublicAcls": true,
+          "BlockPublicPolicy": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        }
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "BackupsBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "BackupsBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "BackupsBucket",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Sub": "${BackupsBucket.Arn}/*"
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "NodeRepository": {
+      "Type": "AWS::ECR::Repository",
+      "Properties": {
+        "ImageTagMutability": "IMMUTABLE",
+        "ImageScanningConfiguration": {
+          "ScanOnPush": true
+        },
+        "EncryptionConfiguration": {
+          "EncryptionType": "AES256"
+        }
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "NodeLogs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "RetentionInDays": 14
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "GoRepository": {
+      "Type": "AWS::ECR::Repository",
+      "Properties": {
+        "ImageTagMutability": "IMMUTABLE",
+        "ImageScanningConfiguration": {
+          "ScanOnPush": true
+        },
+        "EncryptionConfiguration": {
+          "EncryptionType": "AES256"
+        }
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "GoLogs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "RetentionInDays": 14
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "GatewayLogs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "RetentionInDays": 14
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "Cluster": {
+      "Type": "AWS::ECS::Cluster",
+      "Properties": {}
+    },
+    "Namespace": {
+      "Type": "AWS::ServiceDiscovery::PrivateDnsNamespace",
+      "Properties": {
+        "Name": "blog.internal",
+        "Vpc": {
+          "Ref": "Vpc"
+        }
+      }
+    },
+    "NodeDiscovery": {
+      "Type": "AWS::ServiceDiscovery::Service",
+      "Properties": {
+        "Name": "web",
+        "NamespaceId": {
+          "Ref": "Namespace"
+        },
+        "DnsConfig": {
+          "RoutingPolicy": "MULTIVALUE",
+          "DnsRecords": [
+            {
+              "Type": "A",
+              "TTL": 10
+            },
+            {
+              "Type": "SRV",
+              "TTL": 10
+            }
+          ]
+        },
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1
+        }
+      }
+    },
+    "GoDiscovery": {
+      "Type": "AWS::ServiceDiscovery::Service",
+      "Properties": {
+        "Name": "api",
+        "NamespaceId": {
+          "Ref": "Namespace"
+        },
+        "DnsConfig": {
+          "RoutingPolicy": "MULTIVALUE",
+          "DnsRecords": [
+            {
+              "Type": "A",
+              "TTL": 10
+            },
+            {
+              "Type": "SRV",
+              "TTL": 10
+            }
+          ]
+        },
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1
+        }
+      }
+    },
+    "VpcLink": {
+      "Type": "AWS::ApiGatewayV2::VpcLink",
+      "Properties": {
+        "Name": "blog-link",
+        "SubnetIds": [
+          {
+            "Ref": "Private1"
+          },
+          {
+            "Ref": "Private2"
+          }
+        ],
+        "SecurityGroupIds": [
+          {
+            "Ref": "LinkSg"
+          }
+        ]
+      }
+    },
+    "HttpApi": {
+      "Type": "AWS::ApiGatewayV2::Api",
+      "Properties": {
+        "Name": "course-k-blog-validation",
+        "ProtocolType": "HTTP"
+      }
+    },
+    "Stage": {
+      "Type": "AWS::ApiGatewayV2::Stage",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "StageName": "$default",
+        "AutoDeploy": true,
+        "AccessLogSettings": {
+          "DestinationArn": {
+            "Fn::GetAtt": [
+              "GatewayLogs",
+              "Arn"
+            ]
+          },
+          "Format": "{\"requestId\":\"$context.requestId\",\"status\":\"$context.status\",\"route\":\"$context.routeKey\",\"integrationError\":\"$context.integrationErrorMessage\"}"
+        }
+      }
+    },
+    "NodeExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "execution",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:GetAuthorizationToken"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "NodeRepository",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "NodeLogs",
+                      "Arn"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
+        }
+      },
+      "Condition": "RunApplication"
+    },
+    "NodeTaskRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
+        }
+      },
+      "Condition": "RunApplication"
+    },
+    "NodeTask": {
+      "Type": "AWS::ECS::TaskDefinition",
+      "Properties": {
+        "Family": {
+          "Fn::Sub": "${AWS::StackName}-node"
+        },
+        "RequiresCompatibilities": [
+          "FARGATE"
+        ],
+        "NetworkMode": "awsvpc",
+        "Cpu": "512",
+        "Memory": "1024",
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX"
+        },
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "NodeExecutionRole",
+            "Arn"
+          ]
+        },
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "NodeTaskRole",
+            "Arn"
+          ]
+        },
+        "ContainerDefinitions": [
+          {
+            "Name": "node",
+            "Image": {
+              "Ref": "NodeImage"
+            },
+            "Essential": true,
+            "PortMappings": [
+              {
+                "ContainerPort": 3000,
+                "Protocol": "tcp"
+              }
+            ],
+            "Environment": [
+              {
+                "Name": "HOST",
+                "Value": "0.0.0.0"
+              },
+              {
+                "Name": "PORT",
+                "Value": "3000"
+              },
+              {
+                "Name": "NODE_ENV",
+                "Value": "production"
+              },
+              {
+                "Name": "API_BASE_URL",
+                "Value": "http://api.blog.internal:8081"
+              }
+            ],
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "NodeLogs"
+                },
+                "awslogs-region": {
+                  "Ref": "AWS::Region"
+                },
+                "awslogs-stream-prefix": "node"
+              }
+            },
+            "HealthCheck": {
+              "Command": [
+                "CMD",
+                "node",
+                "healthcheck.mjs"
+              ],
+              "Interval": 30,
+              "Timeout": 5,
+              "Retries": 3,
+              "StartPeriod": 30
+            }
+          }
+        ]
+      },
+      "Condition": "RunApplication"
+    },
+    "NodeService": {
+      "Type": "AWS::ECS::Service",
+      "Properties": {
+        "Cluster": {
+          "Ref": "Cluster"
+        },
+        "LaunchType": "FARGATE",
+        "DesiredCount": 1,
+        "TaskDefinition": {
+          "Ref": "NodeTask"
+        },
+        "DeploymentConfiguration": {
+          "MinimumHealthyPercent": 100,
+          "MaximumPercent": 200,
+          "DeploymentCircuitBreaker": {
+            "Enable": true,
+            "Rollback": true
+          }
+        },
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "AssignPublicIp": "ENABLED",
+            "Subnets": [
+              {
+                "Ref": "Public1"
+              },
+              {
+                "Ref": "Public2"
+              }
+            ],
+            "SecurityGroups": [
+              {
+                "Ref": "NodeSg"
+              }
+            ]
+          }
+        },
+        "ServiceRegistries": [
+          {
+            "RegistryArn": {
+              "Fn::GetAtt": [
+                "NodeDiscovery",
+                "Arn"
+              ]
+            },
+            "ContainerName": "node",
+            "ContainerPort": 3000
+          }
+        ],
+        "HealthCheckGracePeriodSeconds": 60,
+        "PlatformVersion": "1.4.0"
+      },
+      "Condition": "RunApplication",
+      "DependsOn": "InternetRoute"
+    },
+    "NodeIntegration": {
+      "Type": "AWS::ApiGatewayV2::Integration",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "ConnectionId": {
+          "Ref": "VpcLink"
+        },
+        "ConnectionType": "VPC_LINK",
+        "IntegrationType": "HTTP_PROXY",
+        "IntegrationMethod": "ANY",
+        "IntegrationUri": {
+          "Fn::GetAtt": [
+            "NodeDiscovery",
+            "Arn"
+          ]
+        },
+        "PayloadFormatVersion": "1.0",
+        "TimeoutInMillis": 30000,
+        "RequestParameters": {
+          "overwrite:path": "$request.path"
+        }
+      },
+      "Condition": "RunApplication"
+    },
+    "GoExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "execution",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:GetAuthorizationToken"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "GoRepository",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "GoLogs",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:GetParameters"
+                  ],
+                  "Resource": [
+                    {
+                      "Ref": "DatabaseUrlParameterArn"
+                    },
+                    {
+                      "Ref": "AdminHashParameterArn"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
+        }
+      },
+      "Condition": "RunApplication"
+    },
+    "GoTaskRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
+        }
+      },
+      "Condition": "RunApplication"
+    },
+    "GoTask": {
+      "Type": "AWS::ECS::TaskDefinition",
+      "Properties": {
+        "Family": {
+          "Fn::Sub": "${AWS::StackName}-go"
+        },
+        "RequiresCompatibilities": [
+          "FARGATE"
+        ],
+        "NetworkMode": "awsvpc",
+        "Cpu": "256",
+        "Memory": "1024",
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX"
+        },
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "GoExecutionRole",
+            "Arn"
+          ]
+        },
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "GoTaskRole",
+            "Arn"
+          ]
+        },
+        "ContainerDefinitions": [
+          {
+            "Name": "go",
+            "Image": {
+              "Ref": "GoImage"
+            },
+            "Essential": true,
+            "PortMappings": [
+              {
+                "ContainerPort": 8081,
+                "Protocol": "tcp"
+              }
+            ],
+            "Environment": [
+              {
+                "Name": "LISTEN_ADDR",
+                "Value": "0.0.0.0:8081"
+              },
+              {
+                "Name": "APP_ORIGIN",
+                "Value": {
+                  "Fn::If": [
+                    "CustomOrigin",
+                    {
+                      "Ref": "PublicOrigin"
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "HttpApi",
+                        "ApiEndpoint"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "GoLogs"
+                },
+                "awslogs-region": {
+                  "Ref": "AWS::Region"
+                },
+                "awslogs-stream-prefix": "go"
+              }
+            },
+            "Secrets": [
+              {
+                "Name": "DATABASE_URL",
+                "ValueFrom": {
+                  "Ref": "DatabaseUrlParameterArn"
+                }
+              },
+              {
+                "Name": "ADMIN_PASSWORD_HASH",
+                "ValueFrom": {
+                  "Ref": "AdminHashParameterArn"
+                }
+              }
+            ],
+            "HealthCheck": {
+              "Command": [
+                "CMD",
+                "/usr/local/bin/api",
+                "healthcheck"
+              ],
+              "Interval": 30,
+              "Timeout": 5,
+              "Retries": 3,
+              "StartPeriod": 30
+            }
+          }
+        ]
+      },
+      "Condition": "RunApplication"
+    },
+    "GoService": {
+      "Type": "AWS::ECS::Service",
+      "Properties": {
+        "Cluster": {
+          "Ref": "Cluster"
+        },
+        "LaunchType": "FARGATE",
+        "DesiredCount": 1,
+        "TaskDefinition": {
+          "Ref": "GoTask"
+        },
+        "DeploymentConfiguration": {
+          "MinimumHealthyPercent": 100,
+          "MaximumPercent": 200,
+          "DeploymentCircuitBreaker": {
+            "Enable": true,
+            "Rollback": true
+          }
+        },
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "AssignPublicIp": "ENABLED",
+            "Subnets": [
+              {
+                "Ref": "Public1"
+              },
+              {
+                "Ref": "Public2"
+              }
+            ],
+            "SecurityGroups": [
+              {
+                "Ref": "GoSg"
+              }
+            ]
+          }
+        },
+        "ServiceRegistries": [
+          {
+            "RegistryArn": {
+              "Fn::GetAtt": [
+                "GoDiscovery",
+                "Arn"
+              ]
+            },
+            "ContainerName": "go",
+            "ContainerPort": 8081
+          }
+        ],
+        "HealthCheckGracePeriodSeconds": 60,
+        "PlatformVersion": "1.4.0"
+      },
+      "Condition": "RunApplication",
+      "DependsOn": "InternetRoute"
+    },
+    "GoIntegration": {
+      "Type": "AWS::ApiGatewayV2::Integration",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "ConnectionId": {
+          "Ref": "VpcLink"
+        },
+        "ConnectionType": "VPC_LINK",
+        "IntegrationType": "HTTP_PROXY",
+        "IntegrationMethod": "ANY",
+        "IntegrationUri": {
+          "Fn::GetAtt": [
+            "GoDiscovery",
+            "Arn"
+          ]
+        },
+        "PayloadFormatVersion": "1.0",
+        "TimeoutInMillis": 30000,
+        "RequestParameters": {
+          "overwrite:path": "$request.path"
+        }
+      },
+      "Condition": "RunApplication"
+    },
+    "ApiRoot": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "RouteKey": "ANY /api",
+        "AuthorizationType": "NONE",
+        "Target": {
+          "Fn::Join": [
+            "/",
+            [
+              "integrations",
+              {
+                "Ref": "GoIntegration"
+              }
+            ]
+          ]
+        }
+      },
+      "Condition": "RunApplication"
+    },
+    "ApiChildren": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "RouteKey": "ANY /api/{proxy+}",
+        "AuthorizationType": "NONE",
+        "Target": {
+          "Fn::Join": [
+            "/",
+            [
+              "integrations",
+              {
+                "Ref": "GoIntegration"
+              }
+            ]
+          ]
+        }
+      },
+      "Condition": "RunApplication"
+    },
+    "Screens": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApi"
+        },
+        "RouteKey": "$default",
+        "AuthorizationType": "NONE",
+        "Target": {
+          "Fn::Join": [
+            "/",
+            [
+              "integrations",
+              {
+                "Ref": "NodeIntegration"
+              }
+            ]
+          ]
+        }
+      },
+      "Condition": "RunApplication"
+    },
+    "NodeCPUUtilizationAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "RunApplication",
+      "Properties": {
+        "Namespace": "AWS/ECS",
+        "MetricName": "CPUUtilization",
+        "Dimensions": [
+          {
+            "Name": "ClusterName",
+            "Value": {
+              "Ref": "Cluster"
+            }
+          },
+          {
+            "Name": "ServiceName",
+            "Value": {
+              "Fn::GetAtt": [
+                "NodeService",
+                "Name"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "EvaluationPeriods": 2,
+        "Threshold": 80,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "NodeMemoryUtilizationAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "RunApplication",
+      "Properties": {
+        "Namespace": "AWS/ECS",
+        "MetricName": "MemoryUtilization",
+        "Dimensions": [
+          {
+            "Name": "ClusterName",
+            "Value": {
+              "Ref": "Cluster"
+            }
+          },
+          {
+            "Name": "ServiceName",
+            "Value": {
+              "Fn::GetAtt": [
+                "NodeService",
+                "Name"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "EvaluationPeriods": 2,
+        "Threshold": 80,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "GoCPUUtilizationAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "RunApplication",
+      "Properties": {
+        "Namespace": "AWS/ECS",
+        "MetricName": "CPUUtilization",
+        "Dimensions": [
+          {
+            "Name": "ClusterName",
+            "Value": {
+              "Ref": "Cluster"
+            }
+          },
+          {
+            "Name": "ServiceName",
+            "Value": {
+              "Fn::GetAtt": [
+                "GoService",
+                "Name"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "EvaluationPeriods": 2,
+        "Threshold": 80,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "GoMemoryUtilizationAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "RunApplication",
+      "Properties": {
+        "Namespace": "AWS/ECS",
+        "MetricName": "MemoryUtilization",
+        "Dimensions": [
+          {
+            "Name": "ClusterName",
+            "Value": {
+              "Ref": "Cluster"
+            }
+          },
+          {
+            "Name": "ServiceName",
+            "Value": {
+              "Fn::GetAtt": [
+                "GoService",
+                "Name"
+              ]
+            }
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "EvaluationPeriods": 2,
+        "Threshold": 80,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "GatewayErrorAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "RunApplication",
+      "Properties": {
+        "Namespace": "AWS/ApiGateway",
+        "MetricName": "5xx",
+        "Dimensions": [
+          {
+            "Name": "ApiId",
+            "Value": {
+              "Ref": "HttpApi"
+            }
+          }
+        ],
+        "Statistic": "Sum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "DatabaseStorageAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "Namespace": "AWS/RDS",
+        "MetricName": "FreeStorageSpace",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": {
+              "Ref": "Database"
+            }
+          }
+        ],
+        "Statistic": "Minimum",
+        "Period": 300,
+        "EvaluationPeriods": 2,
+        "Threshold": 2147483648,
+        "ComparisonOperator": "LessThanThreshold",
+        "TreatMissingData": "missing",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "MigrationExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "execution",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:GetAuthorizationToken"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "GoRepository",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "GoLogs",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:GetParameters"
+                  ],
+                  "Resource": [
+                    {
+                      "Ref": "MigrationUrlParameterArn"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
+        }
+      },
+      "Condition": "DatabaseTools"
+    },
+    "MigrationTask": {
+      "Type": "AWS::ECS::TaskDefinition",
+      "Properties": {
+        "Family": {
+          "Fn::Sub": "${AWS::StackName}-migration"
+        },
+        "RequiresCompatibilities": [
+          "FARGATE"
+        ],
+        "NetworkMode": "awsvpc",
+        "Cpu": "256",
+        "Memory": "1024",
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX"
+        },
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "MigrationExecutionRole",
+            "Arn"
+          ]
+        },
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "MigrationTaskRole",
+            "Arn"
+          ]
+        },
+        "ContainerDefinitions": [
+          {
+            "Name": "go",
+            "Image": {
+              "Ref": "GoImage"
+            },
+            "Essential": true,
+            "PortMappings": [
+              {
+                "ContainerPort": 8081,
+                "Protocol": "tcp"
+              }
+            ],
+            "Environment": [
+              {
+                "Name": "LISTEN_ADDR",
+                "Value": "0.0.0.0:8081"
+              },
+              {
+                "Name": "APP_ORIGIN",
+                "Value": {
+                  "Fn::If": [
+                    "CustomOrigin",
+                    {
+                      "Ref": "PublicOrigin"
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "HttpApi",
+                        "ApiEndpoint"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "GoLogs"
+                },
+                "awslogs-region": {
+                  "Ref": "AWS::Region"
+                },
+                "awslogs-stream-prefix": "go"
+              }
+            },
+            "Secrets": [
+              {
+                "Name": "DATABASE_URL",
+                "ValueFrom": {
+                  "Ref": "MigrationUrlParameterArn"
+                }
+              }
+            ],
+            "Command": [
+              "migrate"
+            ]
+          }
+        ]
+      },
+      "Condition": "DatabaseTools"
+    },
+    "AlarmTopic": {
+      "Type": "AWS::SNS::Topic"
+    },
+    "ProbeLogs": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "RetentionInDays": 14
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "ProbeRole": {
+      "Type": "AWS::IAM::Role",
+      "Condition": "RunApplication",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "probe-log-only",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "ProbeLogs",
+                      "Arn"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
+        }
+      }
+    },
+    "ProbeFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Condition": "RunApplication",
+      "Properties": {
+        "Runtime": "python3.13",
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "ProbeRole",
+            "Arn"
+          ]
+        },
+        "MemorySize": 128,
+        "Timeout": 20,
+        "Environment": {
+          "Variables": {
+            "ENDPOINT": {
+              "Fn::GetAtt": [
+                "HttpApi",
+                "ApiEndpoint"
+              ]
+            }
+          }
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "ProbeLogs"
+          }
+        },
+        "Code": {
+          "ZipFile": "\"\"\"External read-only probe. No credentials, response bodies or request headers logged.\"\"\"\nimport json\nimport os\nimport urllib.request\n\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n    def redirect_request(self, req, fp, code, msg, headers, newurl):\n        return None\n\ndef check(base, opener):\n    for path in ['/healthz', '/api/readyz', '/']:\n        with opener.open(base.rstrip('/') + path, timeout=5) as response:\n            if response.status != 200:\n                raise RuntimeError('probe status failure')\n            if path != '/':\n                if json.loads(response.read(1024)).get('ok') is not True:\n                    raise RuntimeError('probe body failure')\n            elif 'text/html' not in response.headers.get('Content-Type', ''):\n                raise RuntimeError('probe content type failure')\n\ndef handler(event, context):\n    # The endpoint is configured by the stack, never supplied by a public event.\n    try:\n        check(os.environ['ENDPOINT'], urllib.request.build_opener(NoRedirect))\n    except Exception:\n        print('external probe failed')\n        raise RuntimeError('external probe failed') from None\n    return {'ok': True}\n"
+        }
+      }
+    },
+    "ProbeSchedule": {
+      "Type": "AWS::Events::Rule",
+      "Condition": "RunApplication",
+      "Properties": {
+        "ScheduleExpression": "rate(15 minutes)",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "ProbeFunction",
+                "Arn"
+              ]
+            },
+            "Id": "ExternalProbe",
+            "RetryPolicy": {
+              "MaximumRetryAttempts": 0,
+              "MaximumEventAgeInSeconds": 60
+            }
+          }
+        ]
+      }
+    },
+    "ProbePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Condition": "RunApplication",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "ProbeFunction"
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "ProbeSchedule",
+            "Arn"
+          ]
+        }
+      }
+    },
+    "ProbeErrorAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "RunApplication",
+      "Properties": {
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Errors",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "ProbeFunction"
+            }
+          }
+        ],
+        "Statistic": "Sum",
+        "Period": 900,
+        "EvaluationPeriods": 1,
+        "Threshold": 0,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "notBreaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "ProbeInvocationAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Condition": "RunApplication",
+      "Properties": {
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Invocations",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "ProbeFunction"
+            }
+          }
+        ],
+        "Statistic": "Sum",
+        "Period": 900,
+        "EvaluationPeriods": 2,
+        "Threshold": 1,
+        "ComparisonOperator": "LessThanThreshold",
+        "TreatMissingData": "breaching",
+        "AlarmActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "AlarmTopic"
+          }
+        ]
+      }
+    },
+    "BootstrapRepository": {
+      "Type": "AWS::ECR::Repository",
+      "Properties": {
+        "ImageTagMutability": "IMMUTABLE",
+        "ImageScanningConfiguration": {
+          "ScanOnPush": true
+        },
+        "EncryptionConfiguration": {
+          "EncryptionType": "AES256"
+        }
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "MigrationTaskRole": {
+      "Type": "AWS::IAM::Role",
+      "Condition": "DatabaseTools",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
+        }
+      }
+    },
+    "BootstrapExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ecs-tasks.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "execution",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:GetAuthorizationToken"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "BootstrapRepository",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "GoLogs",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:GetParameters"
+                  ],
+                  "Resource": [
+                    {
+                      "Ref": "AppPasswordParameterArn"
+                    },
+                    {
+                      "Ref": "MigrationPasswordParameterArn"
+                    }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "Database",
+                      "MasterUserSecret.SecretArn"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "PermissionsBoundary": {
+          "Ref": "RuntimeBoundaryArn"
+        }
+      },
+      "Condition": "DatabaseTools"
+    },
+    "BootstrapTask": {
+      "Type": "AWS::ECS::TaskDefinition",
+      "Properties": {
+        "Family": {
+          "Fn::Sub": "${AWS::StackName}-bootstrap"
+        },
+        "RequiresCompatibilities": [
+          "FARGATE"
+        ],
+        "NetworkMode": "awsvpc",
+        "Cpu": "256",
+        "Memory": "1024",
+        "RuntimePlatform": {
+          "CpuArchitecture": "ARM64",
+          "OperatingSystemFamily": "LINUX"
+        },
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "BootstrapExecutionRole",
+            "Arn"
+          ]
+        },
+        "TaskRoleArn": {
+          "Fn::GetAtt": [
+            "MigrationTaskRole",
+            "Arn"
+          ]
+        },
+        "ContainerDefinitions": [
+          {
+            "Name": "bootstrap",
+            "Image": {
+              "Ref": "BootstrapImage"
+            },
+            "Essential": true,
+            "PortMappings": [
+              {
+                "ContainerPort": 8081,
+                "Protocol": "tcp"
+              }
+            ],
+            "Environment": [
+              {
+                "Name": "PGHOST",
+                "Value": {
+                  "Fn::GetAtt": [
+                    "Database",
+                    "Endpoint.Address"
+                  ]
+                }
+              },
+              {
+                "Name": "PGPORT",
+                "Value": "5432"
+              },
+              {
+                "Name": "PGDATABASE",
+                "Value": "blog"
+              },
+              {
+                "Name": "PGUSER",
+                "Value": "blogowner"
+              },
+              {
+                "Name": "PGSSLMODE",
+                "Value": "verify-full"
+              }
+            ],
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {
+                "awslogs-group": {
+                  "Ref": "GoLogs"
+                },
+                "awslogs-region": {
+                  "Ref": "AWS::Region"
+                },
+                "awslogs-stream-prefix": "go"
+              }
+            },
+            "Secrets": [
+              {
+                "Name": "PGPASSWORD",
+                "ValueFrom": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "Database",
+                          "MasterUserSecret.SecretArn"
+                        ]
+                      },
+                      ":password::"
+                    ]
+                  ]
+                }
+              },
+              {
+                "Name": "BLOG_APP_PASSWORD",
+                "ValueFrom": {
+                  "Ref": "AppPasswordParameterArn"
+                }
+              },
+              {
+                "Name": "BLOG_MIGRATOR_PASSWORD",
+                "ValueFrom": {
+                  "Ref": "MigrationPasswordParameterArn"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "Condition": "DatabaseTools"
+    }
+  },
+  "Outputs": {
+    "ApiEndpoint": {
+      "Value": {
+        "Fn::GetAtt": [
+          "HttpApi",
+          "ApiEndpoint"
+        ]
+      }
+    },
+    "DbEndpoint": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Database",
+          "Endpoint.Address"
+        ]
+      }
+    },
+    "DbAdminSecretArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Database",
+          "MasterUserSecret.SecretArn"
+        ]
+      }
+    },
+    "NodeRepository": {
+      "Value": {
+        "Fn::GetAtt": [
+          "NodeRepository",
+          "RepositoryUri"
+        ]
+      }
+    },
+    "GoRepository": {
+      "Value": {
+        "Fn::GetAtt": [
+          "GoRepository",
+          "RepositoryUri"
+        ]
+      }
+    },
+    "ImagesBucket": {
+      "Value": {
+        "Ref": "ImagesBucket"
+      }
+    },
+    "BackupsBucket": {
+      "Value": {
+        "Ref": "BackupsBucket"
+      }
+    },
+    "AlarmTopicArn": {
+      "Value": {
+        "Ref": "AlarmTopic"
+      }
+    },
+    "BootstrapRepository": {
+      "Value": {
+        "Fn::GetAtt": [
+          "BootstrapRepository",
+          "RepositoryUri"
+        ]
+      }
+    },
+    "BootstrapTaskDefinition": {
+      "Condition": "DatabaseTools",
+      "Value": {
+        "Ref": "BootstrapTask"
+      }
+    },
+    "MigrationTaskDefinition": {
+      "Condition": "DatabaseTools",
+      "Value": {
+        "Ref": "MigrationTask"
+      }
+    }
+  },
+  "Rules": {
+    "NodeImageRequired": {
+      "RuleCondition": {
+        "Fn::Equals": [
+          {
+            "Ref": "EnableRuntime"
+          },
+          "true"
+        ]
+      },
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "NodeImage"
+                  },
+                  ""
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "NodeImage must be a digest-pinned image when runtime is enabled."
+        }
+      ]
+    },
+    "GoImageRequired": {
+      "RuleCondition": {
+        "Fn::Equals": [
+          {
+            "Ref": "EnableRuntime"
+          },
+          "true"
+        ]
+      },
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "GoImage"
+                  },
+                  ""
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "GoImage must be a digest-pinned image when runtime is enabled."
+        }
+      ]
+    },
+    "ToolImagesRequired": {
+      "RuleCondition": {
+        "Fn::Or": [
+          {
+            "Fn::Equals": [
+              {
+                "Ref": "EnableDatabaseTools"
+              },
+              "true"
+            ]
+          },
+          {
+            "Fn::Equals": [
+              {
+                "Ref": "EnableRuntime"
+              },
+              "true"
+            ]
+          }
+        ]
+      },
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "BootstrapImage"
+                  },
+                  ""
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "BootstrapImage must be specified before creating database tool definitions."
+        },
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "GoImage"
+                  },
+                  ""
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "GoImage must be specified before creating database tool definitions."
+        }
+      ]
+    },
+    "DistinctAvailabilityZones": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "AvailabilityZone1Id"
+                  },
+                  {
+                    "Ref": "AvailabilityZone2Id"
+                  }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "Choose two different Oregon Availability Zone IDs."
+        }
+      ]
+    }
+  }
+}

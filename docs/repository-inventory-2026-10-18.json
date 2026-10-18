@@ -1,0 +1,237 @@
+{
+  "measuredOn": "2026-10-18",
+  "basis": "Tracked blob contents before this documentation consolidation; excludes .git, ignored files, remote runtime resources and this change itself.",
+  "references": {
+    "HEAD": {
+      "commit": "cd2cb161b2cfc82014b50aa383887d41a29e9ab1",
+      "files": 102,
+      "bytes": 2096512,
+      "groups": {
+        ".github": {
+          "files": 1,
+          "bytes": 230
+        },
+        "(root)": {
+          "files": 4,
+          "bytes": 12948
+        },
+        "backend": {
+          "files": 18,
+          "bytes": 220577
+        },
+        "docs": {
+          "files": 42,
+          "bytes": 1496034
+        },
+        "frontend": {
+          "files": 22,
+          "bytes": 175040
+        },
+        "infra": {
+          "files": 11,
+          "bytes": 180756
+        },
+        "scripts": {
+          "files": 4,
+          "bytes": 10927
+        }
+      },
+      "documentationFormats": {
+        "md": {
+          "files": 27,
+          "bytes": 277509
+        },
+        "json": {
+          "files": 12,
+          "bytes": 1213138
+        },
+        "csv": {
+          "files": 1,
+          "bytes": 2367
+        },
+        "yml": {
+          "files": 1,
+          "bytes": 1242
+        },
+        "log": {
+          "files": 1,
+          "bytes": 1778
+        }
+      }
+    },
+    "origin/main": {
+      "commit": "641da15770a677287327da04357aae1684e5c19d",
+      "files": 47,
+      "bytes": 284567,
+      "groups": {
+        ".github": {
+          "files": 1,
+          "bytes": 230
+        },
+        "(root)": {
+          "files": 4,
+          "bytes": 12345
+        },
+        "backend": {
+          "files": 14,
+          "bytes": 39857
+        },
+        "docs": {
+          "files": 7,
+          "bytes": 57184
+        },
+        "frontend": {
+          "files": 18,
+          "bytes": 170803
+        },
+        "scripts": {
+          "files": 3,
+          "bytes": 4148
+        }
+      },
+      "documentationFormats": {
+        "md": {
+          "files": 7,
+          "bytes": 57184
+        }
+      }
+    },
+    "origin/feat/adopted-blog-ui": {
+      "commit": "cb649c7141d27f07518c7d9a48e8d707eac4a9ca",
+      "files": 118,
+      "bytes": 2856474,
+      "groups": {
+        ".github": {
+          "files": 1,
+          "bytes": 230
+        },
+        "(root)": {
+          "files": 4,
+          "bytes": 12948
+        },
+        "backend": {
+          "files": 18,
+          "bytes": 220577
+        },
+        "docs": {
+          "files": 51,
+          "bytes": 2248399
+        },
+        "frontend": {
+          "files": 30,
+          "bytes": 211486
+        },
+        "infra": {
+          "files": 10,
+          "bytes": 151907
+        },
+        "scripts": {
+          "files": 4,
+          "bytes": 10927
+        }
+      },
+      "documentationFormats": {
+        "md": {
+          "files": 28,
+          "bytes": 274497
+        },
+        "json": {
+          "files": 13,
+          "bytes": 1208387
+        },
+        "csv": {
+          "files": 1,
+          "bytes": 2367
+        },
+        "png": {
+          "files": 7,
+          "bytes": 760128
+        },
+        "yml": {
+          "files": 1,
+          "bytes": 1242
+        },
+        "log": {
+          "files": 1,
+          "bytes": 1778
+        }
+      }
+    },
+    "branchBoundary": {
+      "uiOnlyFiles": [
+        "docs/ui-ux-evidence/implementation/admin-desktop.png",
+        "docs/ui-ux-evidence/implementation/admin-mobile.png",
+        "docs/ui-ux-evidence/implementation/article-1280.png",
+        "docs/ui-ux-evidence/implementation/article-320.png",
+        "docs/ui-ux-evidence/implementation/article-390.png",
+        "docs/ui-ux-evidence/implementation/list-1280.png",
+        "docs/ui-ux-evidence/implementation/list-390.png",
+        "docs/ui-ux-evidence/implementation/results.json",
+        "docs/ui-ux-implementation-2026-10-18.md",
+        "docs/ui-ux-review-handoff-2026-10-18.md",
+        "frontend/src/components/Article.tsx",
+        "frontend/src/components/ArticleCard.tsx",
+        "frontend/src/components/ArticleList.tsx",
+        "frontend/src/components/Editor.tsx",
+        "frontend/ui-test.config.ts",
+        "frontend/ui-tests/fixture.tsx",
+        "frontend/ui-tests/ssr.test.mjs",
+        "frontend/ui-tests/verify.mjs"
+      ],
+      "workOnlyFiles": [
+        "docs/ui-ux-backend-integration-review-2026-10-18.md",
+        "infra/access/validation-access-snapshot-fix-20261018.template.json"
+      ]
+    }
+  },
+  "ignoredLocalSamples": {
+    "config": {
+      "files": 3579,
+      "bytes": 238367086
+    },
+    "frontend/node_modules": {
+      "files": 9318,
+      "bytes": 168334733
+    },
+    "frontend/dist": {
+      "files": 21,
+      "bytes": 2509865
+    }
+  },
+  "integrationSnapshot": {
+    "commit": "291a2a731771973c27c0d6148abe1359d032e327",
+    "basis": "After UI merge into AWS branch, before these integration-reference documentation edits.",
+    "files": 122,
+    "bytes": 2918341,
+    "groups": {
+      ".github": {
+        "files": 1,
+        "bytes": 230
+      },
+      "(root)": {
+        "files": 4,
+        "bytes": 6443
+      },
+      "backend": {
+        "files": 18,
+        "bytes": 220577
+      },
+      "docs": {
+        "files": 54,
+        "bytes": 2287922
+      },
+      "frontend": {
+        "files": 30,
+        "bytes": 211486
+      },
+      "infra": {
+        "files": 11,
+        "bytes": 180756
+      },
+      "scripts": {
+        "files": 4,
+        "bytes": 10927
+      }
+    }
+  }
+}

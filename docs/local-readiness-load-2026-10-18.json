@@ -1,0 +1,741 @@
+{
+  "date": "2026-10-18",
+  "status": "local preliminary only; not Fargate/RDS or full workload capacity proof",
+  "dataset": "200 published posts, each 50KiB Markdown; isolated disposable PostgreSQL; alternating list and detail requests",
+  "constraints": {
+    "Go": "0.25vCPU/1GiB",
+    "NodeBefore": "0.25vCPU/1GiB",
+    "NodeAfter": "0.5vCPU/1GiB"
+  },
+  "before": {
+    "phases": [
+      {
+        "rate": 1,
+        "durationSeconds": 60,
+        "requests": 60,
+        "errors": 0,
+        "p95Seconds": 0.5873687920393422,
+        "maxSeconds": 1.4918811250245199,
+        "elapsedSeconds": 59.099326292052865
+      },
+      {
+        "rate": 10,
+        "durationSeconds": 60,
+        "requests": 600,
+        "errors": 0,
+        "p95Seconds": 5.608880250016227,
+        "maxSeconds": 7.807087207911536,
+        "elapsedSeconds": 75.29823049996048
+      }
+    ],
+    "dockerStats": [
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.00%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.76%",
+        "MemUsage": "7.812MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "62.8kB / 66.5kB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "5.55%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "8.51%",
+        "MemUsage": "87.14MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "383kB / 38.3kB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.11%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.76%",
+        "MemUsage": "7.824MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "230kB / 240kB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "12.45%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "16.35%",
+        "MemUsage": "167.4MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "556kB / 508kB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.66%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.77%",
+        "MemUsage": "7.84MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "447kB / 463kB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "15.20%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "18.78%",
+        "MemUsage": "192.3MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "732kB / 885kB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.12%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.81%",
+        "MemUsage": "8.297MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "559kB / 580kB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "17.77%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "22.15%",
+        "MemUsage": "226.8MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "958kB / 1.36MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.57%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.82%",
+        "MemUsage": "8.363MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "776kB / 802kB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "3.98%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "25.90%",
+        "MemUsage": "265.2MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "1.13MB / 1.72MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.10%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.81%",
+        "MemUsage": "8.328MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "943kB / 976kB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "6.92%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "27.32%",
+        "MemUsage": "279.7MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "1.3MB / 2.08MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.09%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.81%",
+        "MemUsage": "8.336MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "1.11MB / 1.15MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "3.78%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "27.29%",
+        "MemUsage": "279.4MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "1.47MB / 2.44MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.12%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.82%",
+        "MemUsage": "8.348MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "1.32MB / 1.37MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "8.71%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "27.70%",
+        "MemUsage": "283.7MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "1.65MB / 2.82MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.10%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.82%",
+        "MemUsage": "8.363MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "1.49MB / 1.54MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "7.58%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "28.96%",
+        "MemUsage": "296.5MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "1.87MB / 3.29MB",
+        "PIDs": "30"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.41%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.82%",
+        "MemUsage": "8.387MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "1.76MB / 1.82MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "24.91%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "27.89%",
+        "MemUsage": "285.6MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "2.16MB / 3.79MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "2.60%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.91%",
+        "MemUsage": "9.285MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "3.26MB / 3.36MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "25.75%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "32.14%",
+        "MemUsage": "329.1MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "3.71MB / 7.02MB",
+        "PIDs": "30"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "2.05%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.94%",
+        "MemUsage": "9.676MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "4.6MB / 4.73MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "26.16%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "32.78%",
+        "MemUsage": "335.6MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "4.86MB / 9.14MB",
+        "PIDs": "30"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "1.49%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.00%",
+        "MemUsage": "10.29MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "5.44MB / 5.6MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "25.12%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "33.13%",
+        "MemUsage": "339.2MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "6.24MB / 12MB",
+        "PIDs": "30"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "1.98%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.99%",
+        "MemUsage": "10.14MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "7.1MB / 7.31MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "25.94%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "33.52%",
+        "MemUsage": "343.3MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "7.38MB / 14.4MB",
+        "PIDs": "30"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "1.62%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.99%",
+        "MemUsage": "10.18MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "8.55MB / 8.8MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "25.44%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "30.92%",
+        "MemUsage": "316.6MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "9.49MB / 18.8MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "3.65%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.04%",
+        "MemUsage": "10.63MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "10.7MB / 11MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "24.99%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "32.57%",
+        "MemUsage": "333.5MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "10.9MB / 21.7MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.00%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.00%",
+        "MemUsage": "10.23MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "11.6MB / 11.9MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "24.94%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "32.48%",
+        "MemUsage": "332.6MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "12.3MB / 25.2MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "3.81%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.11%",
+        "MemUsage": "11.38MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "13.6MB / 14MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "25.67%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "38.86%",
+        "MemUsage": "397.9MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "14.4MB / 28.4MB",
+        "PIDs": "30"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.00%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.00%",
+        "MemUsage": "10.29MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "14.5MB / 14.9MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "24.70%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "39.23%",
+        "MemUsage": "401.8MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "15.3MB / 31.5MB",
+        "PIDs": "31"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.30%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.99%",
+        "MemUsage": "10.17MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "16.2MB / 16.7MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "24.84%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "39.44%",
+        "MemUsage": "403.9MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "17.1MB / 34.1MB",
+        "PIDs": "30"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "2.50%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.11%",
+        "MemUsage": "11.32MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "17.9MB / 18.5MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "24.46%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "39.57%",
+        "MemUsage": "405.2MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "18.8MB / 38MB",
+        "PIDs": "30"
+      }
+    ]
+  },
+  "after": {
+    "phases": [
+      {
+        "rate": 10,
+        "durationSeconds": 60,
+        "requests": 600,
+        "errors": 0,
+        "p95Seconds": 0.09485504205804318,
+        "maxSeconds": 0.28781783301383257,
+        "elapsedSeconds": 59.93952979100868
+      }
+    ],
+    "dockerStats": [
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.82%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "0.97%",
+        "MemUsage": "9.922MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "18.6MB / 19.1MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "27.42%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "37.81%",
+        "MemUsage": "387.2MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "19.8MB / 41.2MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.71%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.02%",
+        "MemUsage": "10.41MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "20.4MB / 21MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "25.30%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "37.81%",
+        "MemUsage": "387.2MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "21.4MB / 44.5MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.66%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.01%",
+        "MemUsage": "10.3MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "21.9MB / 22.6MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "24.25%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "37.80%",
+        "MemUsage": "387.1MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "23.3MB / 48.5MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "1.02%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.04%",
+        "MemUsage": "10.63MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "24MB / 24.7MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "29.84%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "37.87%",
+        "MemUsage": "387.8MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "24.9MB / 52MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.47%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.06%",
+        "MemUsage": "10.9MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "25.8MB / 26.6MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "37.33%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "37.77%",
+        "MemUsage": "386.7MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "26.7MB / 55.9MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.99%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.05%",
+        "MemUsage": "10.76MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "27.3MB / 28.1MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "24.18%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "37.71%",
+        "MemUsage": "386.1MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "28.9MB / 60.5MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.63%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.05%",
+        "MemUsage": "10.78MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "29.1MB / 30MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "30.00%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "37.88%",
+        "MemUsage": "387.9MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "30.8MB / 64.5MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.59%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.06%",
+        "MemUsage": "10.9MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "31.2MB / 32.2MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "26.55%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "37.88%",
+        "MemUsage": "387.9MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "32.4MB / 67.9MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "1.54%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.07%",
+        "MemUsage": "10.98MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "33MB / 34MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "22.69%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "37.75%",
+        "MemUsage": "386.6MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "34.3MB / 71.9MB",
+        "PIDs": "23"
+      },
+      {
+        "BlockIO": "0B / 0B",
+        "CPUPerc": "0.45%",
+        "Container": "course-k-readiness-api-1",
+        "ID": "c59009061082",
+        "MemPerc": "1.07%",
+        "MemUsage": "10.96MiB / 1GiB",
+        "Name": "course-k-readiness-api-1",
+        "NetIO": "34.6MB / 35.7MB",
+        "PIDs": "9"
+      },
+      {
+        "BlockIO": "0B / 4.1kB",
+        "CPUPerc": "31.51%",
+        "Container": "course-k-readiness-web-1",
+        "ID": "ff24faeb2cc9",
+        "MemPerc": "37.88%",
+        "MemUsage": "387.9MiB / 1GiB",
+        "Name": "course-k-readiness-web-1",
+        "NetIO": "36.1MB / 75.9MB",
+        "PIDs": "23"
+      }
+    ]
+  },
+  "htmlBytes": {
+    "listBefore": 1036687,
+    "listAfter": 12367,
+    "listApiAfter": 3293
+  },
+  "notes": [
+    "All phases after list payload reduction; normal 1rps duration 60s rather than originally proposed 10min.",
+    "No external import, dump, image traffic, TLS gateway, RDS latency or browser asset timing included.",
+    "Docker Desktop local shared host; no CPU/RAM claims for AWS."
+  ]
+}

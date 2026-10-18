@@ -8,9 +8,12 @@
   "scripts": {
     "dev": "rsbuild dev",
     "build": "rsbuild build",
-    "start": "srvx --prod -s ../client dist/server/index.js",
+    "start": "node server.mjs",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:runtime": "node --test runtime.test.mjs",
+    "test:ui": "rsbuild build --config ui-test.config.ts && node ui-tests/verify.mjs",
+    "test:ssr": "node --test ui-tests/ssr.test.mjs"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.44",
