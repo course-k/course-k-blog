@@ -54,3 +54,9 @@ func Token() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), err
 }
 func Digest(token string) string { s := sha256.Sum256([]byte(token)); return hex.EncodeToString(s[:]) }
+
+// Tokens are canonical unpadded base64url encodings of 32 random bytes.
+func ValidToken(value string) bool {
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	return err == nil && len(decoded) == 32 && base64.RawURLEncoding.EncodeToString(decoded) == value
+}

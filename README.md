@@ -42,6 +42,8 @@ docker compose up --build
 
 一覧は `http://localhost:8080`、管理は `http://localhost:8080/admin`。Originを照合するため、`127.0.0.1`へ読み替えない。生成したローカル認証情報は `config/local-login.txt` で本人が確認し、共有しない。既存設定は自動上書きしない。3ファイルの一部だけがある場合も生成を止める。既存DBを使う場合は対応する設定一式をバックアップから復元し、DBのパスワードだけを生成し直さない。新しい使い捨て環境なら、既存DBと切り離した上で設定一式を作る。プロセス中断で部分生成が残った場合も同様に扱う。
 
+画像挿入、外部記事の補正/同期、バックアップ状態は同じ管理画面内にある。ローカルの自動同期は公開媒体へ低頻度で接続する。固定データのテストではこれを停止する。本番認証・保存先・復元コマンドは[運用手順](infra/production.md)を参照。
+
 停止は `docker compose down`。データボリュームを消す `down -v` は通常の停止に使わない。ローカルDBの起動成功や再起動後の保持を、本番のバックアップ復元成功と扱わない。
 
 ## 検証の種類と実行順
@@ -58,7 +60,7 @@ go -C backend mod download
 | 文書・構文 | `python3 scripts/check-repository.py` | Git管理対象と新規ファイルの相対リンク、JSON・Python構文、差分の空白。外部URLやMarkdownの見出しアンカー、AWSの意味的な妥当性は検査しない |
 | フロント基本 | `npm --prefix frontend run check` | 本番ビルド→本体と試験の型検査→runtime→管理API通信→固定APIのSSR。ビルドでルート型を生成するため、この順序で実行 |
 | 固定APIの画面 | `npm --prefix frontend run test:ui` | Chrome、一時プロファイル、架空の固定API。画面幅・表示・操作・失敗時の復帰をオフラインで確認。実Go・DBへ接続しない |
-| Goの基本 | `TEST_DATABASE_URL= TEST_TLS_DATABASE_URL= go -C backend test -race -v ./...` と `go -C backend vet ./...` | 認証・HTTP・保存契約等。実DBとTLS専用試験はSKIPするため、実PostgreSQLやTLSの成功と扱わない |
+| Goの基本 | `TEST_DATABASE_URL= TEST_TLS_DATABASE_URL= go -C backend test -race -v ./...` と `go -C backend vet ./...` | 認証・HTTP・保存契約等。実DB・TLS専用・外部媒体の実取得試験はSKIPするため、実PostgreSQLやTLSの成功と扱わない |
 | 実PostgreSQL | 下記の専用DB手順 | 移行・公開版分離・競合・セッション等を実DBで確認。テストデータの作成・削除を伴う |
 | 設定生成補助 | `node --test scripts/local-config.test.mjs` | 一時ディレクトリで設定の部分生成・失敗時の復帰を確認。実秘密値や既存DBは使わない |
 | AWS操作補助 | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/aws -p 'test_*.py' -v` | 偽のAWS応答を使い、対象・実行順・秘密値の扱いを確認。AWS CLIを起動しない |
@@ -104,13 +106,21 @@ go -C backend test -count=1 -race -v ./internal/postgres -run '^TestTLSVerificat
 node scripts/test-local-e2e.mjs
 ```
 
-ビルドと起動、実ブラウザでの仮記事の保存・公開・更新・非公開・ログアウトを確認し、成功・失敗ともそのプロジェクトのコンテナ・ボリューム・ローカルイメージを撤去する。アプリの既存データは使わない。一時認証情報の親ディレクトリは0700で隔離し、Linuxの非rootコンテナにも読めるよう、コンテナへ渡す2ファイルだけを0444にする。通常設定の生成は0600のまま。ビルド等の子処理は10分で打ち切る。
+ビルドと起動、実ブラウザでの仮記事の保存・公開・更新・非公開・ログアウト、外部記事補正の一覧反映、下書き/差し替え画像の匿名拒否とバックアップ状態を確認し、成功・失敗ともそのプロジェクトのコンテナ・ボリューム・ローカルイメージを撤去する。アプリの既存データは使わない。一時認証情報の親ディレクトリは0700で隔離し、Linuxの非rootコンテナにも読めるよう、コンテナへ渡す2ファイルだけを0444にする。通常設定の生成は0600のまま。ビルド等の子処理は10分で打ち切る。
 強制終了やDocker停止では後始末できない場合があるため、その実行で表示された `blog-e2e-…` のプロジェクトだけを確認・撤去する。清掃失敗時は対象名と一時設定の場所を案内する。
 出力はGit対象外の `frontend/test-results/` 等へ保存する。
 
 自分で専用環境を管理する場合は `RUN_LOCAL_E2E=1 BLOG_E2E_ORIGIN=http://localhost:対象ポート BLOG_E2E_LOGIN_FILE=専用ログイン情報ファイル npm --prefix frontend run test:e2e` で明示する。この直接実行ではデータの撤去を呼出側が担う。宛先はloopback HTTPに限定し、実行フラグがなければ記事作成前に失敗する。
 
 `node scripts/check-restart.mjs` は対象ComposeのDB・API・Webを再起動する別の明示操作であり、通常の検査には含めない。
+
+### 外部媒体の実取得
+
+通常試験とCIは固定応答で、本人の公開記事を毎回取得しない。形式と取得範囲の確認が必要なときだけ次を明示実行する。本文はDB/Gitへ保存しない。媒体の現在のrobots・利用条件・API枠を確認し、連続実行しない。
+
+```sh
+TEST_LIVE_EXTERNAL=1 go -C backend test -count=1 -v ./internal/external -run TestLiveOwnerMetadata
+```
 
 ## PRで確認する範囲
 

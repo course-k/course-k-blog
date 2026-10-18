@@ -2,18 +2,24 @@ package postgres
 
 import (
 	"context"
-	"coursek/blog/backend/internal/blog"
 	"crypto/sha256"
 	"database/sql"
-	_ "embed"
+	"embed"
 	"errors"
 	"fmt"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"io/fs"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"coursek/blog/backend/internal/blog"
 )
 
-//go:embed migrations/001_initial.sql
-var initialMigrationSQL string
+//go:embed migrations/*.sql
+var migrationFiles embed.FS
 
 // All migration commands share this lock to serialize schema changes.
 const migrationLockID = 406188019
@@ -53,23 +59,38 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if _, err = tx.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS schema_migrations (version integer PRIMARY KEY, checksum text NOT NULL)"); err != nil {
 		return err
 	}
-	checksum := fmt.Sprintf("%x", sha256.Sum256([]byte(initialMigrationSQL)))
-	var existing string
-	err = tx.QueryRowContext(ctx, "SELECT checksum FROM schema_migrations WHERE version=1").Scan(&existing)
-	if err == nil {
-		if existing != checksum {
-			return errors.New("migration checksum changed")
+	files, err := fs.Glob(migrationFiles, "migrations/*.sql")
+	if err != nil {
+		return err
+	}
+	sort.Strings(files)
+	for _, name := range files {
+		version, err := strconv.Atoi(strings.Split(strings.TrimPrefix(name, "migrations/"), "_")[0])
+		if err != nil {
+			return err
 		}
-		return tx.Commit()
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, initialMigrationSQL); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO schema_migrations VALUES (1,$1)", checksum); err != nil {
-		return err
+		script, err := migrationFiles.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		checksum := fmt.Sprintf("%x", sha256.Sum256(script))
+		var existing string
+		err = tx.QueryRowContext(ctx, "SELECT checksum FROM schema_migrations WHERE version=$1", version).Scan(&existing)
+		if err == nil {
+			if existing != checksum {
+				return errors.New("migration checksum changed")
+			}
+			continue
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, string(script)); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, "INSERT INTO schema_migrations VALUES ($1,$2)", version, checksum); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -141,45 +162,39 @@ func (s *Store) GetAdmin(ctx context.Context, id string) (blog.Post, error) {
 	return scanAdmin(s.db.QueryRowContext(ctx, "SELECT "+adminColumns+" FROM posts WHERE id=$1", id))
 }
 func (s *Store) Create(ctx context.Context, p blog.Post) error {
-	_, err := s.db.ExecContext(ctx, "INSERT INTO posts (id,title,markdown,updated_at) VALUES ($1,$2,$3,$4)", p.ID, p.Title, p.Markdown, p.UpdatedAt)
-	return err
-}
-
-// A conditional update returns no row for both missing IDs and stale versions.
-func (s *Store) readPostUpdateResult(ctx context.Context, id string, row scanner) (blog.Post, error) {
-	p, err := scanAdmin(row)
-	if !errors.Is(err, blog.ErrNotFound) {
-		return p, err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
 	}
-	var exists bool
-	if e := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM posts WHERE id=$1)", id).Scan(&exists); e != nil {
-		return p, e
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, "INSERT INTO posts (id,title,markdown,updated_at) VALUES($1,$2,$3,$4)", p.ID, p.Title, p.Markdown, p.UpdatedAt); err != nil {
+		return err
 	}
-	if exists {
-		return p, blog.ErrConflict
+	if err = replaceImageRefs(ctx, tx, p, "working"); err != nil {
+		return err
 	}
-	return p, blog.ErrNotFound
+	return tx.Commit()
 }
 func (s *Store) Save(ctx context.Context, id, title, markdown string, version int64, now time.Time) (blog.Post, error) {
-	return s.readPostUpdateResult(ctx, id, s.db.QueryRowContext(ctx, `UPDATE posts
+	return s.updatePost(ctx, id, `UPDATE posts
         SET title=$2, markdown=$3, updated_at=$5, version=version+1
         WHERE id=$1 AND version=$4
-        RETURNING `+adminColumns, id, title, markdown, version, now))
+        RETURNING `+adminColumns, "working", id, title, markdown, version, now)
 }
 func (s *Store) Publish(ctx context.Context, id string, version int64, now time.Time) (blog.Post, error) {
-	return s.readPostUpdateResult(ctx, id, s.db.QueryRowContext(ctx, `UPDATE posts
+	return s.updatePost(ctx, id, `UPDATE posts
 		SET published=true,
             published_title=title, published_markdown=markdown,
             published_at=COALESCE(published_at, $3), public_updated_at=$3,
             updated_at=$3, version=version+1
 		WHERE id=$1 AND version=$2
-		RETURNING `+adminColumns, id, version, now))
+		RETURNING `+adminColumns, "published", id, version, now)
 }
 func (s *Store) Unpublish(ctx context.Context, id string, version int64, now time.Time) (blog.Post, error) {
-	return s.readPostUpdateResult(ctx, id, s.db.QueryRowContext(ctx, `UPDATE posts
+	return s.updatePost(ctx, id, `UPDATE posts
         SET published=false, updated_at=$3, version=version+1
         WHERE id=$1 AND version=$2
-        RETURNING `+adminColumns, id, version, now))
+        RETURNING `+adminColumns, "", id, version, now)
 }
 func (s *Store) PutSession(ctx context.Context, se blog.Session) error {
 	tx, err := s.db.BeginTx(ctx, nil)

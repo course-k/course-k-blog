@@ -55,6 +55,7 @@ try {
   api:
     environment:
       APP_ORIGIN: http://localhost:${port}
+      EXTERNAL_SYNC_ENABLED: "false"
   gateway:
     ports: !override ["127.0.0.1:${port}:8080"]
 secrets:
@@ -73,6 +74,9 @@ secrets:
     await new Promise(resolve => setTimeout(resolve, 500))
   }
   if (!ready) throw new Error('Disposable API did not become ready')
+  // Fixed metadata isolates acceptance tests from upstream availability and article changes.
+  await run('docker', [...compose, 'exec', '-T', 'db', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'blog', '-d', 'blog_test', '-c',
+    "INSERT INTO external_posts(source,source_id,title,url,published_at) VALUES('qiita','e2e-external','外部の記事の元タイトル','https://qiita.com/course_k/items/e2e-external','2020-01-01T00:00:00Z')"])
   await run('npm', ['run', 'test:e2e'], {
     cwd: `${root}frontend`, env: { ...process.env, RUN_LOCAL_E2E: '1',
       BLOG_E2E_ORIGIN: origin, BLOG_E2E_LOGIN_FILE: join(directory, 'local-login.txt') },
