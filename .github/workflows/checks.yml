@@ -125,3 +125,6 @@ jobs:
       - run: node scripts/test-local-e2e.mjs
         env:
           PLAYWRIGHT_CHANNEL: chromium
+      - run: node scripts/test-local-e2e.mjs --single-task
+        env:
+          PLAYWRIGHT_CHANNEL: chromium

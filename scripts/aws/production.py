@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import sys
 
+from single_task import consolidate_runtime
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -109,6 +111,7 @@ def production_template():
         'PublicDnsZoneId': {'Value': {'Fn::GetAtt': ['PublicDomain', 'RegionalHostedZoneId']}},
         'RuntimeBoundaryArn': {'Value': ref('ProductionRuntimeBoundary')},
     })
+    consolidate_runtime(template)
     return template
 
 

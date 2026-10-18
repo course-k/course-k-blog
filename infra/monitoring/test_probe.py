@@ -22,9 +22,9 @@ class ProbeTest(unittest.TestCase):
         class Opener:
             def open(self, url, timeout):
                 paths.append(url)
-                return Reply(b'<html></html>', 'text/html') if url.endswith('/') else Reply(b'{"ok":true}')
+                return Reply(b'<html></html>', 'text/html') if url.endswith('/?page=1') else Reply(b'{"ok":true}')
         check('https://example.test', Opener())
-        self.assertEqual(paths, ['https://example.test/healthz','https://example.test/api/readyz','https://example.test/'])
+        self.assertEqual(paths, ['https://example.test/healthz','https://example.test/api/readyz','https://example.test/?page=1'])
     def test_failure_is_not_reported_as_success(self):
         for body in [b'{"ok":false}',b'<login>']:
             class Opener:

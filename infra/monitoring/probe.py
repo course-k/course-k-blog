@@ -8,11 +8,11 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 def check(base, opener):
-    for path in ['/healthz', '/api/readyz', '/']:
+    for path in ['/healthz', '/api/readyz', '/?page=1']:
         with opener.open(base.rstrip('/') + path, timeout=5) as response:
             if response.status != 200:
                 raise RuntimeError('probe status failure')
-            if path != '/':
+            if path != '/?page=1':
                 if json.loads(response.read(1024)).get('ok') is not True:
                     raise RuntimeError('probe body failure')
             elif 'text/html' not in response.headers.get('Content-Type', ''):

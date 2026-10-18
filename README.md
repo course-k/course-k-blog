@@ -25,9 +25,9 @@ docs/          現行設計と採用理由、進捗台帳、保存方針
 config/         ローカル秘密値・キャッシュ・作業ファイル（Git対象外）
 ```
 
-フロントとGoは別々にビルド・配備する。ソースが同じリポジトリにあることは、同じコンテナや同時配備を意味しない。現時点では共通パッケージがなく、ルートのnpm workspaceや追加のビルド統括ツールは導入していない。
+フロントとGoは別々のイメージへビルドする。本番はNginxを含め同じタスクで配備する。ソースやイメージの責務と配備単位を区別する。現時点では共通パッケージがなく、ルートのnpm workspaceや追加のビルド統括ツールは導入していない。
 
-ローカルはCaddyでNodeとGoへ振り分ける。AWSの採用構成はHTTP API → VPC Link → Cloud Map → Node／Goの別ECSサービスで、DBは非公開RDS。ComposeのDBはローカル開発用。
+ローカルはCaddyでNodeとGoへ振り分ける。AWSの採用構成はHTTP API → VPC Link → Cloud Map → Nginx／Node／Goの1タスクで、DBは非公開RDS。ComposeのDBはローカル開発用。
 
 ## ローカル起動
 
@@ -121,6 +121,8 @@ node scripts/test-local-e2e.mjs
 ```sh
 TEST_LIVE_EXTERNAL=1 go -C backend test -count=1 -v ./internal/external -run TestLiveOwnerMetadata
 ```
+
+本番のタスク内接続を模した検証は `node scripts/test-local-e2e.mjs --single-task`。Nginx/Node/Goがネットワークを共有し、localhostで接続する。通常のCaddy構成もCIで検証する。共有CPU・IAM・ECSによる更新を再現する試験ではない。
 
 ## PRで確認する範囲
 
