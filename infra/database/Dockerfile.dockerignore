@@ -1,8 +1,8 @@
 **
 !infra/
 !infra/database/
-!infra/database/bootstrap.psql
 !infra/database/Dockerfile
 !backend/
-!backend/certs/
-!backend/certs/rds-global-bundle.crt
+!backend/**
+backend/config
+backend/.git

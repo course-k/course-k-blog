@@ -1,4 +1,4 @@
-package postgres
+package mysql
 
 import (
 	"context"
@@ -14,7 +14,7 @@ func isolatedStore(t *testing.T) *Store {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("dedicated PostgreSQL not configured")
+		t.Skip("dedicated MySQL not configured")
 	}
 	target, err := url.Parse(dsn)
 	if err != nil || !strings.HasSuffix(target.Path, "_test") {
@@ -29,19 +29,17 @@ func isolatedStore(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 	schema := "feature_test_" + hex.EncodeToString(suffix[:])
-	if _, err = owner.db.ExecContext(context.Background(), "CREATE SCHEMA "+schema); err != nil {
+	if _, err = owner.db.ExecContext(context.Background(), "CREATE DATABASE "+schema+" CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin"); err != nil {
 		t.Fatal(err)
 	}
-	query := target.Query()
-	query.Set("search_path", schema+",public")
-	target.RawQuery = query.Encode()
+	target.Path = "/" + schema
 	store, err := Open(context.Background(), target.String())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		store.Close()
-		owner.db.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+		owner.db.ExecContext(context.Background(), "DROP DATABASE "+schema)
 		owner.Close()
 	})
 	if err = store.Migrate(context.Background()); err != nil {

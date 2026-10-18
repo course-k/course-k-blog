@@ -7,10 +7,10 @@ if (!connection) {
   throw new Error('TEST_DATABASE_URLで専用のテストDBを指定してください。既存の開発DBへは自動接続しません。')
 }
 const target = new URL(connection)
-if (!['postgres:', 'postgresql:'].includes(target.protocol) || !target.pathname.endsWith('_test')) {
-  throw new Error('DB名が_testで終わるPostgreSQLの専用接続先が必要です。')
+if (!['mysql:'].includes(target.protocol) || !target.pathname.endsWith('_test')) {
+  throw new Error('DB名が_testで終わるMySQLの専用接続先が必要です。')
 }
-const result = spawnSync('go', ['test', '-count=1', '-race', '-v', './internal/postgres'], {
+const result = spawnSync('go', ['test', '-count=1', '-race', '-v', './internal/mysql'], {
   cwd: `${root}backend`, stdio: 'inherit',
   env: { ...process.env, TEST_TLS_DATABASE_URL: '', GOCACHE: `${root}config/go-build`, GOPATH: `${root}config/go-path` },
 })

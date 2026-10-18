@@ -20,7 +20,7 @@ ARN = f'arn:aws:cloudformation:us-west-2:{ACCOUNT}:stack/{STACK}/instance-a'
 def example():
     config = json.loads((core.ROOT / 'infra/aws/validation-environment.example.json').read_text())
     config.update(account=ACCOUNT, stack=STACK)
-    config['parameters']['PostgresVersion'] = '17.11'
+    config['parameters']['MysqlVersion'] = '8.4.11'
     for key in [name for name in config['parameters'] if name.endswith('ParameterArn')]:
         if key in config['parameters']:
             parts = config['parameters'][key].split(':')
@@ -231,7 +231,7 @@ class BoundaryTests(unittest.TestCase):
             validation.put_secrets(session, path)
         self.assertEqual(session.calls, [])
 
-    def test_preflight_does_not_substitute_postgres_version(self):
+    def test_preflight_does_not_substitute_mysql_version(self):
         spec = importlib.util.spec_from_file_location('preflight', core.ROOT / 'scripts/aws-validation-preflight.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -243,10 +243,10 @@ class BoundaryTests(unittest.TestCase):
             if args[:2] == ('ec2', 'describe-availability-zones'):
                 return {'AvailabilityZones': []}
             if args[:2] == ('rds', 'describe-db-engine-versions'):
-                return {'DBEngineVersions': [{'EngineVersion': '17.12', 'Status': 'available'}]}
+                return {'DBEngineVersions': [{'EngineVersion': '8.4.12', 'Status': 'available'}]}
             raise AssertionError('Do not continue to other operations.')
         with self.assertRaises(ValueError):
-            module.run_checks(call, ACCOUNT, 'template', '17.11')
+            module.run_checks(call, ACCOUNT, 'template', '8.4.11')
         self.assertEqual(len(calls), 3)
 
 

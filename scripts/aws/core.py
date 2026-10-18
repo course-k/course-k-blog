@@ -101,8 +101,8 @@ class AwsError(RuntimeError):
 
 class Session:
     def __init__(self, config, cli=None):
-        if config['account'] == '000000000000' or not re.fullmatch(r'17\.\d+', config['parameters'].get('PostgresVersion', '')):
-            raise ConfigurationError('Replace account and PostgreSQL placeholders before contacting AWS.')
+        if config['account'] == '000000000000' or not re.fullmatch(r'8\.4\.\d+', config['parameters'].get('MysqlVersion', '')):
+            raise ConfigurationError('Replace account and MySQL placeholders before contacting AWS.')
         self.config = config
         self.cli = cli or os.getenv('AWS_VALIDATION_CLI') or shutil.which('aws')
         if not self.cli:

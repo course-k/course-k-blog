@@ -249,7 +249,11 @@
                 "rds:AddTagsToResource",
                 "rds:RemoveTagsFromResource",
                 "rds:ListTagsForResource",
-                "rds:CreateDBSnapshot"
+                "rds:CreateDBSnapshot",
+                "rds:CreateDBParameterGroup",
+                "rds:ModifyDBParameterGroup",
+                "rds:ResetDBParameterGroup",
+                "rds:DeleteDBParameterGroup"
               ],
               "Resource": {
                 "Fn::Sub": "arn:${AWS::Partition}:rds:us-west-2:${AWS::AccountId}:*:course-k-blog-validation-*"

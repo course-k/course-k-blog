@@ -17,16 +17,16 @@ def run_checks(call, expected_account, template, requested_version=None):
     zones = call('ec2', 'describe-availability-zones', '--filters',
                  'Name=zone-id,Values=usw2-az1,usw2-az2')
     available = {z['ZoneId'] for z in zones.get('AvailabilityZones', []) if z.get('State') == 'available'}
-    versions = call('rds', 'describe-db-engine-versions', '--engine', 'postgres')
-    postgres17 = sorted({v['EngineVersion'] for v in versions.get('DBEngineVersions', [])
-                         if v.get('EngineVersion', '').startswith('17.') and v.get('Status') == 'available'},
+    versions = call('rds', 'describe-db-engine-versions', '--engine', 'mysql')
+    mysql84 = sorted({v['EngineVersion'] for v in versions.get('DBEngineVersions', [])
+                         if v.get('EngineVersion', '').startswith('8.4.') and v.get('Status') == 'available'},
                         key=lambda value: tuple(int(n) for n in re.findall(r'\d+', value)))
-    if not postgres17:
-        raise ConfigurationError('No available PostgreSQL 17 version returned; do not guess an engine version.')
-    chosen = requested_version or postgres17[-1]
-    if chosen not in postgres17:
-        raise ConfigurationError('Configured PostgreSQL version is not available; do not substitute silently.')
-    options = call('rds', 'describe-orderable-db-instance-options', '--engine', 'postgres',
+    if not mysql84:
+        raise ConfigurationError('No available MySQL 8.4 version returned; do not guess an engine version.')
+    chosen = requested_version or mysql84[-1]
+    if chosen not in mysql84:
+        raise ConfigurationError('Configured MySQL version is not available; do not substitute silently.')
+    options = call('rds', 'describe-orderable-db-instance-options', '--engine', 'mysql',
                    '--engine-version', chosen, '--db-instance-class', 'db.t4g.micro')
     gp3 = [o for o in options.get('OrderableDBInstanceOptions', [])
            if o.get('StorageType') == 'gp3' and o.get('MinStorageSize', 999) <= 20 <= o.get('MaxStorageSize', 0)]
@@ -36,7 +36,7 @@ def run_checks(call, expected_account, template, requested_version=None):
     validation = call('cloudformation', 'validate-template', '--template-body', 'file://' + str(template))
     return {'region': REGION, 'identity': identity['Arn'],
             'zoneIds': sorted(available), 'requiredZonesAvailable': {'usw2-az1', 'usw2-az2'} <= available,
-            'postgres17Versions': postgres17, 'postgresVersionCandidate': chosen,
+            'mysql84Versions': mysql84, 'mysqlVersionCandidate': chosen,
             'microGp3_20GiBOrderable': bool(gp3),
             'fargateOnDemandQuotas': [{k: q[k] for k in ('QuotaName', 'QuotaCode', 'Value') if k in q} for q in on_demand],
             'cloudFormationCapabilities': validation.get('Capabilities', []),
@@ -59,7 +59,7 @@ def main():
         raise ConfigurationError('Template exceeds direct validation limit.')
     compact.write_text(body)
     compact.chmod(0o600)
-    report = run_checks(session.call, config['account'], compact, config['parameters']['PostgresVersion'])
+    report = run_checks(session.call, config['account'], compact, config['parameters']['MysqlVersion'])
     private_json(STATE / config['stack'] / 'preflight-result.json', report)
     print(json.dumps(report, indent=2))
     if not report['requiredZonesAvailable'] or not report['microGp3_20GiBOrderable']:

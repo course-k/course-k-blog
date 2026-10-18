@@ -9,6 +9,18 @@ class ProductionTemplateTest(unittest.TestCase):
         self.template = production_template()
         self.resources = self.template['Resources']
 
+    def test_database_uses_mysql_and_only_application_ingress(self):
+        database = self.resources['Database']['Properties']
+        self.assertEqual(database['Engine'], 'mysql')
+        self.assertEqual(database['EngineVersion'], {'Ref': 'MysqlVersion'})
+        self.assertFalse(database['PubliclyAccessible'])
+        params = self.resources['DatabaseParameters']['Properties']
+        self.assertEqual(params['Family'], 'mysql8.4')
+        self.assertEqual(params['Parameters']['require_secure_transport'], '1')
+        rules = [r['Properties'] for r in self.resources.values() if r['Type'] == 'AWS::EC2::SecurityGroupIngress' and r['Properties']['GroupId'] == {'Ref': 'DbSg'}]
+        self.assertEqual(len(rules), 1)
+        self.assertEqual((rules[0]['FromPort'], rules[0]['ToPort']), (3306, 3306))
+
     def test_runtime_cannot_start_without_owner_and_uses_no_password_secret(self):
         self.assertEqual(self.template['Parameters']['EnableRuntime']['Default'], 'false')
         self.assertIn('RuntimeRequiresOwner', self.template['Rules'])

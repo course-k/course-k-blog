@@ -1,4 +1,4 @@
-// Package backup creates versioned application snapshots, not PostgreSQL cluster dumps.
+// Package backup creates versioned application snapshots, not database-server dumps.
 package backup
 
 import (
@@ -29,9 +29,10 @@ func encodeJSON(value any) ([]byte, error) {
 var ErrInvalid = errors.New("backup archive is invalid or unsupported")
 
 type Snapshot struct {
-	SchemaVersion int                        `json:"schemaVersion"`
-	Generation    int64                      `json:"generation"`
-	Tables        map[string]json.RawMessage `json:"tables"`
+	DatabaseEngine string                     `json:"databaseEngine,omitempty"`
+	SchemaVersion  int                        `json:"schemaVersion"`
+	Generation     int64                      `json:"generation"`
+	Tables         map[string]json.RawMessage `json:"tables"`
 }
 type envelope struct {
 	Format  int             `json:"format"`

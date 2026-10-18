@@ -29,12 +29,12 @@ func TestRestoreTargetCannotSelectLiveDatabase(t *testing.T) {
 		dsn     string
 		allowed bool
 	}{
-		{"postgres://localhost/blog", false},
+		{"mysql://localhost/blog", false},
 		{"https://example.invalid/blog_restore", false},
-		{"postgres://localhost/blog_restore", true},
-		{"postgres://localhost/blog_test", true},
-		{"postgres://localhost/blog_test?other=production", true},
-		{"postgres://localhost/production?label=_test", false},
+		{"mysql://localhost/blog_restore", true},
+		{"mysql://localhost/blog_test", true},
+		{"mysql://localhost/blog_test?other=production", true},
+		{"mysql://localhost/production?label=_test", false},
 	}
 	for _, tc := range cases {
 		if got := restoreTarget(tc.dsn); got != tc.allowed {

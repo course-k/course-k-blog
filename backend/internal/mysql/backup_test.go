@@ -1,4 +1,4 @@
-package postgres
+package mysql
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -133,11 +134,16 @@ func TestRepresentativeBlogBackupAndRestore(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	// 200 public articles with separate 50 KiB working/public snapshots, not an empty DB.
-	_, err := source.db.ExecContext(ctx, `INSERT INTO posts(id,title,markdown,published_title,published_markdown,published,published_at,public_updated_at,updated_at)
- SELECT 'capacity-'||n,'記事 '||n,repeat('x',50*1024),'記事 '||n,repeat('x',50*1024),true,now(),now(),now() FROM generate_series(1,200) AS n`)
-	if err != nil {
-		t.Fatal(err)
+	for i := 0; i < 200; i++ {
+		post := blog.Post{ID: fmt.Sprintf("capacity-%d", i), Title: fmt.Sprintf("記事 %d", i), Markdown: strings.Repeat("x", 50*1024), UpdatedAt: time.Now().UTC(), Version: 1}
+		if err := source.Create(ctx, post); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := source.Publish(ctx, post.ID, 1, post.UpdatedAt); err != nil {
+			t.Fatal(err)
+		}
 	}
+
 	service := backup.Service{Repository: source, Media: blob.Files{Directory: t.TempDir()}, Archives: blob.Files{Directory: t.TempDir()}, Retain: 4}
 	started := time.Now()
 	if err := service.Take(ctx, true); err != nil {

@@ -1,16 +1,18 @@
 # Local development dependencies. Production uses managed RDS.
 services:
   db:
-    image: postgres:17-alpine
+    image: mysql:8.4
+    command: ["--log-bin-trust-function-creators=ON"]
     environment:
-      POSTGRES_DB: blog_test
-      POSTGRES_USER: blog
-      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      MYSQL_DATABASE: blog_test
+      MYSQL_USER: blog
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_password
+      MYSQL_PASSWORD_FILE: /run/secrets/db_password
     secrets: [db_password]
-    volumes: [postgres_data:/var/lib/postgresql/data]
-    ports: ["127.0.0.1:5432:5432"]
+    volumes: [mysql_data:/var/lib/mysql]
+    ports: ["127.0.0.1:3307:3306"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U blog -d blog_test"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 --silent"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -19,11 +21,11 @@ services:
     command: [migrate]
     environment: &api_environment
       APP_ORIGIN: http://localhost:8080
-      DATABASE_HOST: db:5432
+      DATABASE_HOST: db:3306
       DATABASE_NAME: blog_test
       DATABASE_USER: blog
       DATABASE_PASSWORD_FILE: /run/secrets/db_password
-      DATABASE_SSLMODE: disable
+      DATABASE_TLS: "false"
       ADMIN_PASSWORD_HASH_FILE: /run/secrets/admin_hash
       LISTEN_ADDR: 0.0.0.0:8081
       EXTERNAL_SYNC_ENABLED: "true"
@@ -60,6 +62,6 @@ secrets:
   db_password: { file: ./config/db-password.txt }
   admin_hash: { file: ./config/admin-hash.txt }
 volumes:
-  postgres_data:
+  mysql_data:
   media_data:
   backup_data:

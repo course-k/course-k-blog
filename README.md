@@ -1,6 +1,6 @@
 # course-k-blog
 
-自作記事とnote・Qiita・Wantedlyの本人記事を、自分のドメインで案内するブログ。React／TypeScript・TanStack StartのSSR、Go API、PostgreSQLを一つのリポジトリで管理する。
+自作記事とnote・Qiita・Wantedlyの本人記事を、自分のドメインで案内するブログ。React／TypeScript・TanStack StartのSSR、Go API、MySQLを一つのリポジトリで管理する。
 
 ## 最初に読むもの
 
@@ -60,41 +60,36 @@ go -C backend mod download
 | 文書・構文 | `python3 scripts/check-repository.py` | Git管理対象と新規ファイルの相対リンク、JSON・Python構文、差分の空白。外部URLやMarkdownの見出しアンカー、AWSの意味的な妥当性は検査しない |
 | フロント基本 | `npm --prefix frontend run check` | 本番ビルド→本体と試験の型検査→runtime→管理API通信→固定APIのSSR。ビルドでルート型を生成するため、この順序で実行 |
 | 固定APIの画面 | `npm --prefix frontend run test:ui` | Chrome、一時プロファイル、架空の固定API。画面幅・表示・操作・失敗時の復帰をオフラインで確認。実Go・DBへ接続しない |
-| Goの基本 | `TEST_DATABASE_URL= TEST_TLS_DATABASE_URL= go -C backend test -race -v ./...` と `go -C backend vet ./...` | 認証・HTTP・保存契約等。実DB・TLS専用・外部媒体の実取得試験はSKIPするため、実PostgreSQLやTLSの成功と扱わない |
-| 実PostgreSQL | 下記の専用DB手順 | 移行・公開版分離・競合・セッション等を実DBで確認。テストデータの作成・削除を伴う |
+| Goの基本 | `TEST_DATABASE_URL= TEST_TLS_DATABASE_URL= go -C backend test -race -v ./...` と `go -C backend vet ./...` | 認証・HTTP・保存契約等。実DB・TLS専用・外部媒体の実取得試験はSKIPするため、実MySQLやTLSの成功と扱わない |
+| 実MySQL | 下記の専用DB手順 | 移行・公開版分離・競合・セッション等を実DBで確認。テストデータの作成・削除を伴う |
 | 設定生成補助 | `node --test scripts/local-config.test.mjs` | 一時ディレクトリで設定の部分生成・失敗時の復帰を確認。実秘密値や既存DBは使わない |
 | AWS操作補助 | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/aws -p 'test_*.py' -v` | 偽のAWS応答を使い、対象・実行順・秘密値の扱いを確認。AWS CLIを起動しない |
 | 監視 | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s infra/monitoring -p 'test_*.py' -v` | 応答の判定と配備コピーの一致を確認。実際の通知到達を意味しない |
 | ローカル通し確認 | 下記の明示実行手順 | 実ブラウザ→SSR/API→実DB。仮記事を作成・公開・更新・非公開にする |
 | AWS実経路 | [AWS手順](infra/README.md) | 対象・課金・公開範囲を確認して別途実施。通常のPR検証から実行しない |
 
-### 実PostgreSQLの専用環境
+### 実MySQLの専用環境
 
 既存の開発DBや本番DBへ自動接続しない。DB名が `_test` で終わる専用接続先を `TEST_DATABASE_URL` で明示する。次は独立した一時コンテナの例で、Dockerが必要。
 
 ```sh
-docker run --rm -d --name course-k-blog-postgres-check \
-  -e POSTGRES_DB=blog_test -e POSTGRES_USER=blog \
-  -e POSTGRES_HOST_AUTH_METHOD=trust \
-  -p 127.0.0.1:15432:5432 postgres:17-alpine
-docker exec course-k-blog-postgres-check pg_isready -U blog -d blog_test
-TEST_DATABASE_URL='postgres://blog@127.0.0.1:15432/blog_test?sslmode=disable' \
-  node scripts/test-postgres.mjs
-docker stop course-k-blog-postgres-check
+docker run --rm -d --name course-k-blog-mysql-check \
+  -e MYSQL_DATABASE=blog_test -e MYSQL_ROOT_HOST=% \
+  -e MYSQL_ALLOW_EMPTY_PASSWORD=yes \
+  -p 127.0.0.1:23306:3306 mysql:8.4
+# mysqladmin ping が成功するまで待つ
+docker exec course-k-blog-mysql-check mysqladmin ping -h 127.0.0.1 --silent
+TEST_DATABASE_URL='mysql://root@127.0.0.1:23306/blog_test?tls=false' \
+  node scripts/test-mysql.mjs
+docker stop course-k-blog-mysql-check
 ```
 
-`pg_isready`の成功後に試験する。15432が使用中なら別の空きポートを選び、接続先も合わせる。trust認証はこの使い捨て・loopback限定DBの設定で、本番や共有環境には使わない。試験成功は再起動・障害時のバックアップ復元成功とは別。
+空パスワードは使い捨て・loopback限定の試験だけに使う。専用テストはランダムなDBを作成・削除するため、この試験専用の管理者接続を使う。本番用ユーザーの権限を増やさない。既存のPostgreSQLボリュームは残し、MySQLには別のmysql_dataボリュームを使う。旧データの変換は自動では実行しない。
 
 ### TLS専用試験
 
-実DBの通常接続とTLS検証は別に実行する。通常のPRジョブはTLS専用環境を持たないため `TestTLSVerification` はSKIPする。
-TLSを変更した場合は、localhostだけに有効なサーバー証明書と信頼CAを持つ使い捨てPostgreSQLを別途用意し、`TEST_TLS_DATABASE_URL` に `verify-full` と信頼CAを含む接続先、`TEST_TLS_WRONG_CA_FILE` に別CAのファイルを指定する。DB名は `_test`、ホスト名は `localhost` とする。
-
-```sh
-go -C backend test -count=1 -race -v ./internal/postgres -run '^TestTLSVerification$'
-```
-
-接続先の指定がなければSKIPする。証明書とDBの準備自動化は未整備なので、通常DB試験の成功をTLS試験の成功として報告しない。
+実DBの通常接続とTLS検証は別に実行する。通常の全体試験ではTLS専用試験をSKIPし、CIでは以下の独立したTLS環境で検証する。
+`node scripts/test-mysql-tls.mjs` が一時CA・localhost証明書・専用MySQLを用意し、信頼済み接続の成功とホスト名違い・CA違いの拒否を確認して撤去する。Docker、Go、OpenSSLが必要。RDS本番でのTLS接続確認は別に行う。
 
 ### ブラウザの選択と通し確認
 
@@ -130,9 +125,9 @@ TEST_LIVE_EXTERNAL=1 go -C backend test -count=1 -v ./internal/external -run Tes
 
 - **Repository and infrastructure**：設定生成、文書・構文、AWS操作補助、監視の試験、AWSへ接続しない計画表示。
 - **Frontend and offline UI**：lockfileから依存取得、基本検査、Playwright管理のChromiumによる固定API画面試験。
-- **Go and real PostgreSQL**：Goの基本検査と、ジョブ専用の一時PostgreSQLサービスへの結合試験。実DBの接続値を渡してキャッシュを使わず実行し、SKIPを結合成功と扱わない。
+- **Go and real MySQL**：Goの基本検査と、ジョブ専用の一時MySQLサービスへの結合試験。実DBの接続値を渡してキャッシュを使わず実行し、SKIPを結合成功と扱わない。
 
-- **Browser, SSR, Go and PostgreSQL**：専用Compose環境を構築し、仮記事で実ブラウザ・本番SSR・実API・DBの通し確認と撤去を行う。
+- **Browser, SSR, Go and MySQL**：専用Compose環境を構築し、仮記事で実ブラウザ・本番SSR・実API・DBの通し確認と撤去を行う。
 
 ワークフローは読み取り権限で動き、AWS認証情報・デプロイ処理・実記事の公開処理を含めない。DockerのARM64ビルド、実AWSの配備・復元・通知・容量は別の確認範囲。GitHub上の実行結果を確認するまでは、CI成功・必須チェック設定済みとは表現しない。mainへの自動デプロイはない。
 
