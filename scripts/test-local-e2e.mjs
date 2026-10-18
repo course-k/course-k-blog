@@ -7,6 +7,9 @@ import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { createLocalConfig } from './local-config.mjs'
 
+const singleTask = process.argv.includes('--single-task')
+if (process.argv.slice(2).some(arg => arg !== '--single-task')) throw new Error('Unknown E2E option')
+
 const root = fileURLToPath(new URL('../', import.meta.url))
 const directory = await mkdtemp(join(tmpdir(), 'blog-e2e-'))
 const project = `blog-e2e-${randomBytes(6).toString('hex')}`
@@ -44,25 +47,52 @@ try {
   for (const name of ['db-password.txt', 'admin-hash.txt']) {
     await chmod(join(directory, name), 0o444)
   }
-  // Same Dockerfiles, Caddy routing and service definitions as local development.
-  // Only credentials, published ports and owner origin differ. Compose project owns its DB volume.
+  // Sharing the gateway's network namespace reproduces a task's localhost links.
+  // It does not reproduce a shared Fargate CPU quota, task IAM or lifecycle.
+  const singleTaskOverride = singleTask ? `
+  api:
+    network_mode: service:gateway
+    environment:
+      APP_ORIGIN: http://localhost:${port}
+      EXTERNAL_SYNC_ENABLED: "false"
+      LISTEN_ADDR: 127.0.0.1:8081
+  web:
+    network_mode: service:gateway
+    environment:
+      HOST: 127.0.0.1
+      API_BASE_URL: http://127.0.0.1:8081
+  gateway:
+    image: ${project}-router
+    build: ${root}infra/router
+    depends_on: !reset {}
+    volumes: !override [router_tmp:/tmp/nginx]
+    read_only: true
+    cap_drop: [ALL]
+    ports: !override ["127.0.0.1:${port}:8080"]
+` : ''
+  // Use the production Dockerfiles with a disposable DB and credentials.
+  // Each random Compose project owns its DB, media, backup and router scratch volumes.
   await writeFile(override, `services:
   db:
     ports: !override []
   migrate:
     environment:
       APP_ORIGIN: http://localhost:${port}
-  api:
+${singleTask ? singleTaskOverride : `  api:
     environment:
       APP_ORIGIN: http://localhost:${port}
       EXTERNAL_SYNC_ENABLED: "false"
   gateway:
     ports: !override ["127.0.0.1:${port}:8080"]
+`}
+
 secrets:
   db_password:
     file: ${join(directory, 'db-password.txt')}
   admin_hash:
     file: ${join(directory, 'admin-hash.txt')}
+volumes:
+  router_tmp:
 `, { mode: 0o600 })
   configured = true
   await run('docker', [...compose, 'up', '--build', '--detach', '--wait', '--wait-timeout', '180'])
@@ -74,6 +104,17 @@ secrets:
     await new Promise(resolve => setTimeout(resolve, 500))
   }
   if (!ready) throw new Error('Disposable API did not become ready')
+  if (singleTask) {
+    const router = await fetch(`${origin}/gateway-healthz`)
+    if (!router.ok || (await router.json()).ok !== true) throw new Error('Task router health check failed')
+    const nonApi = await fetch(`${origin}/apix`, { redirect: 'manual' })
+    if (nonApi.status !== 404 || !nonApi.headers.get('content-type')?.includes('text/html')) throw new Error('API path boundary failed')
+    // A proxy's default error/access formats may expose OIDC codes or cookies.
+    const sentinel = `router-credential-fixture-${randomBytes(12).toString('hex')}`
+    await fetch(`${origin}/api/session?code=${sentinel}`, { headers: { Authorization: `Bearer ${sentinel}`, Cookie: `fixture=${sentinel}` } })
+    const logs = spawnSync('docker', [...compose, 'logs', '--no-color', 'gateway'], { cwd: root, encoding: 'utf8', timeout: 10_000 })
+    if (logs.status !== 0 || `${logs.stdout}${logs.stderr}`.includes(sentinel)) throw new Error('Router credential-log check failed')
+  }
   // Fixed metadata isolates acceptance tests from upstream availability and article changes.
   await run('docker', [...compose, 'exec', '-T', 'db', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'blog', '-d', 'blog_test', '-c',
     "INSERT INTO external_posts(source,source_id,title,url,published_at) VALUES('qiita','e2e-external','外部の記事の元タイトル','https://qiita.com/course_k/items/e2e-external','2020-01-01T00:00:00Z')"])
@@ -81,6 +122,9 @@ secrets:
     cwd: `${root}frontend`, env: { ...process.env, RUN_LOCAL_E2E: '1',
       BLOG_E2E_ORIGIN: origin, BLOG_E2E_LOGIN_FILE: join(directory, 'local-login.txt') },
   })
+} catch (error) {
+  if (singleTask && configured) spawnSync('docker', [...compose, 'logs', '--no-color', '--tail', '30', 'gateway'], { cwd: root, stdio: 'inherit', timeout: 10_000 })
+  throw error
 } finally {
   // This exact random project owns every resource removed here; never target the development project.
   if (configured) {
