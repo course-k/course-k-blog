@@ -4,6 +4,8 @@
 
 ## 最新のアップロード対象
 
+ログ修正版は反映・実動作確認済み。現在の追加候補は[スナップショット修正版](../infra/access/validation-access-snapshot-fix-20261018.template.json)。撤去のCreateDBSnapshot不足1件を補い、対象・地域・CloudFormation経由の制限は維持。未反映。管理者ブラウザ操作のためMacのロック解除待ち。以下はログ修正時点の履歴。
+
 現在は[validation-access-logging-fix-20261018.template.json](../infra/access/validation-access-logging-fix-20261018.template.json)を使用する。説明に`gateway logging revision 2026-10-18`があることを確認する。
 
 Gateway修正版の反映はCloudFormationとIAMで確認済み。タグ権限は解消し、最新試験の不足はログ配信のCreateLogDeliveryだった。「同じタグエラー」とした前の説明は訂正する。ログ配信に必要な公式の権限セットを追加し、cfn-lint・Access Analyzerで検査済み。既存アクセス用スタックへの反映待ち。詳細は実検証記録の最新節を参照。

@@ -351,5 +351,134 @@
       "cleanup": "All 3 resources DELETE_COMPLETE; stack absent."
     },
     "limitation": "Stage configuration creation verified; actual request log delivery and application deployment not yet verified."
+  },
+  "fullFoundationTrial": {
+    "stackName": "course-k-blog-validation-20261018c",
+    "region": "us-west-2",
+    "initialChanges": {
+      "add": 41,
+      "modify": 0,
+      "remove": 0
+    },
+    "foundationStatus": "CREATE_COMPLETE",
+    "runtimeStatus": "UPDATE_COMPLETE",
+    "uiSourceCommit": "cb649c7141d27f07518c7d9a48e8d707eac4a9ca",
+    "databaseBootstrapExitCode": 0,
+    "databaseMigrationExitCode": 0,
+    "runtimeChecks": [
+      "GET /api/readyz status 200",
+      "readiness",
+      "GET /api/admin/posts status 401",
+      "foreign origin rejected",
+      "login",
+      "secure session cookie",
+      "POST /api/admin/posts status 201",
+      "GET /api/posts/{articleId} status 404",
+      "POST /api/admin/posts/{articleId}/publish status 200",
+      "GET /api/posts/{articleId} status 200",
+      "published body visible",
+      "SSR title and body without JS",
+      "adopted UI and TOC deployed",
+      "HTML security headers",
+      "static asset references present",
+      "static asset MIME /assets/css/index.92a72a09fa.css",
+      "static asset MIME /assets/js/index.ec7beafa21.js",
+      "static asset MIME /assets/js/async/j.895007a022.js",
+      "PUT /api/admin/posts/{articleId} status 200",
+      "GET /api/posts/{articleId} status 200",
+      "old published body retained after draft save",
+      "PUT /api/admin/posts/{articleId} status 409",
+      "POST /api/admin/posts/{articleId}/publish status 200",
+      "initial publication date retained",
+      "GET /api/posts/{articleId} status 200",
+      "updated published body",
+      "POST /api/admin/posts/{articleId}/unpublish status 200",
+      "GET /api/posts/{articleId} status 404",
+      "unpublished SSR gives 404",
+      "DELETE /api/session status 200",
+      "GET /api/admin/posts status 401"
+    ],
+    "runtimeChecksPassed": 31,
+    "browserInteractionTested": false,
+    "networkPosture": {
+      "NodeSg": {
+        "ingressRules": 1,
+        "publicIPv4Ingress": false,
+        "publicIPv6Ingress": false,
+        "ports": [
+          3000
+        ]
+      },
+      "GoSg": {
+        "ingressRules": 1,
+        "publicIPv4Ingress": false,
+        "publicIPv6Ingress": false,
+        "ports": [
+          8081
+        ]
+      },
+      "DbSg": {
+        "ingressRules": 1,
+        "publicIPv4Ingress": false,
+        "publicIPv6Ingress": false,
+        "ports": [
+          5432
+        ]
+      }
+    },
+    "gatewayAccessLogsObserved": true,
+    "ssrSmokeLoad": {
+      "requests": 30,
+      "concurrency": 5,
+      "succeeded": 30,
+      "latencyMedianSeconds": 0.5125950829824433,
+      "latencyMaxSeconds": 0.7954767090268433,
+      "scope": "Small empty-list SSR smoke workload from this client; not a production capacity benchmark."
+    },
+    "initialMetrics": {
+      "NodeService": {
+        "MemoryUtilization": {
+          "points": 1,
+          "maximum": 3.80859375
+        },
+        "CPUUtilization": {
+          "points": 1,
+          "maximum": 8.332842121715657
+        }
+      },
+      "GoService": {
+        "MemoryUtilization": {
+          "points": 1,
+          "maximum": 0.29296875
+        },
+        "CPUUtilization": {
+          "points": 1,
+          "maximum": 0.9098402261734008
+        }
+      }
+    },
+    "capacityLimitation": "Brief startup/basic operations and empty-list SSR only; not a proof of production capacity with large articles, imports, images or backups.",
+    "cleanup": {
+      "stackStatus": "DELETE_FAILED",
+      "remainingDatabase": true,
+      "missingAction": "rds:CreateDBSnapshot",
+      "retainedResourcesRemoved": 9,
+      "trialParametersDeleted": true,
+      "blocker": "Mac locked; administrator browser unavailable. Narrow permission update prepared but not applied."
+    },
+    "goReplacement": {
+      "goTaskChanged": true,
+      "nodeTaskUnchanged": true,
+      "readyz200": true,
+      "ssr200": true,
+      "savedDraftRetained": true,
+      "rollbackTested": false
+    },
+    "nodeReplacement": {
+      "nodeTaskChanged": true,
+      "goTaskUnchanged": true,
+      "healthAndSSR200": true,
+      "rollbackTested": false
+    }
   }
 }
