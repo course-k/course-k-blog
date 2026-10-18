@@ -197,5 +197,41 @@
       "files": 21,
       "bytes": 2509865
     }
+  },
+  "integrationSnapshot": {
+    "commit": "291a2a731771973c27c0d6148abe1359d032e327",
+    "basis": "After UI merge into AWS branch, before these integration-reference documentation edits.",
+    "files": 122,
+    "bytes": 2918341,
+    "groups": {
+      ".github": {
+        "files": 1,
+        "bytes": 230
+      },
+      "(root)": {
+        "files": 4,
+        "bytes": 6443
+      },
+      "backend": {
+        "files": 18,
+        "bytes": 220577
+      },
+      "docs": {
+        "files": 54,
+        "bytes": 2287922
+      },
+      "frontend": {
+        "files": 30,
+        "bytes": 211486
+      },
+      "infra": {
+        "files": 11,
+        "bytes": 180756
+      },
+      "scripts": {
+        "files": 4,
+        "bytes": 10927
+      }
+    }
   }
 }
