@@ -219,8 +219,40 @@ try {
         fullPage: true,
       });
     }
+    if (scenario === "success") {
+      page.once("dialog", (dialog) => dialog.accept());
+      await page.getByRole("button", { name: "非公開に戻す", exact: true }).click();
+      await expect(page.getByRole("status")).toContainText("非公開にしました");
+      await expect(page.locator(".editor-state")).toContainText("下書き");
+      await expect(page.getByLabel("Markdown", { exact: true })).toHaveValue(
+        "## 確認する見出し\n\n保存する本文。",
+      );
+      await page.getByLabel("タイトル", { exact: true }).fill("未保存の変更");
+      page.once("dialog", (dialog) => dialog.dismiss());
+      await page.getByRole("button", { name: "ログアウト", exact: true }).click();
+      await expect(page.getByLabel("タイトル", { exact: true })).toHaveValue("未保存の変更");
+      assert.equal((await page.evaluate(() => window.calls)).filter(
+        (call) => call === "DELETE /api/session",
+      ).length, 0, "cancelled logout must not send a request");
+      page.once("dialog", (dialog) => dialog.accept());
+      await page.getByRole("button", { name: "ログアウト", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "管理者ログイン" })).toBeVisible();
+    }
     assert.deepEqual(errors, []);
     results.push(`admin ${scenario}: passed`);
+    await page.close();
+  }
+  {
+    const { page, errors } = await screen({ screen: "admin", scenario: "signed-out" });
+    await expect(page.getByRole("heading", { name: "管理者ログイン" })).toBeVisible();
+    await page.getByLabel("パスワード", { exact: true }).fill("fixture-only-password");
+    await page.getByRole("button", { name: "ログイン", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "記事を書く" })).toBeVisible();
+    assert.equal((await page.evaluate(() => window.calls)).filter(
+      (call) => call === "POST /api/session",
+    ).length, 1);
+    assert.deepEqual(errors, []);
+    results.push("admin signed-out: login passed");
     await page.close();
   }
   const { page } = await screen({ screen: "list", empty: true });

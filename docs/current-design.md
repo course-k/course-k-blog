@@ -149,6 +149,28 @@ HTTP APIの時間・送信サイズ等の制約が要件に合わなくなれば
 
 Caddyはローカルの同一オリジンへの経路分岐に使用し、短い設定で必要な転送を表せる。Nginxでも実現可能で、本番へCaddyを置く要件はない。Composeの各コンテナは共有ネットワーク上のサービス名で接続する。DBコンテナはローカル開発用。
 
+### コードの責務と依存関係
+
+```text
+管理ルート → Editor（表示・ルーターの離脱確認）
+              └─ useAdminEditor（入力・認証状態・操作の順序と結果）
+                   └─ adminApi（HTTPパス・入力・応答とエラー）
+                        └─ Go httpapi → blog.Store契約 → postgres（SQL）
+                              └─ auth（パスワード・トークン）
+公開ルート → SSR取得 → Goの公開API
+本文・編集プレビュー → 共通Markdown
+```
+
+| 実装 | 責務 |
+|---|---|
+| [Editor](../frontend/src/components/Editor.tsx) | 採用済みの画面を表示し、操作をフックへ渡す。ルーターによる離脱確認を接続する。HTTPパスや公開操作の順序は持たない |
+| [useAdminEditor](../frontend/src/features/editor/useAdminEditor.ts) | 入力、選択、認証状態、処理中、成功・失敗・結果不明を管理する。保存後の公開、再取得、確認ダイアログを含む操作の順序を扱う。公開の可否を決定する業務ルールはGoに委ねる |
+| [adminApi](../frontend/src/features/editor/adminApi.ts) | Cookie付きの同一オリジン通信、APIパス・入力と応答型、HTTPエラーを扱う。Reactの状態や表示配置を持たない。型定義は実行時検証の代用ではない |
+| Go httpapi / blog / postgres / auth | HTTP・認証境界、記事型と保存契約、DBアクセスと原子的な条件付き更新、暗号処理を分ける。httpapiはStore契約を介してDB保存へ依存し、画面の配色や配置へ依存しない |
+
+一つの画面ファイルに通信と保存・公開の手順を置く案に対し、表示変更・操作フロー変更・API変更の理由が異なるため3つに分ける。単純に行数を減らす分割や、各入力ごとの細分化はしない。現在は一つの編集画面で閉じる状態のため、共有状態ライブラリや汎用的な通信基盤を追加せずReactのフックを使う。
+Go側はすでにStore契約とDB実装が分かれ、公開版の保存をSQLの条件付き更新で扱っているため、今回さらにサービス層や別のRepository層を追加する利点は小さい。既存のAPI契約・DBモデルは維持する。結果不明時の確認の既知の不足は公開台帳R4で管理する。
+
 ### 実装上の保護・運用境界
 
 - 生存確認とDB準備状態を分離し、DB障害だけでアプリ再起動を繰り返さない。Nodeは `/healthz`、Goは `/api/healthz` と `/api/readyz` を持つ。
@@ -266,7 +288,7 @@ RDS自動バックアップ7日、ダンプ4世代、復旧作業4時間は提�
 
 ## 12. 実装参照とLLM利用
 
-- [画面](../frontend/src/routes)、[SSR取得](../frontend/src/lib/posts.ts)、[共通Markdown](../frontend/src/components/Markdown.tsx)、[編集画面](../frontend/src/components/Editor.tsx)
+- [画面](../frontend/src/routes)、[SSR取得](../frontend/src/lib/posts.ts)、[共通Markdown](../frontend/src/components/Markdown.tsx)、[編集画面](../frontend/src/components/Editor.tsx)、[編集操作](../frontend/src/features/editor/useAdminEditor.ts)、[管理API通信](../frontend/src/features/editor/adminApi.ts)
 - [API](../backend/internal/httpapi/server.go)、[記事型](../backend/internal/blog/blog.go)、[保存・移行処理](../backend/internal/postgres/store.go)、[初期DDL](../backend/internal/postgres/migrations/001_initial.sql)
 - [起動時検証](../backend/cmd/api/main.go)、[ローカル構成](../compose.yaml)
 

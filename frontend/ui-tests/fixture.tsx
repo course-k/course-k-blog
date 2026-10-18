@@ -26,6 +26,7 @@ const post = {
 };
 let draft: any = null;
 let saved = false;
+let signedIn = cfg.scenario !== "signed-out";
 (window as any).calls = [];
 window.fetch = async (input, init) => {
   const path = String(input),
@@ -36,7 +37,12 @@ window.fetch = async (input, init) => {
       status,
       headers: { "Content-Type": "application/json" },
     });
-  if (path === "/api/session") return response({ authenticated: true });
+  if (path === "/api/session") {
+    if (method === "POST") signedIn = true;
+    if (method === "DELETE") signedIn = false;
+    if (method === "GET" && !signedIn) return response({ error: "login required" }, 401);
+    return response({ authenticated: signedIn });
+  }
   if (path === "/api/admin/posts" && method === "GET") {
     if (saved && cfg.scenario === "list-failure")
       return response({ error: "一覧の取得失敗" }, 500);
