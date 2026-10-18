@@ -1,5 +1,4 @@
-# Local-only prototype. This PostgreSQL service is a development dependency,
-# not a reversal of the managed RDS deployment plan.
+# Local development dependencies. Production uses managed RDS.
 services:
   db:
     image: postgres:17-alpine

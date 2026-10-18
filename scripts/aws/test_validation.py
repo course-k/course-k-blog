@@ -19,8 +19,15 @@ ARN = f'arn:aws:cloudformation:us-west-2:{ACCOUNT}:stack/{STACK}/instance-a'
 
 def example():
     config = json.loads((core.ROOT / 'infra/aws/validation-environment.example.json').read_text())
-    return json.loads(json.dumps(config).replace('000000000000', ACCOUNT).replace(
-        'REPLACE_WITH_VERIFIED_VERSION', '17.11').replace('course-k-blog-validation-example', STACK))
+    config.update(account=ACCOUNT, stack=STACK)
+    config['parameters']['PostgresVersion'] = '17.11'
+    for key in [name for name in config['parameters'] if name.endswith('ParameterArn')]:
+        if key in config['parameters']:
+            parts = config['parameters'][key].split(':')
+            parts[4] = ACCOUNT
+            config['parameters'][key] = ':'.join(parts)
+    config['parameters']['RuntimeBoundaryArn'] = f'arn:aws:iam::{ACCOUNT}:policy/test-boundary'
+    return config
 
 
 class FakeSession:
@@ -53,6 +60,14 @@ class FakeSession:
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_safe_diagnostics_keep_codes_without_disclosing_values(self):
+        secret = 'secret-sentinel'
+        error = core.AwsError('logs', 'put-resource-policy', f'An error occurred (AccessDeniedException): {secret}')
+        self.assertIn('AccessDeniedException', core.safe_diagnostic(error))
+        self.assertNotIn(secret, core.safe_diagnostic(error))
+        self.assertNotIn(secret, core.safe_diagnostic(RuntimeError(secret)))
+        self.assertIn('Replace account', core.safe_diagnostic(core.ConfigurationError('Replace account placeholders.')))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.folder = Path(self.temp.name)
@@ -63,12 +78,12 @@ class BoundaryTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_cross_account_arns_and_unknown_secret_fields_rejected(self):
-        for mutate in [lambda c: c.update(accessKey='must-not-be-a-config-field'),
-                       lambda c: c.update(stack='production'),
-                       lambda c: c['parameters'].update(DatabaseUrlParameterArn='arn:aws:ssm:us-west-2:999999999999:parameter/course-k/blog-validation/url'),
-                       lambda c: c['parameters'].update(EnableRuntime='true'),
-                       lambda c: c['parameters'].update(AvailabilityZone2Id='usw2-az1')]:
-            with self.subTest(mutate=mutate):
+        for name, mutate in [('secret field', lambda c: c.update(accessKey='must-not-be-a-config-field')),
+                       ('production stack', lambda c: c.update(stack='production')),
+                       ('foreign SSM account', lambda c: c['parameters'].update(DatabaseUrlParameterArn='arn:aws:ssm:us-west-2:999999999999:parameter/course-k/blog-validation/url')),
+                       ('runtime enabled in base', lambda c: c['parameters'].update(EnableRuntime='true')),
+                       ('same availability zone', lambda c: c['parameters'].update(AvailabilityZone2Id='usw2-az1'))]:
+            with self.subTest(case=name):
                 config = example()
                 mutate(config)
                 self.config.write_text(json.dumps(config))

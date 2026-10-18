@@ -5,13 +5,15 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { Admin } from "../src/components/Editor";
+import { AdminPage } from "../src/components/AdminPage";
 import { ArticleList } from "../src/components/ArticleList";
 import { Article } from "../src/components/Article";
 import { ArticleCard } from "../src/components/ArticleCard";
 import "../src/styles.css";
+import type { AdminPost } from "../src/lib/types";
+import type { FixtureConfig } from "./fixtureTypes";
 
-const cfg = (window as any).fixture || {
+const cfg: FixtureConfig = window.fixture || {
   screen: "article",
   scenario: "success",
 };
@@ -24,14 +26,15 @@ const post = {
   publishedAt: "2026-10-18T00:00:00Z",
   updatedAt: "2026-10-18T00:00:00Z",
 };
-let draft: any = null;
+let draft: AdminPost | null = null;
+let publishedText: { title: string; markdown: string } | null = null;
 let saved = false;
 let signedIn = cfg.scenario !== "signed-out";
-(window as any).calls = [];
+window.calls = [];
 window.fetch = async (input, init) => {
   const path = String(input),
     method = init?.method || "GET";
-  (window as any).calls.push(`${method} ${path}`);
+  window.calls.push(`${method} ${path}`);
   const response = (data: unknown, status = 200) =>
     new Response(JSON.stringify(data), {
       status,
@@ -48,11 +51,18 @@ window.fetch = async (input, init) => {
       return response({ error: "一覧の取得失敗" }, 500);
     return response(draft ? [draft] : []);
   }
+  if (path.startsWith("/api/admin/posts/") && method === "GET") {
+    return draft ? response(draft) : response({ error: "not found" }, 404);
+  }
   if (path.endsWith("/publish")) {
+    if (!draft) throw new Error("Cannot publish missing fixture article");
+    if (cfg.scenario === "conflict") return response({ error: "競合" }, 409);
     if (cfg.scenario === "publish-failure")
       return response({ error: "公開に失敗" }, 500);
+    publishedText = { title: draft.title, markdown: draft.markdown };
     draft = {
       ...draft,
+      publishedAt: draft.publishedAt ?? post.publishedAt,
       published: true,
       hasUnpublishedChanges: false,
       version: draft.version + 1,
@@ -60,17 +70,20 @@ window.fetch = async (input, init) => {
     return response(draft);
   }
   if (path.endsWith("/unpublish")) {
+    if (!draft) throw new Error("Cannot hide missing fixture article");
     draft = { ...draft, published: false, version: draft.version + 1 };
     return response(draft);
   }
   if (method === "POST" || method === "PUT") {
-    if (cfg.scenario === "conflict") return response({ error: "競合" }, 409);
+    if (method === "PUT" && cfg.scenario === "conflict") return response({ error: "競合" }, 409);
+    const input = JSON.parse(String(init?.body)) as { title: string; markdown: string };
     draft = {
       ...post,
-      ...JSON.parse(String(init?.body)),
+      ...input,
       id,
       published: draft?.published || false,
-      hasUnpublishedChanges: draft?.published || false,
+      publishedAt: draft?.publishedAt ?? null,
+      hasUnpublishedChanges: !publishedText || input.title !== publishedText.title || input.markdown !== publishedText.markdown,
       version: (draft?.version || 0) + 1,
     };
     saved = true;
@@ -94,7 +107,7 @@ function Screen() {
       </header>
       <main id="main">
         {cfg.screen === "admin" ? (
-          <Admin />
+          <AdminPage />
         ) : cfg.screen === "list" ? (
           <>
             <ArticleList
@@ -143,7 +156,7 @@ const router = createRouter({
   routeTree: route,
   history: createMemoryHistory({ initialEntries: ["/"] }),
 });
-(window as any).navigateAway = () =>
+window.navigateAway = () =>
   router.navigate({ to: "/", search: { page: 2 } });
 createRoot(document.getElementById("root")!).render(
   <RouterProvider router={router} />,

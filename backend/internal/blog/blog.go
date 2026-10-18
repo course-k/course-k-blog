@@ -64,8 +64,19 @@ type Store interface {
 	Ping(context.Context) error
 }
 
+const (
+	maxTitleCodePoints = 200
+	maxMarkdownBytes   = 256 * 1024
+)
+
 func Validate(title, markdown string) error {
-	if strings.TrimSpace(title) == "" || utf8.RuneCountInString(title) > 200 || len(markdown) > 256*1024 || !utf8.ValidString(title) || !utf8.ValidString(markdown) {
+	if !utf8.ValidString(title) || !utf8.ValidString(markdown) {
+		return ErrInvalid
+	}
+	if strings.TrimSpace(title) == "" || utf8.RuneCountInString(title) > maxTitleCodePoints {
+		return ErrInvalid
+	}
+	if len(markdown) > maxMarkdownBytes {
 		return ErrInvalid
 	}
 	return nil

@@ -35,7 +35,10 @@ func TestPostgreSQLPersistenceAndPublishedSnapshot(t *testing.T) {
 	if err = s.Migrate(ctx); err != nil {
 		t.Fatal("migration is not repeatable", err)
 	}
-	id, _ := auth.Token()
+	id, err := auth.Token()
+	if err != nil {
+		t.Fatal(err)
+	}
 	id = "integration-" + id
 	defer s.db.ExecContext(context.Background(), "DELETE FROM posts WHERE id=$1", id)
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -63,10 +66,20 @@ func TestPostgreSQLPersistenceAndPublishedSnapshot(t *testing.T) {
 	if !foundSummary {
 		t.Fatal("published summary missing")
 	}
+	if p.HasUnpublishedChanges {
+		t.Fatal("published content marked as changed")
+	}
+	p, err = s.Save(ctx, id, p.Title, p.Markdown, p.Version, now)
+	if err != nil || p.HasUnpublishedChanges {
+		t.Fatal("identical saved content marked as changed", err)
+	}
 	first := *p.PublishedAt
 	p, err = s.Save(ctx, id, "編集中", "new secret", p.Version, now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !p.HasUnpublishedChanges {
+		t.Fatal("working copy change not detected")
 	}
 	visible, err := s.GetPublic(ctx, id)
 	if err != nil || visible.Title != "公開前" || visible.Markdown != "draft secret" || !visible.UpdatedAt.Equal(now) {
@@ -102,7 +115,10 @@ func TestPostgreSQLPersistenceAndPublishedSnapshot(t *testing.T) {
 	if err != nil || !first.Equal(*p.PublishedAt) {
 		t.Fatal("republish changed date", err)
 	}
-	token, _ := auth.Token()
+	token, err := auth.Token()
+	if err != nil {
+		t.Fatal(err)
+	}
 	hash := auth.Digest(token)
 	defer s.DeleteSession(context.Background(), hash)
 	if err = s.PutSession(ctx, blog.Session{Hash: hash, ExpiresAt: now.Add(time.Hour)}); err != nil {

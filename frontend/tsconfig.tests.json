@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "src",
+    "ui-tests",
+    "e2e",
+    "*.config.ts"
+  ],
+  "exclude": []
+}

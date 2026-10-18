@@ -12,7 +12,7 @@ import sys
 import tempfile
 from urllib.parse import quote
 
-from core import AwsError, REGION, ROOT, STATE, TEMPLATE, Session, load_config, private_json
+from core import ConfigurationError, safe_diagnostic, AwsError, REGION, ROOT, STATE, TEMPLATE, Session, load_config, private_json
 
 
 def state_dir(config):
@@ -28,17 +28,17 @@ def completed_task(session, step):
     stack = session.stack()
     resources = session.resources()
     if record['stackId'] != stack['StackId'] or record['cluster'] != resources['Cluster']:
-        raise ValueError('Task record belongs to a different stack incarnation.')
+        raise ConfigurationError('Task record belongs to a different stack incarnation.')
     result = session.call('ecs', 'describe-tasks', '--cluster', record['cluster'], '--tasks', record['taskArn'])
     if result.get('failures') or len(result.get('tasks', [])) != 1:
-        raise ValueError('Task status is unavailable.')
+        raise ConfigurationError('Task status is unavailable.')
     task = result['tasks'][0]
     expected = outputs(stack)[step.title() + 'TaskDefinition']
     if task.get('taskDefinitionArn') != expected:
-        raise ValueError('Task definition changed; run and verify the current definition.')
+        raise ConfigurationError('Task definition changed; run and verify the current definition.')
     containers = task.get('containers', [])
     if task['lastStatus'] != 'STOPPED' or not containers or any(c.get('exitCode') != 0 for c in containers):
-        raise ValueError('Current ' + step + ' task has not completed successfully.')
+        raise ConfigurationError('Current ' + step + ' task has not completed successfully.')
     return task
 
 
@@ -49,29 +49,29 @@ def prepare(session, stage, name):
         template = json.loads(TEMPLATE.read_text())
         body = json.dumps(template, separators=(',', ':'))
         if len(body.encode()) > 51200:
-            raise ValueError('Template exceeds direct CloudFormation limit; do not silently upload elsewhere.')
+            raise ConfigurationError('Template exceeds direct CloudFormation limit; do not silently upload elsewhere.')
         request.update(ChangeSetType='CREATE', TemplateBody=body,
                        Parameters=[{'ParameterKey': k, 'ParameterValue': v} for k, v in config['parameters'].items()])
     else:
         stack = session.stack()
         if stack['StackStatus'] not in ('CREATE_COMPLETE', 'UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'):
-            raise ValueError('Stack must be stable before preparing a change.')
+            raise ConfigurationError('Stack must be stable before preparing a change.')
         params = {p['ParameterKey']: {'ParameterKey': p['ParameterKey'], 'UsePreviousValue': True}
                   for p in stack['Parameters']}
         updates = {}
         if stage == 'tools':
             current = {p['ParameterKey']: p['ParameterValue'] for p in stack['Parameters']}
             if current.get('EnableRuntime') != 'false':
-                raise ValueError('DB tools preparation is restricted to a not-yet-running validation stack.')
+                raise ConfigurationError('DB tools preparation is restricted to a not-yet-running validation stack.')
             images = json.loads((state_dir(config) / 'images.json').read_text())
             if images['stackId'] != stack['StackId']:
-                raise ValueError('Images belong to a different stack incarnation.')
+                raise ConfigurationError('Images belong to a different stack incarnation.')
             for logical, key in [('NodeRepository', 'NodeImage'), ('GoRepository', 'GoImage'),
                                  ('BootstrapRepository', 'BootstrapImage')]:
                 digest = images['images'][logical]
                 repository = outputs(stack)[logical]
                 if not re.fullmatch(re.escape(repository) + r'@sha256:[a-f0-9]{64}', digest):
-                    raise ValueError('Invalid pinned image: ' + logical)
+                    raise ConfigurationError('Invalid pinned image: ' + logical)
                 updates[key] = digest
             # Verify all required parameters exist without requesting decrypted values.
             for p in config['parameters']:
@@ -96,19 +96,19 @@ def inspect_change(session, name):
                           '--change-set-name', name)
     stack_arn = f'arn:aws:cloudformation:{REGION}:{session.config["account"]}:stack/{session.config["stack"]}/'
     if not change.get('StackId', '').startswith(stack_arn):
-        raise ValueError('Change set belongs to another account, region or stack.')
+        raise ConfigurationError('Change set belongs to another account, region or stack.')
     return change
 
 
 def execute(session, name):
     change = inspect_change(session, name)
     if change['Status'] != 'CREATE_COMPLETE' or change.get('ExecutionStatus') != 'AVAILABLE':
-        raise ValueError('Change set is not available for execution.')
+        raise ConfigurationError('Change set is not available for execution.')
     # Teardown and replacements require separate manual review, not this helper.
     for item in change.get('Changes', []):
         resource = item['ResourceChange']
         if resource['Action'] == 'Remove' or resource.get('Replacement') in ('True', 'Conditional'):
-            raise ValueError('Removal or potential replacement requires manual review; not executed.')
+            raise ConfigurationError('Removal or potential replacement requires manual review; not executed.')
     session.call('cloudformation', 'execute-change-set', '--stack-name', session.config['stack'],
                  '--change-set-name', change['ChangeSetId'])
     return {'executionRequested': name}
@@ -117,9 +117,9 @@ def execute(session, name):
 def run_task(session, step):
     stack = session.stack()
     if stack['StackStatus'] not in ('CREATE_COMPLETE', 'UPDATE_COMPLETE'):
-        raise ValueError('Stack must be stable before running a database task.')
+        raise ConfigurationError('Stack must be stable before running a database task.')
     if any(p['ParameterKey'] == 'EnableRuntime' and p['ParameterValue'] != 'false' for p in stack['Parameters']):
-        raise ValueError('Initial DB tasks cannot be run while the application is enabled.')
+        raise ConfigurationError('Initial DB tasks cannot be run while the application is enabled.')
     if step == 'migration':
         completed_task(session, 'bootstrap')
     resources = session.resources()
@@ -127,7 +127,7 @@ def run_task(session, step):
     if record_path.exists():
         old = json.loads(record_path.read_text())
         if old.get('stackId') == stack['StackId']:
-            raise ValueError('Task already requested for this stack; inspect before any manual rerun.')
+            raise ConfigurationError('Task already requested for this stack; inspect before any manual rerun.')
     network = {'awsvpcConfiguration': {'subnets': [resources['Public1'], resources['Public2']],
                 'securityGroups': [resources['GoSg']], 'assignPublicIp': 'ENABLED'}}
     result = session.call('ecs', 'run-task', '--cluster', resources['Cluster'],
@@ -136,7 +136,7 @@ def run_task(session, step):
                           '--network-configuration', json.dumps(network), '--count', '1',
                           '--client-token', hashlib.sha256((stack['StackId'] + step).encode()).hexdigest())
     if result.get('failures') or len(result.get('tasks', [])) != 1:
-        raise ValueError('Task start failed; inspect ECS before retrying.')
+        raise ConfigurationError('Task start failed; inspect ECS before retrying.')
     private_json(record_path, {'stackId': stack['StackId'], 'cluster': resources['Cluster'],
                               'taskArn': result['tasks'][0]['taskArn']})
     return {'taskRequested': step}
@@ -148,7 +148,7 @@ def upload_images(session):
     registry = f'{session.config["account"]}.dkr.ecr.{REGION}.amazonaws.com'
     repos = {k: v for k, v in session.resources().items() if k in session.config['images']}
     if len(repos) != 3 or any(not v.startswith(session.config['stack'].lower()) for v in repos.values()):
-        raise ValueError('Unexpected validation repositories.')
+        raise ConfigurationError('Unexpected validation repositories.')
     endpoint = subprocess.run(['docker', 'context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'],
                               capture_output=True, text=True, check=True).stdout.strip()
     # Check ARM64 before changing any remote repository.
@@ -156,7 +156,7 @@ def upload_images(session):
         result = subprocess.run(['docker', 'image', 'inspect', '--format', '{{.Os}}/{{.Architecture}}', local],
                                  capture_output=True, text=True, check=True)
         if result.stdout.strip() != 'linux/arm64':
-            raise ValueError('All images must be Linux ARM64.')
+            raise ConfigurationError('All images must be Linux ARM64.')
     auth = session.call('ecr', 'get-authorization-token')['authorizationData'][0]
     images = {}
     with tempfile.TemporaryDirectory(prefix='course-k-ecr-') as folder:
@@ -185,11 +185,11 @@ def put_secrets(session, path):
     # File is intentionally separate from non-secret environment configuration.
     path = Path(path).resolve()
     if not path.is_relative_to(STATE.resolve()) or path.stat().st_mode & 0o077:
-        raise ValueError('Secrets file must be private (0600) and inside ignored config/aws-validation/.')
+        raise ConfigurationError('Secrets file must be private (0600) and inside ignored config/aws-validation/.')
     values = json.loads(path.read_text())
     expected = {'appPassword', 'migrationPassword', 'adminHash'}
     if set(values) != expected or not all(isinstance(v, str) and v for v in values.values()):
-        raise ValueError('Secrets file requires only appPassword, migrationPassword and adminHash.')
+        raise ConfigurationError('Secrets file requires only appPassword, migrationPassword and adminHash.')
     parts = values['adminHash'].split('$')
     try:
         valid_hash = (len(parts) == 3 and parts[0] == 'pbkdf2-sha256-v1'
@@ -198,13 +198,13 @@ def put_secrets(session, path):
     except ValueError:
         valid_hash = False
     if not valid_hash:
-        raise ValueError('Use the administrator hash produced by backend/cmd/password.')
+        raise ConfigurationError('Use the administrator hash produced by backend/cmd/password.')
     if min(len(values['appPassword']), len(values['migrationPassword'])) < 24 or values['appPassword'] == values['migrationPassword']:
-        raise ValueError('Use two different DB passwords of at least 24 characters.')
+        raise ConfigurationError('Use two different DB passwords of at least 24 characters.')
     stack = session.stack()
     if stack['StackStatus'] not in ('CREATE_COMPLETE', 'UPDATE_COMPLETE') or any(
             p['ParameterKey'] == 'EnableRuntime' and p['ParameterValue'] != 'false' for p in stack['Parameters']):
-        raise ValueError('Secret initialization requires a stable, not-yet-running validation stack.')
+        raise ConfigurationError('Secret initialization requires a stable, not-yet-running validation stack.')
     endpoint = outputs(stack)['DbEndpoint']
     def dsn(user, password):
         return f'postgresql://{user}:{quote(password, safe="")}@{endpoint}:5432/blog?sslmode=verify-full'
@@ -220,7 +220,7 @@ def put_secrets(session, path):
             if error.code != 'ParameterNotFound':
                 raise
         else:
-            raise ValueError('Parameter exists; inspect ownership before writing: ' + key)
+            raise ConfigurationError('Parameter exists; inspect ownership before writing: ' + key)
     for key, value in payloads.items():
         arn = session.config['parameters'][key]
         name = '/' + arn.split(':parameter/', 1)[1]
@@ -288,7 +288,7 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (ValueError, RuntimeError, OSError, KeyError, subprocess.SubprocessError):
+    except (ValueError, RuntimeError, OSError, KeyError, subprocess.SubprocessError) as error:
         # Never print AWS/Docker response bodies, config values or secret inputs.
-        print('Validation command failed. Check prerequisites, stack/task status and the runbook; raw output suppressed.', file=sys.stderr)
+        print(safe_diagnostic(error), file=sys.stderr)
         sys.exit(1)

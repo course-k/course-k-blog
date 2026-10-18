@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Admin } from "../components/Editor";
+import { AdminPage } from "../components/AdminPage";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -8,5 +8,5 @@ export const Route = createFileRoute("/admin")({
       { name: "robots", content: "noindex, nofollow" },
     ],
   }),
-  component: Admin,
+  component: AdminPage,
 });

@@ -5,6 +5,7 @@
 | 知りたいこと | 読む文書 |
 |---|---|
 | 何を作るか、何を選び、なぜ選んだか | [現行設計](current-design.md) |
+| 両書の観点、点検基準、TDDの適用方法 | [現行設計第13節](current-design.md#13-コードとテストの品質方針) |
 | 画面の構成・配色・文字組みと、その理由 | [UI設計](ui-ux-decisions-current.md) |
 | 今どこまでできていて、何が残るか | [公開までの進捗台帳](blog-publication-roadmap-2026-10-18.md) |
 | コードと文書をどう分け、何をGitへ保存するか | [リポジトリ構成と保存方針](repository-organization.md) |

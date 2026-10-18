@@ -18,7 +18,7 @@ export function ArticleCard({ article }: { article: ArticleCardData }) {
   const external = article.kind === "external";
   const source = external ? article.source : "own";
   const label = external ? sourceNames[article.source] : "このブログ";
-  const safeURL = external && /^https?:\/\//i.test(article.url);
+  const isHttpURL = external && /^https?:\/\//i.test(article.url);
   return (
     <article className={`post-row source-${source}`}>
       <div className="post-meta">
@@ -33,7 +33,7 @@ export function ArticleCard({ article }: { article: ArticleCardData }) {
       </div>
       <h3>
         {external ? (
-          safeURL ? (
+          isHttpURL ? (
             <a
               href={article.url}
               target="_blank"
