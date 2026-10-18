@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:net'
@@ -38,6 +38,12 @@ try {
     if (result.status !== 0) throw new Error('Cannot generate disposable test credentials')
     return result.stdout
   })
+  // Linux Compose file secrets retain the host file mode. The app runs as UID 65532.
+  // This disposable directory is 0700; allow its two bind-mounted files to be read
+  // by the container user without granting other host users directory access.
+  for (const name of ['db-password.txt', 'admin-hash.txt']) {
+    await chmod(join(directory, name), 0o444)
+  }
   // Same Dockerfiles, Caddy routing and service definitions as local development.
   // Only credentials, published ports and owner origin differ. Compose project owns its DB volume.
   await writeFile(override, `services:
