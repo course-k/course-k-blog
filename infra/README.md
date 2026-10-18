@@ -10,7 +10,6 @@
 | aws/validation-environment.example.json | 資格情報を含まない環境設定の例。アカウント・接続元プロファイル・新しい検証スタック名・ARN・PostgreSQL版・ローカルイメージを指定する |
 | access/validation-access-applied.template.json | 記録上、AWSへ反映済みのログ配信対応版。移動のみで権限は変更していない。現在のAWSとの再照合は未実施 |
 | access/validation-access-pending.template.json | 未反映の修正候補。反映済み版との差は、限定されたCloudFormation経由DB操作にrds:CreateDBSnapshotを追加する1件 |
-| access/validation-access.template.json | 既存のローカル未コミット変更がある元ファイル。実行入口に使わず、採用版を照合するまで保持する |
 | database/ | 新規検証DB用のロール初期化と、その単発コンテナ |
 | monitoring/ | 疎通確認と対応テスト |
 
