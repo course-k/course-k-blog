@@ -7,13 +7,13 @@ import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'aws'))
-from core import REGION, STATE, TEMPLATE, Session, load_config, private_json
+from core import ConfigurationError, safe_diagnostic, REGION, STATE, TEMPLATE, Session, load_config, private_json
 
 def run_checks(call, expected_account, template, requested_version=None):
     identity = call('sts', 'get-caller-identity')
     expected = f'arn:aws:sts::{expected_account}:assumed-role/course-k-validation-operator/'
     if identity.get('Account') != expected_account or not identity.get('Arn', '').startswith(expected):
-        raise ValueError('Unexpected AWS account or operator role; no further checks performed.')
+        raise ConfigurationError('Unexpected AWS account or operator role; no further checks performed.')
     zones = call('ec2', 'describe-availability-zones', '--filters',
                  'Name=zone-id,Values=usw2-az1,usw2-az2')
     available = {z['ZoneId'] for z in zones.get('AvailabilityZones', []) if z.get('State') == 'available'}
@@ -22,10 +22,10 @@ def run_checks(call, expected_account, template, requested_version=None):
                          if v.get('EngineVersion', '').startswith('17.') and v.get('Status') == 'available'},
                         key=lambda value: tuple(int(n) for n in re.findall(r'\d+', value)))
     if not postgres17:
-        raise ValueError('No available PostgreSQL 17 version returned; do not guess an engine version.')
+        raise ConfigurationError('No available PostgreSQL 17 version returned; do not guess an engine version.')
     chosen = requested_version or postgres17[-1]
     if chosen not in postgres17:
-        raise ValueError('Configured PostgreSQL version is not available; do not substitute silently.')
+        raise ConfigurationError('Configured PostgreSQL version is not available; do not substitute silently.')
     options = call('rds', 'describe-orderable-db-instance-options', '--engine', 'postgres',
                    '--engine-version', chosen, '--db-instance-class', 'db.t4g.micro')
     gp3 = [o for o in options.get('OrderableDBInstanceOptions', [])
@@ -56,19 +56,19 @@ def main():
     # ValidateTemplate accepts at most 51,200 bytes via TemplateBody.
     body = json.dumps(json.loads(TEMPLATE.read_text()), separators=(',', ':'))
     if len(body.encode()) > 51200:
-        raise ValueError('Template exceeds direct validation limit.')
+        raise ConfigurationError('Template exceeds direct validation limit.')
     compact.write_text(body)
     compact.chmod(0o600)
     report = run_checks(session.call, config['account'], compact, config['parameters']['PostgresVersion'])
     private_json(STATE / config['stack'] / 'preflight-result.json', report)
     print(json.dumps(report, indent=2))
     if not report['requiredZonesAvailable'] or not report['microGp3_20GiBOrderable']:
-        raise ValueError('Required availability condition was not met.')
+        raise ConfigurationError('Required availability condition was not met.')
 
 
 if __name__ == '__main__':
     try:
         main()
-    except (ValueError, RuntimeError, OSError, KeyError):
-        print('Read-only preflight failed; raw AWS output suppressed.', file=sys.stderr)
+    except (ValueError, RuntimeError, OSError, KeyError) as error:
+        print(safe_diagnostic(error), file=sys.stderr)
         sys.exit(1)

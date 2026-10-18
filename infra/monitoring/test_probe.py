@@ -1,4 +1,6 @@
 import io
+import json
+from pathlib import Path
 import unittest
 from probe import check
 
@@ -9,6 +11,12 @@ class Reply(io.BytesIO):
         self.headers = {'Content-Type': content_type}
 
 class ProbeTest(unittest.TestCase):
+    def test_deployed_probe_matches_tested_source(self):
+        folder = Path(__file__).resolve().parent
+        template = json.loads((folder.parent / 'aws/validation-stack.template.json').read_text())
+        embedded = template['Resources']['ProbeFunction']['Properties']['Code']['ZipFile']
+        self.assertEqual(embedded, (folder / 'probe.py').read_text())
+
     def test_checks_both_applications_and_html(self):
         paths = []
         class Opener:

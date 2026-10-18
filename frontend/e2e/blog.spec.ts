@@ -3,11 +3,11 @@ import { readFile } from 'node:fs/promises'
 
 test('reader and owner flow against real PostgreSQL and production SSR', async ({ page, browser }) => {
   if (process.env.RUN_LOCAL_E2E !== '1') {
-    throw new Error('専用の破棄可能なlocalhost:8080環境を用意し、RUN_LOCAL_E2E=1を指定してください。記事の作成・公開を行います。')
+    throw new Error('専用の破棄可能なローカル環境を用意し、RUN_LOCAL_E2E=1を指定してください。記事の作成・公開を行います。')
   }
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  const login = await readFile(new URL('../../config/local-login.txt', import.meta.url), 'utf8')
+  const login = await readFile(process.env.BLOG_E2E_LOGIN_FILE || new URL('../../config/local-login.txt', import.meta.url), 'utf8')
   const password = login.match(/^Password: (.+)$/m)?.[1]
   if (!password) throw new Error('Local fixture credentials are missing')
   const title = `動作確認用の記事 ${Date.now()}`

@@ -152,7 +152,7 @@ Caddyはローカルの同一オリジンへの経路分岐に使用し、短い
 ### コードの責務と依存関係
 
 ```text
-管理ルート → Editor（表示・ルーターの離脱確認）
+管理ルート → AdminPage（表示・ルーターの離脱確認）
               └─ useAdminEditor（入力・認証状態・操作の順序と結果）
                    └─ adminApi（HTTPパス・入力・応答とエラー）
                         └─ Go httpapi → blog.Store契約 → postgres（SQL）
@@ -163,13 +163,18 @@ Caddyはローカルの同一オリジンへの経路分岐に使用し、短い
 
 | 実装 | 責務 |
 |---|---|
-| [Editor](../frontend/src/components/Editor.tsx) | 採用済みの画面を表示し、操作をフックへ渡す。ルーターによる離脱確認を接続する。HTTPパスや公開操作の順序は持たない |
+| [AdminPage](../frontend/src/components/AdminPage.tsx) | 採用済みの画面を表示し、操作をフックへ渡す。ルーターによる離脱確認を接続する。HTTPパスや公開操作の順序は持たない |
 | [useAdminEditor](../frontend/src/features/editor/useAdminEditor.ts) | 入力、選択、認証状態、処理中、成功・失敗・結果不明を管理する。保存後の公開、再取得、確認ダイアログを含む操作の順序を扱う。公開の可否を決定する業務ルールはGoに委ねる |
 | [adminApi](../frontend/src/features/editor/adminApi.ts) | Cookie付きの同一オリジン通信、APIパス・入力と応答型、HTTPエラーを扱う。Reactの状態や表示配置を持たない。型定義は実行時検証の代用ではない |
 | Go httpapi / blog / postgres / auth | HTTP・認証境界、記事型と保存契約、DBアクセスと原子的な条件付き更新、暗号処理を分ける。httpapiはStore契約を介してDB保存へ依存し、画面の配色や配置へ依存しない |
 
 一つの画面ファイルに通信と保存・公開の手順を置く案に対し、表示変更・操作フロー変更・API変更の理由が異なるため3つに分ける。単純に行数を減らす分割や、各入力ごとの細分化はしない。現在は一つの編集画面で閉じる状態のため、共有状態ライブラリや汎用的な通信基盤を追加せずReactのフックを使う。
-Go側はすでにStore契約とDB実装が分かれ、公開版の保存をSQLの条件付き更新で扱っているため、今回さらにサービス層や別のRepository層を追加する利点は小さい。既存のAPI契約・DBモデルは維持する。結果不明時の確認の既知の不足は公開台帳R4で管理する。
+Go側はすでにStore契約とDB実装が分かれ、公開版の保存をSQLの条件付き更新で扱っているため、今回さらにサービス層や別のRepository層を追加する利点は小さい。既存のAPI契約・DBモデルは維持する。編集の入力・認証と、操作の `idle / running / unknown` は分けて持つ。専用状態管理ライブラリを追加する案に対し、現在は一画面の操作に閉じるため判別可能な型と共通の実行関数で扱う。
+
+- 切替・新規・離脱・ログアウトは同じ破棄確認を使う。結果不明なら未変更の入力でも確認し、取消時は入力と未確認状態を保持する。明示して破棄した場合だけ新しい編集へ移る。
+- 既存記事はIDで最新状態を取得してから開く。結果の再確認もIDで取得し、現在の入力は書き換えない。確認失敗やセッション切れ・再ログインでは未確認状態を解除しない。
+- 新規保存の応答消失はIDを特定できないため一覧を取得し、本人が保存先を選ぶ。自動再送は止める。APIの冪等性はR1/R4の残件。
+- 通信は15秒で中断する。5xx・408・通信断・成功応答のJSON形式不良は、書込結果不明として扱う。4xxの拒否と区別し、JSONでないエラー応答でもHTTP状態は保持する。この期限は実行結果の保証や性能目標ではない。
 
 ### 実装上の保護・運用境界
 
@@ -178,7 +183,7 @@ Go側はすでにStore契約とDB実装が分かれ、公開版の保存をSQL�
 - RDS接続は `verify-full` と同梱する公開CAで署名・ホスト名を検証する。CAは公開情報であり秘密鍵ではない。更新情報は[証明書の説明](../backend/certs/README.md)を参照。
 - [DB初期化](../infra/database/bootstrap.psql)は移行用DDLロールと通常アプリ用DMLロールを分離する。初期化・移行は明示的な単発タスクとし、アプリ起動より前に完了させる。
 - イメージはdigestで固定し、秘密値はSSM SecureStringから役割別に注入する。管理・移行用の値を通常アプリへ渡さない。
-- [疎通監視](../infra/monitoring/probe.py)はNode・API・SSRの応答を確認し、失敗と未実行を区別する。SNS購読先と通知到達は未整備。設定の存在だけでは通知運用完了としない。
+- [疎通監視](../infra/monitoring/probe.py)はNode・API・SSRの応答を確認し、失敗と未実行を区別する。SNS購読先と通知到達は未整備。設定の存在だけでは通知運用完了としない。CIは試験対象の監視ソースとテンプレート内の配備コピーの一致も検査する。
 
 ### 選定に関係する一次資料
 
@@ -288,7 +293,7 @@ RDS自動バックアップ7日、ダンプ4世代、復旧作業4時間は提�
 
 ## 12. 実装参照とLLM利用
 
-- [画面](../frontend/src/routes)、[SSR取得](../frontend/src/lib/posts.ts)、[共通Markdown](../frontend/src/components/Markdown.tsx)、[編集画面](../frontend/src/components/Editor.tsx)、[編集操作](../frontend/src/features/editor/useAdminEditor.ts)、[管理API通信](../frontend/src/features/editor/adminApi.ts)
+- [画面](../frontend/src/routes)、[SSR取得](../frontend/src/lib/posts.ts)、[共通Markdown](../frontend/src/components/Markdown.tsx)、[編集画面](../frontend/src/components/AdminPage.tsx)、[編集操作](../frontend/src/features/editor/useAdminEditor.ts)、[管理API通信](../frontend/src/features/editor/adminApi.ts)
 - [API](../backend/internal/httpapi/server.go)、[記事型](../backend/internal/blog/blog.go)、[保存・移行処理](../backend/internal/postgres/store.go)、[初期DDL](../backend/internal/postgres/migrations/001_initial.sql)
 - [起動時検証](../backend/cmd/api/main.go)、[ローカル構成](../compose.yaml)
 

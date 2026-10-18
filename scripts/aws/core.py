@@ -38,44 +38,56 @@ def cli_environment():
     return env
 
 
+class ConfigurationError(ValueError):
+    """An actionable message authored by this tool; never include input values."""
+
+
+def safe_diagnostic(error):
+    if isinstance(error, (AwsError, ConfigurationError)):
+        return str(error)
+    if isinstance(error, json.JSONDecodeError):
+        return 'Configuration JSON is invalid; check its syntax. Raw content suppressed.'
+    return 'Command failed. Check prerequisites and the runbook; raw output suppressed.'
+
+
 def load_config(path):
     config = json.loads(Path(path).read_text())
     allowed = {'account', 'stack', 'profile', 'parameters', 'images'}
     if set(config) - allowed:
-        raise ValueError('Unknown environment field; credentials do not belong in this file.')
+        raise ConfigurationError('Unknown environment field; credentials do not belong in this file.')
     if not re.fullmatch(r'\d{12}', config.get('account', '')):
-        raise ValueError('account must be a 12-digit AWS account.')
+        raise ConfigurationError('account must be a 12-digit AWS account.')
     if not re.fullmatch(r'course-k-blog-validation-[a-zA-Z0-9-]+', config.get('stack', '')) or len(config['stack']) > 128:
-        raise ValueError('Only explicitly named course-k-blog-validation-* stacks are supported.')
+        raise ConfigurationError('Only explicitly named course-k-blog-validation-* stacks are supported.')
     if not re.fullmatch(r'[a-zA-Z0-9_-]+', config.get('profile', '')):
-        raise ValueError('An explicit isolated source profile is required.')
+        raise ConfigurationError('An explicit isolated source profile is required.')
     schema = json.loads(TEMPLATE.read_text())['Parameters']
     params = config.get('parameters', {})
     if not isinstance(params, dict) or set(params) - set(schema):
-        raise ValueError('Unknown stack parameter.')
+        raise ConfigurationError('Unknown stack parameter.')
     for key, spec in schema.items():
         value = params.get(key, spec.get('Default'))
         if not isinstance(value, str):
-            raise ValueError('Missing string parameter: ' + key)
+            raise ConfigurationError('Missing string parameter: ' + key)
         if spec.get('AllowedValues') and value not in spec['AllowedValues']:
-            raise ValueError('Invalid parameter choice: ' + key)
+            raise ConfigurationError('Invalid parameter choice: ' + key)
         if spec.get('AllowedPattern') and not re.fullmatch(spec['AllowedPattern'], value):
-            raise ValueError('Invalid parameter format: ' + key)
+            raise ConfigurationError('Invalid parameter format: ' + key)
         if key.endswith('ParameterArn'):
             expected = f'arn:aws:ssm:{REGION}:{config["account"]}:parameter/course-k/blog-validation/'
             if not value.startswith(expected):
-                raise ValueError('SSM ARN must belong to this account and validation prefix: ' + key)
+                raise ConfigurationError('SSM ARN must belong to this account and validation prefix: ' + key)
         if key == 'RuntimeBoundaryArn' and not value.startswith(f'arn:aws:iam::{config["account"]}:policy/'):
-            raise ValueError('Runtime boundary belongs to a different account.')
+            raise ConfigurationError('Runtime boundary belongs to a different account.')
     if params.get('EnableRuntime', 'false') != 'false' or params.get('EnableDatabaseTools', 'false') != 'false':
-        raise ValueError('Environment base must keep runtime and database tools disabled.')
+        raise ConfigurationError('Environment base must keep runtime and database tools disabled.')
     if params.get('AvailabilityZone1Id', 'usw2-az1') == params.get('AvailabilityZone2Id', 'usw2-az2'):
-        raise ValueError('Two distinct availability zones are required.')
+        raise ConfigurationError('Two distinct availability zones are required.')
     images = config.get('images', {})
     if set(images) != {'NodeRepository', 'GoRepository', 'BootstrapRepository'}:
-        raise ValueError('Three explicit local Docker image references are required.')
+        raise ConfigurationError('Three explicit local Docker image references are required.')
     if any(not isinstance(v, str) or not v or v.startswith('-') for v in images.values()):
-        raise ValueError('Invalid local image reference.')
+        raise ConfigurationError('Invalid local image reference.')
     return config
 
 
@@ -90,16 +102,16 @@ class AwsError(RuntimeError):
 class Session:
     def __init__(self, config, cli=None):
         if config['account'] == '000000000000' or not re.fullmatch(r'17\.\d+', config['parameters'].get('PostgresVersion', '')):
-            raise ValueError('Replace account and PostgreSQL placeholders before contacting AWS.')
+            raise ConfigurationError('Replace account and PostgreSQL placeholders before contacting AWS.')
         self.config = config
         self.cli = cli or os.getenv('AWS_VALIDATION_CLI') or shutil.which('aws')
         if not self.cli:
-            raise ValueError('AWS CLI is required; specify --cli or AWS_VALIDATION_CLI.')
+            raise ConfigurationError('AWS CLI is required; specify --cli or AWS_VALIDATION_CLI.')
         self.env = cli_environment()
         version = subprocess.run([self.cli, '--version'], env=self.env, capture_output=True, text=True)
         match = re.search(r'aws-cli/(\d+)\.(\d+)\.(\d+)', version.stdout + version.stderr)
         if version.returncode or not match or tuple(map(int, match.groups())) < (2, 32, 0):
-            raise ValueError('AWS CLI 2.32.0+ is required for browser login.')
+            raise ConfigurationError('AWS CLI 2.32.0+ is required for browser login.')
         role = f'arn:aws:iam::{config["account"]}:role/course-k-validation-operator'
         result = self._run(['sts', 'assume-role', '--role-arn', role,
                             '--role-session-name', 'blog-validation', '--profile', config['profile']])
@@ -110,7 +122,7 @@ class Session:
         identity = self.call('sts', 'get-caller-identity')
         if identity.get('Account') != config['account'] or not identity.get('Arn', '').startswith(
                 f'arn:aws:sts::{config["account"]}:assumed-role/course-k-validation-operator/'):
-            raise ValueError('Unexpected account or operator role; stopped.')
+            raise ConfigurationError('Unexpected account or operator role; stopped.')
 
     def _run(self, args):
         result = subprocess.run([self.cli, *args, '--region', REGION, '--output', 'json',
@@ -126,10 +138,10 @@ class Session:
     def stack(self):
         stack = self.call('cloudformation', 'describe-stacks', '--stack-name', self.config['stack'])['Stacks'][0]
         if stack['StackName'] != self.config['stack']:
-            raise ValueError('Unexpected stack.')
+            raise ConfigurationError('Unexpected stack.')
         arn = stack.get('StackId', '')
         if not arn.startswith(f'arn:aws:cloudformation:{REGION}:{self.config["account"]}:stack/{self.config["stack"]}/'):
-            raise ValueError('Stack account or region mismatch.')
+            raise ConfigurationError('Stack account or region mismatch.')
         return stack
 
     def resources(self):

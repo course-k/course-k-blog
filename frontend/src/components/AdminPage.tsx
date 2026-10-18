@@ -2,13 +2,13 @@ import { useBlocker } from "@tanstack/react-router";
 import { Markdown } from "./Markdown";
 import { useAdminEditor } from "../features/editor/useAdminEditor";
 
-export function Admin() {
+export function AdminPage() {
   const {
     signedIn,
     password,
     setPassword,
     posts,
-    selected,
+    selectedPost,
     title,
     setTitle,
     markdown,
@@ -21,7 +21,8 @@ export function Admin() {
     setMode,
     uncertain,
     dirty,
-    choose,
+    openPost,
+    confirmLeaveEditor,
     login,
     logout,
     saveDraft,
@@ -30,12 +31,7 @@ export function Admin() {
     checkResult,
   } = useAdminEditor();
   useBlocker({
-    shouldBlockFn: () =>
-      busy ||
-      ((dirty || uncertain) &&
-        !window.confirm(
-          "保存していない変更、または確認できていない操作結果があります。このページを離れますか？",
-        )),
+    shouldBlockFn: () => !confirmLeaveEditor(),
     enableBeforeUnload: dirty || uncertain || busy,
   });
   if (signedIn === null)
@@ -92,16 +88,16 @@ export function Admin() {
       </div>
       <div className="editor-layout">
         <aside>
-          <button disabled={busy} onClick={() => choose(null)}>
+          <button disabled={busy} onClick={() => void openPost(null)}>
             ＋ 新しい記事
           </button>
           <ul className="draft-list">
             {posts.map((p) => (
               <li key={p.id}>
                 <button
-                  className={selected?.id === p.id ? "draft active" : "draft"}
+                  className={selectedPost?.id === p.id ? "draft active" : "draft"}
                   disabled={busy}
-                  onClick={() => choose(p)}
+                  onClick={() => void openPost(p)}
                 >
                   <span>{p.title}</span>
                   <small>
@@ -119,8 +115,8 @@ export function Admin() {
           {editing ? (
             <>
               <p className="editor-state">
-                {selected?.published
-                  ? selected.hasUnpublishedChanges
+                {selectedPost?.published
+                  ? selectedPost.hasUnpublishedChanges
                     ? "公開中・保存済みの未公開変更あり"
                     : "公開中"
                   : "下書き・読者には表示されません"}
@@ -181,9 +177,9 @@ export function Admin() {
                   disabled={busy || uncertain || !title.trim()}
                   onClick={() => void publish()}
                 >
-                  {selected?.published ? "更新を公開する" : "公開する"}
+                  {selectedPost?.published ? "更新を公開する" : "公開する"}
                 </button>
-                {selected?.published && (
+                {selectedPost?.published && (
                   <button
                     className="quiet"
                     disabled={busy || uncertain}

@@ -139,7 +139,10 @@ func request(h http.Handler, method, path, body, origin string, cookie *http.Coo
 }
 func TestAuthenticationDraftPublishAndLogout(t *testing.T) {
 	store := fake()
-	hash, _ := auth.HashPassword("test password long enough")
+	hash, err := auth.HashPassword("test password long enough")
+	if err != nil {
+		t.Fatal(err)
+	}
 	h, err := New(store, "https://blog.example", hash)
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +185,9 @@ func TestAuthenticationDraftPublishAndLogout(t *testing.T) {
 	published := request(h, "GET", "/api/posts/"+post.ID, "", "", nil)
 	expect(published, 200)
 	var before blog.PublicPost
-	_ = json.Unmarshal(published.Body.Bytes(), &before)
+	if err := json.Unmarshal(published.Body.Bytes(), &before); err != nil {
+		t.Fatal(err)
+	}
 	expect(request(h, "PUT", "/api/admin/posts/"+post.ID, `{"title":"新しい下書き","markdown":"別の秘密","version":2}`, "https://blog.example", cookie), 200)
 	public := request(h, "GET", "/api/posts/"+post.ID, "", "", nil)
 	if strings.Contains(public.Body.String(), "別の秘密") || !strings.Contains(public.Body.String(), "最初の記事") {
@@ -192,7 +197,9 @@ func TestAuthenticationDraftPublishAndLogout(t *testing.T) {
 	expect(request(h, "POST", "/api/admin/posts/"+post.ID+"/publish", `{"version":3}`, "https://blog.example", cookie), 200)
 	afterResponse := request(h, "GET", "/api/posts/"+post.ID, "", "", nil)
 	var after blog.PublicPost
-	_ = json.Unmarshal(afterResponse.Body.Bytes(), &after)
+	if err := json.Unmarshal(afterResponse.Body.Bytes(), &after); err != nil {
+		t.Fatal(err)
+	}
 	if !before.PublishedAt.Equal(after.PublishedAt) || before.ID != after.ID {
 		t.Fatal("stable URL/date changed")
 	}
@@ -203,26 +210,34 @@ func TestAuthenticationDraftPublishAndLogout(t *testing.T) {
 }
 func TestInputAndSessionBoundaries(t *testing.T) {
 	store := fake()
-	hash, _ := auth.HashPassword("test password long enough")
-	h, _ := New(store, "http://localhost:8080", hash)
+	hash, err := auth.HashPassword("test password long enough")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := New(store, "http://localhost:8080", hash)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cookie := &http.Cookie{Name: sessionCookie, Value: "fixture-session"}
 	store.sessions[auth.Digest(cookie.Value)] = time.Now().Add(time.Hour)
 	cases := []struct {
-		method, path, body, origin string
-		status                     int
+		name, method, path, body, origin string
+		status                           int
 	}{
-		{"POST", "/api/admin/posts", `{"title":"","markdown":"x"}`, "http://localhost:8080", 400},
-		{"POST", "/api/admin/posts", `{"title":"x","markdown":"x","published":true}`, "http://localhost:8080", 400},
-		{"POST", "/api/admin/posts", `{"title":"x","markdown":"x"} {}`, "http://localhost:8080", 400},
-		{"POST", "/api/admin/posts", `{"title":"x","markdown":"x"}`, "", 403},
-		{"GET", "/api/posts?page=-1", "", "", 400},
-		{"GET", "/api/posts?page=oops", "", "", 400},
+		{"empty title", "POST", "/api/admin/posts", `{"title":"","markdown":"x"}`, "http://localhost:8080", 400},
+		{"unknown field", "POST", "/api/admin/posts", `{"title":"x","markdown":"x","published":true}`, "http://localhost:8080", 400},
+		{"trailing JSON", "POST", "/api/admin/posts", `{"title":"x","markdown":"x"} {}`, "http://localhost:8080", 400},
+		{"missing origin", "POST", "/api/admin/posts", `{"title":"x","markdown":"x"}`, "", 403},
+		{"negative page", "GET", "/api/posts?page=-1", "", "", 400},
+		{"nonnumeric page", "GET", "/api/posts?page=oops", "", "", 400},
 	}
 	for _, tc := range cases {
-		w := request(h, tc.method, tc.path, tc.body, tc.origin, cookie)
-		if w.Code != tc.status {
-			t.Fatalf("%s: %d != %d", tc.path, w.Code, tc.status)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			w := request(h, tc.method, tc.path, tc.body, tc.origin, cookie)
+			if w.Code != tc.status {
+				t.Fatalf("status=%d want=%d", w.Code, tc.status)
+			}
+		})
 	}
 	store.sessions[auth.Digest(cookie.Value)] = time.Now().Add(-time.Second)
 	if request(h, "GET", "/api/admin/posts", "", "", cookie).Code != 401 {
@@ -234,9 +249,18 @@ func TestInputAndSessionBoundaries(t *testing.T) {
 }
 func TestLoginLimitSharedByHandlers(t *testing.T) {
 	store := fake()
-	hash, _ := auth.HashPassword("test password long enough")
-	a, _ := New(store, "https://blog.example", hash)
-	b, _ := New(store, "https://blog.example", hash)
+	hash, err := auth.HashPassword("test password long enough")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := New(store, "https://blog.example", hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := New(store, "https://blog.example", hash)
+	if err != nil {
+		t.Fatal(err)
+	}
 	store.attempts = 10
 	for _, h := range []http.Handler{a, b} {
 		if request(h, "POST", "/api/session", `{"password":"test password long enough"}`, "https://blog.example", nil).Code != 429 {
@@ -248,7 +272,10 @@ func TestLoginLimitSharedByHandlers(t *testing.T) {
 func TestHealthAndProtectionDuringDatabaseFailure(t *testing.T) {
 	store := fake()
 	store.pingError = fmt.Errorf("database offline")
-	hash, _ := auth.HashPassword("test-only-long-password")
+	hash, err := auth.HashPassword("test-only-long-password")
+	if err != nil {
+		t.Fatal(err)
+	}
 	handler, err := New(store, "http://localhost:8080", hash)
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +297,10 @@ func TestHealthAndProtectionDuringDatabaseFailure(t *testing.T) {
 func TestPublicListExcludesBodyButDetailKeepsIt(t *testing.T) {
 	store := fake()
 	store.public["example"] = blog.PublicPost{ID: "example", Title: "Title", Markdown: "body-marker", PublishedAt: time.Now(), UpdatedAt: time.Now()}
-	hash, _ := auth.HashPassword("test-only-long-password")
+	hash, err := auth.HashPassword("test-only-long-password")
+	if err != nil {
+		t.Fatal(err)
+	}
 	handler, err := New(store, "http://localhost:8080", hash)
 	if err != nil {
 		t.Fatal(err)
@@ -284,5 +314,41 @@ func TestPublicListExcludesBodyButDetailKeepsIt(t *testing.T) {
 	handler.ServeHTTP(detail, httptest.NewRequest("GET", "/api/posts/example", nil))
 	if detail.Code != 200 || !strings.Contains(detail.Body.String(), "body-marker") {
 		t.Fatal("detail lost body")
+	}
+}
+
+func TestArticleLimitsAtHTTPBoundary(t *testing.T) {
+	store := fake()
+	hash, err := auth.HashPassword("test password long enough")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := New(store, "http://localhost:8080", hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookie := &http.Cookie{Name: sessionCookie, Value: "boundary-fixture"}
+	store.sessions[auth.Digest(cookie.Value)] = time.Now().Add(time.Hour)
+	cases := []struct {
+		name, title, body string
+		status            int
+	}{
+		{"200 Unicode title characters", strings.Repeat("猫", 200), "", 201},
+		{"201 Unicode title characters", strings.Repeat("猫", 201), "", 400},
+		{"256 KiB body", "title", strings.Repeat("a", 256*1024), 201},
+		{"body exceeds 256 KiB", "title", strings.Repeat("a", 256*1024+1), 400},
+		{"request exceeds transport limit", "title", strings.Repeat("a", 310*1024), 400},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := json.Marshal(map[string]string{"title": tc.title, "markdown": tc.body})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := request(handler, "POST", "/api/admin/posts", string(body), "http://localhost:8080", cookie)
+			if response.Code != tc.status {
+				t.Fatalf("status=%d want=%d", response.Code, tc.status)
+			}
+		})
 	}
 }

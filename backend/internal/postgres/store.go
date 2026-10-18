@@ -13,7 +13,13 @@ import (
 )
 
 //go:embed migrations/001_initial.sql
-var initial string
+var initialMigrationSQL string
+
+// All migration commands share this lock to serialize schema changes.
+const migrationLockID = 406188019
+
+const loginWindowSeconds = 15 * 60
+const maxLoginAttempts = 10
 
 type Store struct{ db *sql.DB }
 
@@ -41,13 +47,13 @@ func (s *Store) Migrate(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(406188019)"); err != nil {
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", migrationLockID); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS schema_migrations (version integer PRIMARY KEY, checksum text NOT NULL)"); err != nil {
 		return err
 	}
-	checksum := fmt.Sprintf("%x", sha256.Sum256([]byte(initial)))
+	checksum := fmt.Sprintf("%x", sha256.Sum256([]byte(initialMigrationSQL)))
 	var existing string
 	err = tx.QueryRowContext(ctx, "SELECT checksum FROM schema_migrations WHERE version=1").Scan(&existing)
 	if err == nil {
@@ -59,7 +65,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, initial); err != nil {
+	if _, err = tx.ExecContext(ctx, initialMigrationSQL); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO schema_migrations VALUES (1,$1)", checksum); err != nil {
@@ -68,14 +74,16 @@ func (s *Store) Migrate(ctx context.Context) error {
 	return tx.Commit()
 }
 
-const adminCols = "id,title,markdown,published_title,published_markdown,published_at,updated_at,version,published"
+const adminColumns = "id,title,markdown,published_title,published_markdown,published_at,updated_at,version,published"
 
 type scanner interface{ Scan(...any) error }
 
 func scanAdmin(row scanner) (blog.Post, error) {
 	var p blog.Post
 	err := row.Scan(&p.ID, &p.Title, &p.Markdown, &p.PublishedTitle, &p.PublishedMarkdown, &p.PublishedAt, &p.UpdatedAt, &p.Version, &p.Published)
-	p.HasUnpublishedChanges = p.PublishedAt == nil || p.Title != p.PublishedTitle || p.Markdown != p.PublishedMarkdown
+	if err == nil {
+		p.HasUnpublishedChanges = p.PublishedAt == nil || p.Title != p.PublishedTitle || p.Markdown != p.PublishedMarkdown
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		err = blog.ErrNotFound
 	}
@@ -90,7 +98,10 @@ func scanPublic(row scanner) (blog.PublicPost, error) {
 	return p, err
 }
 func (s *Store) ListPublic(ctx context.Context, limit, offset int) ([]blog.PublicPostSummary, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id,published_title,published_at,public_updated_at FROM posts WHERE published ORDER BY published_at DESC,id LIMIT $1 OFFSET $2", limit, offset)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, published_title, published_at, public_updated_at
+		FROM posts
+		WHERE published
+		ORDER BY published_at DESC, id LIMIT $1 OFFSET $2`, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -106,10 +117,12 @@ func (s *Store) ListPublic(ctx context.Context, limit, offset int) ([]blog.Publi
 	return out, rows.Err()
 }
 func (s *Store) GetPublic(ctx context.Context, id string) (blog.PublicPost, error) {
-	return scanPublic(s.db.QueryRowContext(ctx, "SELECT id,published_title,published_markdown,published_at,public_updated_at FROM posts WHERE id=$1 AND published", id))
+	return scanPublic(s.db.QueryRowContext(ctx, `SELECT id, published_title, published_markdown, published_at, public_updated_at
+        FROM posts
+        WHERE id=$1 AND published`, id))
 }
 func (s *Store) ListAdmin(ctx context.Context) ([]blog.Post, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT "+adminCols+" FROM posts ORDER BY updated_at DESC,id")
+	rows, err := s.db.QueryContext(ctx, "SELECT "+adminColumns+" FROM posts ORDER BY updated_at DESC,id")
 	if err != nil {
 		return nil, err
 	}
@@ -125,13 +138,15 @@ func (s *Store) ListAdmin(ctx context.Context) ([]blog.Post, error) {
 	return out, rows.Err()
 }
 func (s *Store) GetAdmin(ctx context.Context, id string) (blog.Post, error) {
-	return scanAdmin(s.db.QueryRowContext(ctx, "SELECT "+adminCols+" FROM posts WHERE id=$1", id))
+	return scanAdmin(s.db.QueryRowContext(ctx, "SELECT "+adminColumns+" FROM posts WHERE id=$1", id))
 }
 func (s *Store) Create(ctx context.Context, p blog.Post) error {
 	_, err := s.db.ExecContext(ctx, "INSERT INTO posts (id,title,markdown,updated_at) VALUES ($1,$2,$3,$4)", p.ID, p.Title, p.Markdown, p.UpdatedAt)
 	return err
 }
-func (s *Store) result(ctx context.Context, id string, row scanner) (blog.Post, error) {
+
+// A conditional update returns no row for both missing IDs and stale versions.
+func (s *Store) readPostUpdateResult(ctx context.Context, id string, row scanner) (blog.Post, error) {
 	p, err := scanAdmin(row)
 	if !errors.Is(err, blog.ErrNotFound) {
 		return p, err
@@ -146,13 +161,25 @@ func (s *Store) result(ctx context.Context, id string, row scanner) (blog.Post, 
 	return p, blog.ErrNotFound
 }
 func (s *Store) Save(ctx context.Context, id, title, markdown string, version int64, now time.Time) (blog.Post, error) {
-	return s.result(ctx, id, s.db.QueryRowContext(ctx, "UPDATE posts SET title=$2,markdown=$3,updated_at=$5,version=version+1 WHERE id=$1 AND version=$4 RETURNING "+adminCols, id, title, markdown, version, now))
+	return s.readPostUpdateResult(ctx, id, s.db.QueryRowContext(ctx, `UPDATE posts
+        SET title=$2, markdown=$3, updated_at=$5, version=version+1
+        WHERE id=$1 AND version=$4
+        RETURNING `+adminColumns, id, title, markdown, version, now))
 }
 func (s *Store) Publish(ctx context.Context, id string, version int64, now time.Time) (blog.Post, error) {
-	return s.result(ctx, id, s.db.QueryRowContext(ctx, "UPDATE posts SET published=true,published_title=title,published_markdown=markdown,published_at=COALESCE(published_at,$3),public_updated_at=$3,updated_at=$3,version=version+1 WHERE id=$1 AND version=$2 RETURNING "+adminCols, id, version, now))
+	return s.readPostUpdateResult(ctx, id, s.db.QueryRowContext(ctx, `UPDATE posts
+		SET published=true,
+            published_title=title, published_markdown=markdown,
+            published_at=COALESCE(published_at, $3), public_updated_at=$3,
+            updated_at=$3, version=version+1
+		WHERE id=$1 AND version=$2
+		RETURNING `+adminColumns, id, version, now))
 }
 func (s *Store) Unpublish(ctx context.Context, id string, version int64, now time.Time) (blog.Post, error) {
-	return s.result(ctx, id, s.db.QueryRowContext(ctx, "UPDATE posts SET published=false,updated_at=$3,version=version+1 WHERE id=$1 AND version=$2 RETURNING "+adminCols, id, version, now))
+	return s.readPostUpdateResult(ctx, id, s.db.QueryRowContext(ctx, `UPDATE posts
+        SET published=false, updated_at=$3, version=version+1
+        WHERE id=$1 AND version=$2
+        RETURNING `+adminColumns, id, version, now))
 }
 func (s *Store) PutSession(ctx context.Context, se blog.Session) error {
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -181,7 +208,7 @@ func (s *Store) DeleteSession(ctx context.Context, hash string) error {
 // Global owner-only login limit is shared across task replacements. Deliberate
 // tradeoff: an attacker can exhaust it. Add stronger edge controls before public use.
 func (s *Store) AllowLogin(ctx context.Context, now time.Time) (bool, error) {
-	window := now.Unix() / 900
+	window := now.Unix() / loginWindowSeconds
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -191,9 +218,12 @@ func (s *Store) AllowLogin(ctx context.Context, now time.Time) (bool, error) {
 		return false, err
 	}
 	var count int
-	err = tx.QueryRowContext(ctx, "INSERT INTO login_attempts VALUES ($1,1) ON CONFLICT(window_start) DO UPDATE SET attempts=LEAST(login_attempts.attempts+1,11) RETURNING attempts", window).Scan(&count)
+	err = tx.QueryRowContext(ctx, `INSERT INTO login_attempts VALUES ($1, 1)
+		ON CONFLICT(window_start) DO UPDATE
+		SET attempts=LEAST(login_attempts.attempts+1, $2)
+		RETURNING attempts`, window, maxLoginAttempts+1).Scan(&count)
 	if err != nil {
 		return false, err
 	}
-	return count <= 10, tx.Commit()
+	return count <= maxLoginAttempts, tx.Commit()
 }
