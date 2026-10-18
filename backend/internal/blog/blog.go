@@ -81,3 +81,9 @@ func Validate(title, markdown string) error {
 	}
 	return nil
 }
+
+// CreationStore binds a retry key to its original payload and article.
+type CreationStore interface {
+	CreateOnce(context.Context, string, string, Post) (Post, error)
+	FindCreation(context.Context, string) (Post, error)
+}

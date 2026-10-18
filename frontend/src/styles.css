@@ -638,3 +638,32 @@ footer {
 .preview .prose > :first-child {
   margin-top: 0;
 }
+
+.management-panel {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.management-panel select {
+  font: inherit;
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-top: 8px;
+}
+.sync-sources {
+  padding-left: 0;
+  list-style: none;
+}
+.sync-sources li {
+  margin: 24px 0;
+}
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.checkbox-label input {
+  width: auto;
+  margin: 0;
+}

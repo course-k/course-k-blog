@@ -17,7 +17,9 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 function Home() {
-  const posts = Route.useLoaderData();
+  const result = Route.useLoaderData();
   const { page } = Route.useSearch();
-  return <ArticleList posts={posts} page={page} />;
+  return (
+    <ArticleList posts={result.articles} hasNext={result.hasNext} page={page} />
+  );
 }

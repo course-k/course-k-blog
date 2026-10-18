@@ -1,18 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { dateLabel } from "../lib/types";
-import type { PublicPostSummary } from "../lib/types";
+import type { ArticleSummary } from "../lib/types";
 
-// Presentation input only. External-feed API integration is intentionally separate.
-export type ArticleCardData =
-  | ({ kind: "own" } & PublicPostSummary)
-  | {
-      kind: "external";
-      id: string;
-      title: string;
-      publishedAt: string;
-      source: "qiita" | "note" | "wantedly";
-      url: string;
-    };
+export type ArticleCardData = ArticleSummary;
 const sourceNames = { qiita: "Qiita", note: "note", wantedly: "Wantedly" };
 export function ArticleCard({ article }: { article: ArticleCardData }) {
   const external = article.kind === "external";

@@ -1,7 +1,15 @@
 export type FixtureConfig = {
   screen: "article" | "list" | "admin";
-  scenario?: "success" | "publish-failure" | "list-failure" | "lost-response" | "conflict" | "signed-out";
+  scenario?:
+    | "success"
+    | "publish-failure"
+    | "list-failure"
+    | "lost-response"
+    | "conflict"
+    | "signed-out";
   empty?: boolean;
+  oidc?: boolean;
+  external?: boolean;
 };
 
 declare global {

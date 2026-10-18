@@ -1,13 +1,15 @@
 import { Link } from "@tanstack/react-router";
 import { ArticleCard } from "./ArticleCard";
-import type { PublicPostSummary } from "../lib/types";
+import type { ArticleSummary } from "../lib/types";
 
 export function ArticleList({
   posts,
   page,
+  hasNext = false,
 }: {
-  posts: PublicPostSummary[];
+  posts: ArticleSummary[];
   page: number;
+  hasNext?: boolean;
 }) {
   return (
     <>
@@ -31,7 +33,7 @@ export function ArticleList({
           </div>
         ) : (
           posts.map((post) => (
-            <ArticleCard key={post.id} article={{ kind: "own", ...post }} />
+            <ArticleCard key={`${post.kind}:${post.id}`} article={post} />
           ))
         )}
         <nav className="pagination" aria-label="ページ">
@@ -40,7 +42,7 @@ export function ArticleList({
               ← 前のページ
             </Link>
           )}
-          {posts.length === 20 && (
+          {hasNext && (
             <Link to="/" search={{ page: page + 1 }}>
               次のページ →
             </Link>

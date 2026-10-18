@@ -9,6 +9,7 @@
 | 画面の構成・配色・文字組みと、その理由 | [UI設計](ui-ux-decisions-current.md) |
 | 今どこまでできていて、何が残るか | [公開までの進捗台帳](blog-publication-roadmap-2026-10-18.md) |
 | コードと文書をどう分け、何をGitへ保存するか | [リポジトリ構成と保存方針](repository-organization.md) |
+| 本番の認証・保存・回復・配置と費用 | [本番配置と運用](../infra/production.md) |
 | AWS設定・検証配置・撤去の手順 | [AWS手順](../infra/README.md) |
 | ローカル起動・検証の方法 | [リポジトリREADME](../README.md) |
 

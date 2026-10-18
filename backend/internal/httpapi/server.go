@@ -2,8 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"coursek/blog/backend/internal/auth"
-	"coursek/blog/backend/internal/blog"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +11,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"coursek/blog/backend/internal/auth"
+	"coursek/blog/backend/internal/backup"
+	"coursek/blog/backend/internal/blog"
+	"coursek/blog/backend/internal/external"
+	"coursek/blog/backend/internal/images"
+	"coursek/blog/backend/internal/oidclogin"
 )
 
 const sessionCookie = "coursek_session"
@@ -22,9 +27,21 @@ type Server struct {
 	origin, hash string
 	secure       bool
 	now          func() time.Time
+	features     Features
+}
+
+type Features struct {
+	External  *external.Service
+	Images    *images.Service
+	Backups   *backup.Service
+	Identity  *oidclogin.Service
+	Creations blog.CreationStore
 }
 
 func New(store blog.Store, origin, hash string) (http.Handler, error) {
+	return NewWithFeatures(store, origin, hash, Features{})
+}
+func NewWithFeatures(store blog.Store, origin, hash string, features Features) (http.Handler, error) {
 	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" {
 		return nil, errors.New("APP_ORIGIN must be a bare origin without a trailing slash")
@@ -33,11 +50,22 @@ func New(store blog.Store, origin, hash string) (http.Handler, error) {
 	if u.Scheme != "https" && !(u.Scheme == "http" && local) {
 		return nil, errors.New("HTTPS required outside loopback")
 	}
-	if !auth.ValidHash(hash) {
+	if features.Identity == nil && !auth.ValidHash(hash) {
 		return nil, errors.New("ADMIN_PASSWORD_HASH is missing or invalid")
 	}
-	s := &Server{store: store, origin: origin, hash: hash, secure: u.Scheme == "https", now: time.Now}
+	s := &Server{store: store, origin: origin, hash: hash, secure: u.Scheme == "https", now: time.Now, features: features}
 	m := http.NewServeMux()
+	if features.Creations != nil {
+		m.HandleFunc("GET /api/admin/creation-results/{key}", s.require(func(w http.ResponseWriter, r *http.Request) {
+			post, err := features.Creations.FindCreation(r.Context(), r.PathValue("key"))
+			if err != nil {
+				failure(w, err)
+				return
+			}
+			write(w, 200, post)
+		}))
+	}
+	s.identityRoutes(m)
 	m.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) { write(w, 200, map[string]bool{"ok": true}) })
 	m.HandleFunc("GET /api/readyz", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.store.Ping(r.Context()); err != nil {
@@ -46,6 +74,15 @@ func New(store blog.Store, origin, hash string) (http.Handler, error) {
 		}
 		write(w, 200, map[string]bool{"ok": true})
 	})
+	if features.External != nil {
+		s.externalRoutes(m)
+	}
+	if features.Images != nil {
+		s.imageRoutes(m)
+	}
+	if features.Backups != nil {
+		s.operationRoutes(m)
+	}
 	m.HandleFunc("GET /api/posts", s.listPublic)
 	m.HandleFunc("GET /api/posts/{id}", s.getPublic)
 	m.HandleFunc("POST /api/session", s.login)
@@ -89,6 +126,10 @@ func failure(w http.ResponseWriter, err error) {
 		status, msg = 404, "not found"
 	case errors.Is(err, blog.ErrConflict):
 		status, msg = 409, "別の変更が保存されています。再読み込みして確認してください。"
+	case errors.Is(err, external.ErrInvalid):
+		status, msg = 400, "補正するタイトルは1〜500文字、公開日時は有効な日時を指定してください。"
+	case errors.Is(err, images.ErrInvalid):
+		status, msg = 400, "画像と参照を確認してください。5MiB・1200万画素以内のPNG/JPEGを利用できます。"
 	case errors.Is(err, blog.ErrInvalid):
 		status, msg = 400, "タイトルは1〜200文字、本文は256KiB以内で入力してください。"
 	default:
@@ -133,6 +174,10 @@ func (s *Server) cookie(value string, expiry time.Time, maxAge int) *http.Cookie
 	return &http.Cookie{Name: sessionCookie, Value: value, Path: "/", HttpOnly: true, Secure: s.secure, SameSite: http.SameSiteStrictMode, Expires: expiry, MaxAge: maxAge}
 }
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	if s.features.Identity != nil {
+		write(w, 405, map[string]string{"error": "専用のログイン画面を利用してください。"})
+		return
+	}
 	var in struct {
 		Password string `json:"password"`
 	}
@@ -227,9 +272,10 @@ func (s *Server) getAdmin(w http.ResponseWriter, r *http.Request) {
 }
 
 type edit struct {
-	Title    string `json:"title"`
-	Markdown string `json:"markdown"`
-	Version  int64  `json:"version"`
+	Title       string `json:"title"`
+	Markdown    string `json:"markdown"`
+	Version     int64  `json:"version"`
+	CreationKey string `json:"creationKey,omitempty"`
 }
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {
@@ -247,6 +293,24 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := blog.Post{ID: id, Title: in.Title, Markdown: in.Markdown, Version: 1, UpdatedAt: s.now().UTC()}
+	if in.CreationKey != "" {
+		if s.features.Creations == nil || !auth.ValidToken(in.CreationKey) {
+			failure(w, blog.ErrInvalid)
+			return
+		}
+		payload, err := json.Marshal(struct{ Title, Markdown string }{in.Title, in.Markdown})
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		saved, err := s.features.Creations.CreateOnce(r.Context(), in.CreationKey, auth.Digest(string(payload)), p)
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		write(w, 201, saved)
+		return
+	}
 	if err = s.store.Create(r.Context(), p); err != nil {
 		failure(w, err)
 		return
@@ -291,6 +355,21 @@ func (s *Server) change(w http.ResponseWriter, r *http.Request, publish bool) {
 	if publish {
 		p, err = s.store.Publish(r.Context(), r.PathValue("id"), in.Version, s.now().UTC())
 	} else {
+		if s.features.Backups != nil {
+			current, readError := s.store.GetAdmin(r.Context(), r.PathValue("id"))
+			if readError != nil {
+				failure(w, readError)
+				return
+			}
+			if current.Version != in.Version {
+				failure(w, blog.ErrConflict)
+				return
+			}
+			if backupError := s.features.Backups.Take(r.Context(), true); backupError != nil {
+				write(w, 503, map[string]string{"error": "変更前バックアップを完了できませんでした。記事は変更していません。運用状態を確認してください。"})
+				return
+			}
+		}
 		p, err = s.store.Unpublish(r.Context(), r.PathValue("id"), in.Version, s.now().UTC())
 	}
 	if err != nil {

@@ -26,6 +26,10 @@ services:
       DATABASE_SSLMODE: disable
       ADMIN_PASSWORD_HASH_FILE: /run/secrets/admin_hash
       LISTEN_ADDR: 0.0.0.0:8081
+      EXTERNAL_SYNC_ENABLED: "true"
+      MEDIA_DIRECTORY: /data/media
+      BACKUP_DIRECTORY: /backup/archives
+      BACKUP_ENABLED: "true"
     secrets: [db_password, admin_hash]
     depends_on:
       db: { condition: service_healthy }
@@ -33,6 +37,7 @@ services:
     build: ./backend
     environment: *api_environment
     secrets: [db_password, admin_hash]
+    volumes: [media_data:/data, backup_data:/backup]
     depends_on:
       migrate: { condition: service_completed_successfully }
     restart: unless-stopped
@@ -56,3 +61,5 @@ secrets:
   admin_hash: { file: ./config/admin-hash.txt }
 volumes:
   postgres_data:
+  media_data:
+  backup_data:

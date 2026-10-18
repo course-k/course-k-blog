@@ -14,7 +14,7 @@ const post = {
 let mode = "success";
 globalThis.fetch = async (input) => {
   const url = String(input);
-  if (!url.startsWith("http://127.0.0.1:8081/api/posts"))
+  if (!/^http:\/\/127\.0\.0\.1:8081\/api\/(posts|articles)/.test(url))
     throw new Error(`Unexpected network attempt: ${url}`);
   const data =
     mode === "failure"
@@ -22,7 +22,21 @@ globalThis.fetch = async (input) => {
       : mode === "missing"
         ? {}
         : url.includes("?")
-          ? [{ ...post, markdown: undefined }]
+          ? {
+              articles: [
+                { kind: "own", ...post, markdown: undefined },
+                {
+                  kind: "external",
+                  id: "qiita:fixture",
+                  title: "外部の技術記事",
+                  url: "https://qiita.com/course_k/items/fixture",
+                  source: "qiita",
+                  publishedAt: post.publishedAt,
+                  updatedAt: post.updatedAt,
+                },
+              ],
+              hasNext: mode === "next",
+            }
           : post;
   return new Response(JSON.stringify(data), {
     status: mode === "failure" ? 500 : mode === "missing" ? 404 : 200,
@@ -53,6 +67,9 @@ test("production SSR list links to published article and has no excerpt", async 
   assert(html.includes(`/posts/${id}`));
   assert(html.includes("post-row source-own"));
   assert(!html.includes("文章です。"));
+  assert(html.includes('href="https://qiita.com/course_k/items/fixture"'));
+  assert(html.includes("外部の技術記事"));
+  assert(!html.includes("次のページ"));
 });
 test("missing and failed article are not rendered as empty article list", async () => {
   mode = "missing";
@@ -68,4 +85,13 @@ test("missing and failed article are not rendered as empty article list", async 
   assert.equal(failed.status, 500);
   const html = await failed.text();
   assert(!html.includes("最初の記事を準備しています"));
+});
+
+test("SSR uses explicit next-page contract rather than the current item count", async () => {
+  mode = "next";
+  const response = await entry.fetch(
+    new Request("http://ui-fixture.invalid/?page=1"),
+  );
+  assert.equal(response.status, 200);
+  assert((await response.text()).includes("次のページ"));
 });
