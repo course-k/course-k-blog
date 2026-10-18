@@ -68,3 +68,5 @@ npm run test:runtime
 ルート型はビルドで生成される。`npm run test:e2e` は実Go・DBとブラウザを必要とし、固定APIによる画面試験と区別する。環境のブラウザアクセス拒否を回避する目的で実行しない。固定APIのSSR試験は `npm run test:ssr`、画面試験は `npm run test:ui`。後者は対応ブラウザを必要とする。画面試験は固定APIの部品確認であり、実Go・DBへの接続確認ではない。
 
 AWS用設定は `infra/` にあるが、テンプレートの存在だけで本番配備済みとは判断しない。課金資源の作成、独自ドメイン変更、実記事の公開は、このREADMEのローカル起動手順に含まれない。
+
+AWS設定の用途・反映状態・検証配置の実行入口は[AWS手順](infra/README.md)を参照する。オフラインの確認は `python3 scripts/aws/validation.py --config infra/aws/validation-environment.example.json plan`、対応試験は `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/aws -p 'test_*.py' -v`。これらはAWSへ接続しない。

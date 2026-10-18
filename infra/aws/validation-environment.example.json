@@ -1,0 +1,19 @@
+{
+  "account": "000000000000",
+  "stack": "course-k-blog-validation-example",
+  "profile": "course-k-blog",
+  "parameters": {
+    "PostgresVersion": "REPLACE_WITH_VERIFIED_VERSION",
+    "RuntimeBoundaryArn": "arn:aws:iam::000000000000:policy/REPLACE_WITH_RUNTIME_BOUNDARY",
+    "DatabaseUrlParameterArn": "arn:aws:ssm:us-west-2:000000000000:parameter/course-k/blog-validation/database-url",
+    "MigrationUrlParameterArn": "arn:aws:ssm:us-west-2:000000000000:parameter/course-k/blog-validation/migration-url",
+    "AdminHashParameterArn": "arn:aws:ssm:us-west-2:000000000000:parameter/course-k/blog-validation/admin-hash",
+    "AppPasswordParameterArn": "arn:aws:ssm:us-west-2:000000000000:parameter/course-k/blog-validation/app-password",
+    "MigrationPasswordParameterArn": "arn:aws:ssm:us-west-2:000000000000:parameter/course-k/blog-validation/migration-password"
+  },
+  "images": {
+    "NodeRepository": "course-k-web:validation",
+    "GoRepository": "course-k-api:validation",
+    "BootstrapRepository": "course-k-bootstrap:validation"
+  }
+}

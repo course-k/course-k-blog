@@ -131,7 +131,7 @@ NodeとGoを別ECSサービスとし、それぞれタスク定義・Cloud Map�
 タスクは常に1コンテナにする規則ではなく、ライフサイクルと独立更新の必要性で分ける。各1タスク・RDS Single-AZは高可用構成ではない。
 HTTP APIの時間・送信サイズ等の制約が要件に合わなくなればALB等へ見直す。Nginxを追加しても入口の制約は消えない。画像は認証後のS3直接アップロードが候補で、詳細は未決。
 
-設定は[スタック定義](../infra/review/two-task-stack.template.json)と[入口定義](../infra/review/http-api-routing.template.json)を参照。本番設定・配備手順の整備は公開台帳R5へ残す。
+設定は[スタック定義](../infra/aws/validation-stack.template.json)と[AWS設定と実行手順](../infra/README.md)を参照。本番設定・配備手順の整備は公開台帳R5へ残す。
 
 ### 地域・容量
 
