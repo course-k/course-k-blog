@@ -135,7 +135,7 @@ func TestRepresentativeBlogBackupAndRestore(t *testing.T) {
 	defer cancel()
 	// 200 public articles with separate 50 KiB working/public snapshots, not an empty DB.
 	for i := 0; i < 200; i++ {
-		post := blog.Post{ID: fmt.Sprintf("capacity-%d", i), Title: fmt.Sprintf("記事 %d", i), Markdown: strings.Repeat("x", 50*1024), UpdatedAt: time.Now().UTC(), Version: 1}
+		post := blog.Post{ID: fmt.Sprintf("capacity-%d", i), Title: fmt.Sprintf("記事 %d", i), Markdown: strings.Repeat("<>&", 50*1024/3) + "xx", UpdatedAt: time.Now().UTC(), Version: 1}
 		if err := source.Create(ctx, post); err != nil {
 			t.Fatal(err)
 		}

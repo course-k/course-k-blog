@@ -82,11 +82,15 @@ func (s *Store) ExportSnapshot(ctx context.Context) (backup.Snapshot, error) {
 				}
 				record[col] = values[i]
 			}
-			encoded, err := json.Marshal(record)
-			if err != nil {
+			var rowJSON bytes.Buffer
+			encoder := json.NewEncoder(&rowJSON)
+			// Archives are data, not HTML. Avoid expanding article code such as <>&.
+			encoder.SetEscapeHTML(false)
+			if err := encoder.Encode(record); err != nil {
 				rows.Close()
 				return snapshot, err
 			}
+			encoded := bytes.TrimSuffix(rowJSON.Bytes(), []byte("\n"))
 			if totalBytes+content.Len()+len(encoded)+2 > backup.MaxSnapshotBytes {
 				rows.Close()
 				return snapshot, backup.ErrInvalid
