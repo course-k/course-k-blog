@@ -2,6 +2,20 @@
 
 2026-10-18。本人が最大72時間・予算目安10 USD（税別、上限保証ではない）のAWS検証を承認。その後、既存のCLIプロファイルは全て別用途と確認した。
 
+## 最新：実配備で確認した追加修正
+
+初回のアクセス設定は反映され、AssumeRoleと事前確認は成功した。ただしAPI Gateway Stageの作成時タグ操作がAccessDeniedとなり、実配備はロールバックした。利用者タグなしでも再現。アクセス用テンプレートはGatewayThroughStackの操作をapigateway:*へ修正し、元の対象リソース・オレゴン・CloudFormation経由の条件を維持した。修正版のcfn-lint・Access Analyzerは成功。本人による既存アクセス用スタックの更新待ち。検証記録の二回目の結果を参照。
+
+## 最新：権限反映とAWS事前確認の成功
+
+本人がオレゴンでアクセス用スタックを作成し、出力のRuntimeBoundaryArnを提供。専用ユーザーから操作者ロールへのAssumeRoleに成功した。以下のAccessDenied記録は設定前の履歴。
+
+オレゴンのusw2-az1/az2、PostgreSQL 17.11、db.t4g.micro/gp3/20GiBの注文可否を実APIで確認。Fargate On-Demandのアカウント上限は64 vCPU（空き枠を保証する値ではない）。CloudFormation ValidateTemplateも成功。Access Analyzerによる4つのポリシーの検査はERROR/SECURITY_WARNING/WARNINGなし、S3 ARNの重複に関するSUGGESTIONが二つのみ。権限の実運用が全て成立した証明とはしない。
+
+操作者プロファイルをAWS CLIに直接使うとグローバルの~/.aws/cliへキャッシュを書こうとして端末の制限にかかったため、事前確認ツールはブラウザ認証元から明示的にAssumeRoleし、短期資格情報をプロセス内だけで扱う方式に変更。グローバルキャッシュの権限を広げず、認証情報はファイル・画面に出さない。
+
+続く実配備と撤去の状態は[AWS実検証記録](aws-validation-execution-2026-10-18.md)を参照。
+
 ## 再開時の確認（オレゴン採用後）
 
 本人のオレゴン採用に合わせ、配備/権限テンプレートをus-west-2へ変更。SSM ARNの検査、権限のリージョン条件とARN、KMS ViaServiceも揃え、cfn-lintをオレゴン指定で確認済み。
@@ -24,7 +38,7 @@ python3 scripts/aws-validation-preflight.py \
   --expected-account 757412973334
 ```
 
-2026-10-18の再実行はAssumeRoleのAccessDeniedで停止。想定外アカウントを渡すローカル検査でも、最初のSTS照合後に後続処理へ進まないことを確認した。AWS上のAZ・DB・枠・テンプレート検証は権限設定後に実施する。権限変更なしで同じ失敗を繰り返さない。
+2026-10-18の再実行はAssumeRoleのAccessDeniedで停止。想定外アカウントを渡すローカル検査でも、最初のSTS照合後に後続処理へ進まないことを確認した。この時点ではAWS上のAZ・DB・枠・テンプレート検証は未実施だった。後続の成功は冒頭を参照する。権限変更なしで同じ失敗を繰り返さない。
 
 権限設定後の順序は、事前確認→新規資源だけのChange Set確認→基盤作成→イメージ登録と秘密値設定→DB初期化/移行→Node/Go起動→実経路の操作/SSR/復帰検証→撤去と保持物確認。課金対象を初めて作成した時刻と撤去期限を記録する。現時点で72時間の稼働検証を開始した扱いにはしない。
 
@@ -71,7 +85,7 @@ RDS管理者権限はBootstrapにのみ、通常DSNと管理者ハッシュはGo
 
 ## 検証の状態
 
-2テンプレートに対するcfn-lint、JSON構文、管理ポリシーの非空白文字数を確認。AWS公式ポリシー生成器のアクション一覧で、記載したアクション名/パターンも照合。AWS Access Analyzer・CloudFormationの実API検証と作成は、まだ操作者用権限がないため未実施。cfn-lint成功を権限の実動作保証としない。IAMコンソール/CloudFormationでエラーがあれば原因を確認して修正し、権限一括管理者化で回避しない。
+2テンプレートに対するcfn-lint、JSON構文、管理ポリシーの非空白文字数を確認。AWS公式ポリシー生成器のアクション一覧で、記載したアクション名/パターンも照合。設定前はAWS Access Analyzer・CloudFormationの実API検証と作成は未実施だった。現在の結果は冒頭と実検証記録を参照。cfn-lint成功を権限の実動作保証としない。IAMコンソール/CloudFormationでエラーがあれば原因を確認して修正し、権限一括管理者化で回避しない。
 
 ## 根拠・理由
 

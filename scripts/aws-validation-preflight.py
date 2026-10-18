@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read-only AWS checks for the approved Oregon validation environment.
 
-The CLI handles credentials. This script never prints, exports, or stores them.
+The CLI handles credentials. This script never prints or persists credentials.
 It makes no resource-creation, permission-change, or deployment calls.
 """
 import argparse
@@ -19,7 +19,7 @@ REGION = 'us-west-2'
 
 def cli_environment():
     env = os.environ.copy()
-    for name in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_SECURITY_TOKEN'):
+    for name in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_SECURITY_TOKEN', 'AWS_PROFILE', 'AWS_DEFAULT_PROFILE'):
         env.pop(name, None)
     directory = ROOT / 'config' / 'aws-validation'
     env.update(AWS_CONFIG_FILE=str(directory / 'config'),
@@ -63,7 +63,7 @@ def run_checks(call, expected_account, template):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--expected-account', required=True)
-    parser.add_argument('--profile', default='course-k-validation-operator')
+    parser.add_argument('--source-profile', default='course-k-blog')
     parser.add_argument('--cli', default=os.getenv('AWS_VALIDATION_CLI') or shutil.which('aws'))
     args = parser.parse_args()
     if not re.fullmatch(r'\d{12}', args.expected_account) or not args.cli:
@@ -80,8 +80,22 @@ def main():
     compact.write_text(json.dumps(source, separators=(',', ':')))
     compact.chmod(0o600)
 
+    # Assume directly and keep short-lived credentials in this process only.
+    # Role profiles would otherwise create a cache in the global ~/.aws/cli.
+    role = subprocess.run([args.cli, 'sts', 'assume-role', '--role-arn',
+                           f'arn:aws:iam::{args.expected_account}:role/course-k-validation-operator',
+                           '--role-session-name', 'blog-validation', '--profile', args.source_profile,
+                           '--region', REGION, '--output', 'json', '--no-cli-pager'],
+                          env=env, capture_output=True, text=True)
+    if role.returncode:
+        raise RuntimeError('AssumeRole failed: ' + role.stderr.strip())
+    credentials = json.loads(role.stdout)['Credentials']
+    env.update(AWS_ACCESS_KEY_ID=credentials['AccessKeyId'],
+               AWS_SECRET_ACCESS_KEY=credentials['SecretAccessKey'],
+               AWS_SESSION_TOKEN=credentials['SessionToken'])
+
     def call(*operation):
-        response = subprocess.run([args.cli, *operation, '--profile', args.profile, '--region', REGION,
+        response = subprocess.run([args.cli, *operation, '--region', REGION,
                                    '--output', 'json', '--no-cli-pager', '--cli-connect-timeout', '10',
                                    '--cli-read-timeout', '30'], env=env, capture_output=True, text=True)
         if response.returncode:

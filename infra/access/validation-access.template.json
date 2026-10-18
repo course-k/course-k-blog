@@ -308,11 +308,7 @@
               "Sid": "GatewayThroughStack",
               "Effect": "Allow",
               "Action": [
-                "apigateway:GET",
-                "apigateway:POST",
-                "apigateway:PATCH",
-                "apigateway:PUT",
-                "apigateway:DELETE"
+                "apigateway:*"
               ],
               "Resource": [
                 {

@@ -33,3 +33,5 @@
 - [AWS接続・配備用権限の設定](aws-access-setup-2026-10-18.md)
 
 - [UI/UX担当チャットへの指示書](ui-ux-handoff-2026-10-18.md)
+
+- [AWSオレゴンの実検証・開始時刻・撤去の記録](aws-validation-execution-2026-10-18.md)

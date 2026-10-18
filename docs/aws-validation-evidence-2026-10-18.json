@@ -1,0 +1,177 @@
+{
+  "preflight": {
+    "region": "us-west-2",
+    "identity": "arn:aws:sts::757412973334:assumed-role/course-k-validation-operator/blog-validation",
+    "zoneIds": [
+      "usw2-az1",
+      "usw2-az2"
+    ],
+    "requiredZonesAvailable": true,
+    "postgres17Versions": [
+      "17.5",
+      "17.6",
+      "17.7",
+      "17.8",
+      "17.9",
+      "17.10",
+      "17.11"
+    ],
+    "postgresVersionCandidate": "17.11",
+    "microGp3_20GiBOrderable": true,
+    "fargateOnDemandQuotas": [
+      {
+        "QuotaName": "Fargate On-Demand vCPU resource count",
+        "QuotaCode": "L-3032A538",
+        "Value": 64.0
+      }
+    ],
+    "cloudFormationCapabilities": [
+      "CAPABILITY_IAM"
+    ],
+    "note": "Read-only preflight, not a successful deployment or proof of free remaining quota."
+  },
+  "policyValidation": {
+    "RuntimeBoundary": [],
+    "OperatorPolicy1": [],
+    "OperatorPolicy2": [
+      {
+        "findingDetails": "The 2 resource ARN(s) are redundant because they reference the same resource. Review the use of wildcards (*), or remove the resource arn:aws:s3:::course-k-blog-validation-*/* to remove the redundancy.",
+        "findingType": "SUGGESTION",
+        "issueCode": "REDUNDANT_RESOURCE",
+        "learnMoreLink": "https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-reference-policy-checks.html#access-analyzer-reference-policy-checks-suggestion-redundant-resource",
+        "locations": [
+          {
+            "path": [
+              {
+                "value": "Statement"
+              },
+              {
+                "index": 1
+              },
+              {
+                "value": "Resource"
+              },
+              {
+                "index": 0
+              }
+            ],
+            "span": {
+              "start": {
+                "line": 1,
+                "column": 766,
+                "offset": 766
+              },
+              "end": {
+                "line": 1,
+                "column": 807,
+                "offset": 807
+              }
+            }
+          },
+          {
+            "path": [
+              {
+                "value": "Statement"
+              },
+              {
+                "index": 1
+              },
+              {
+                "value": "Resource"
+              },
+              {
+                "index": 1
+              }
+            ],
+            "span": {
+              "start": {
+                "line": 1,
+                "column": 809,
+                "offset": 809
+              },
+              "end": {
+                "line": 1,
+                "column": 852,
+                "offset": 852
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "OperatorPolicy3": [
+      {
+        "findingDetails": "The 2 resource ARN(s) are redundant because they reference the same resource. Review the use of wildcards (*), or remove the resource arn:aws:s3:::course-k-blog-validation-*/* to remove the redundancy.",
+        "findingType": "SUGGESTION",
+        "issueCode": "REDUNDANT_RESOURCE",
+        "learnMoreLink": "https://docs.aws.amazon.com/IAM/latest/UserGuide/access-analyzer-reference-policy-checks.html#access-analyzer-reference-policy-checks-suggestion-redundant-resource",
+        "locations": [
+          {
+            "path": [
+              {
+                "value": "Statement"
+              },
+              {
+                "index": 5
+              },
+              {
+                "value": "Resource"
+              },
+              {
+                "index": 0
+              }
+            ],
+            "span": {
+              "start": {
+                "line": 1,
+                "column": 1506,
+                "offset": 1506
+              },
+              "end": {
+                "line": 1,
+                "column": 1547,
+                "offset": 1547
+              }
+            }
+          },
+          {
+            "path": [
+              {
+                "value": "Statement"
+              },
+              {
+                "index": 5
+              },
+              {
+                "value": "Resource"
+              },
+              {
+                "index": 1
+              }
+            ],
+            "span": {
+              "start": {
+                "line": 1,
+                "column": 1549,
+                "offset": 1549
+              },
+              "end": {
+                "line": 1,
+                "column": 1592,
+                "offset": 1592
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "revisedGatewayPolicyValidation": {
+    "findings": []
+  },
+  "cleanup": {
+    "course-k-blog-validation-20261018": "Deleted (DescribeStacks confirms absence)",
+    "course-k-blog-validation-20261018b": "Deleted (DescribeStacks confirms absence)",
+    "remainingTrialLogGroups": []
+  }
+}
