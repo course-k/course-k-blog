@@ -1,0 +1,35 @@
+-- Once per new validation database, as its administrator. Never run against an
+-- existing production database. Passwords come from the operator environment.
+\set ON_ERROR_STOP on
+\getenv migrator_password BLOG_MIGRATOR_PASSWORD
+\getenv app_password BLOG_APP_PASSWORD
+\if :{?migrator_password}
+\else
+\echo 'BLOG_MIGRATOR_PASSWORD is required'
+DO $$ BEGIN RAISE EXCEPTION 'bootstrap validation failed'; END $$;
+\endif
+\if :{?app_password}
+\else
+\echo 'BLOG_APP_PASSWORD is required'
+DO $$ BEGIN RAISE EXCEPTION 'bootstrap validation failed'; END $$;
+\endif
+SELECT length(:'migrator_password') >= 24 AND length(:'app_password') >= 24
+ AND :'migrator_password' <> :'app_password' AS passwords_valid \gset
+\if :passwords_valid
+\else
+\echo 'Two different passwords of at least 24 characters are required'
+DO $$ BEGIN RAISE EXCEPTION 'bootstrap validation failed'; END $$;
+\endif
+BEGIN;
+CREATE ROLE blog_migrator LOGIN PASSWORD :'migrator_password';
+-- PostgreSQL 16+: CREATEROLE alone does not imply SET ROLE membership.
+GRANT blog_migrator TO CURRENT_USER WITH SET TRUE;
+CREATE ROLE blog_app LOGIN PASSWORD :'app_password';
+CREATE SCHEMA blog AUTHORIZATION blog_migrator;
+GRANT CONNECT ON DATABASE blog TO blog_migrator, blog_app;
+GRANT USAGE ON SCHEMA blog TO blog_app;
+ALTER ROLE blog_migrator IN DATABASE blog SET search_path TO blog;
+ALTER ROLE blog_app IN DATABASE blog SET search_path TO blog;
+ALTER DEFAULT PRIVILEGES FOR ROLE blog_migrator IN SCHEMA blog
+ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO blog_app;
+COMMIT;

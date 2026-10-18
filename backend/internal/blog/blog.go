@@ -35,13 +35,21 @@ type PublicPost struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
+// List responses deliberately exclude article bodies.
+type PublicPostSummary struct {
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	PublishedAt time.Time `json:"publishedAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
 type Session struct {
 	Hash      string
 	ExpiresAt time.Time
 }
 
 type Store interface {
-	ListPublic(context.Context, int, int) ([]PublicPost, error)
+	ListPublic(context.Context, int, int) ([]PublicPostSummary, error)
 	GetPublic(context.Context, string) (PublicPost, error)
 	ListAdmin(context.Context) ([]Post, error)
 	GetAdmin(context.Context, string) (Post, error)

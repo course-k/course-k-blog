@@ -6,6 +6,7 @@ import (
 	"coursek/blog/backend/internal/auth"
 	"coursek/blog/backend/internal/blog"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -27,14 +28,14 @@ func fake() *fakeStore {
 	return &fakeStore{posts: map[string]blog.Post{}, public: map[string]blog.PublicPost{}, sessions: map[string]time.Time{}}
 }
 func (f *fakeStore) Ping(context.Context) error { return f.pingError }
-func (f *fakeStore) ListPublic(_ context.Context, limit, offset int) ([]blog.PublicPost, error) {
-	out := []blog.PublicPost{}
+func (f *fakeStore) ListPublic(_ context.Context, limit, offset int) ([]blog.PublicPostSummary, error) {
+	out := []blog.PublicPostSummary{}
 	for _, p := range f.public {
-		out = append(out, p)
+		out = append(out, blog.PublicPostSummary{ID: p.ID, Title: p.Title, PublishedAt: p.PublishedAt, UpdatedAt: p.UpdatedAt})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].PublishedAt.After(out[j].PublishedAt) })
 	if offset >= len(out) {
-		return []blog.PublicPost{}, nil
+		return []blog.PublicPostSummary{}, nil
 	}
 	end := min(len(out), offset+limit)
 	return out[offset:end], nil
@@ -241,5 +242,47 @@ func TestLoginLimitSharedByHandlers(t *testing.T) {
 		if request(h, "POST", "/api/session", `{"password":"test password long enough"}`, "https://blog.example", nil).Code != 429 {
 			t.Fatal("login limit bypassed")
 		}
+	}
+}
+
+func TestHealthAndProtectionDuringDatabaseFailure(t *testing.T) {
+	store := fake()
+	store.pingError = fmt.Errorf("database offline")
+	hash, _ := auth.HashPassword("test-only-long-password")
+	handler, err := New(store, "http://localhost:8080", hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, status := range map[string]int{"/api/healthz": 200, "/api/readyz": 503, "/api/admin/posts": 401} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest("GET", path, nil))
+		if recorder.Code != status {
+			t.Fatalf("%s: got %d", path, recorder.Code)
+		}
+		for key, value := range map[string]string{"X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY", "Referrer-Policy": "strict-origin-when-cross-origin"} {
+			if recorder.Header().Get(key) != value {
+				t.Fatalf("%s missing %s", path, key)
+			}
+		}
+	}
+}
+
+func TestPublicListExcludesBodyButDetailKeepsIt(t *testing.T) {
+	store := fake()
+	store.public["example"] = blog.PublicPost{ID: "example", Title: "Title", Markdown: "body-marker", PublishedAt: time.Now(), UpdatedAt: time.Now()}
+	hash, _ := auth.HashPassword("test-only-long-password")
+	handler, err := New(store, "http://localhost:8080", hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := httptest.NewRecorder()
+	handler.ServeHTTP(list, httptest.NewRequest("GET", "/api/posts", nil))
+	if list.Code != 200 || strings.Contains(list.Body.String(), "markdown") || strings.Contains(list.Body.String(), "body-marker") {
+		t.Fatal("list contains body or failed")
+	}
+	detail := httptest.NewRecorder()
+	handler.ServeHTTP(detail, httptest.NewRequest("GET", "/api/posts/example", nil))
+	if detail.Code != 200 || !strings.Contains(detail.Body.String(), "body-marker") {
+		t.Fatal("detail lost body")
 	}
 }

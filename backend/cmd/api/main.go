@@ -15,7 +15,25 @@ import (
 	"time"
 )
 
+// Health checks must not initialize a DB connection or require credentials.
+func checkHealth(endpoint string) error {
+	client := &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
+	response, err := client.Get(endpoint)
+	if err != nil {
+		return errors.New("health endpoint unavailable")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return errors.New("health endpoint not ready")
+	}
+	return nil
+}
+
 func run() error {
+	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
+		return checkHealth("http://127.0.0.1:8081/api/healthz")
+	}
+
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" && os.Getenv("DATABASE_PASSWORD_FILE") != "" {
 		password, err := os.ReadFile(os.Getenv("DATABASE_PASSWORD_FILE"))

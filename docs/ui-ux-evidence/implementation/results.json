@@ -1,0 +1,16 @@
+{
+  "mode": "offline components; mock API, not live integration",
+  "results": [
+    "article 1280: TOC, duplicate headings, code exclusion, overflow, no script execution",
+    "article 390: TOC, duplicate headings, code exclusion, overflow, no script execution",
+    "article 320: TOC, duplicate headings, code exclusion, overflow, no script execution",
+    "list 1280: one column, external link attributes, focus, overflow",
+    "list 390: one column, external link attributes, focus, overflow",
+    "admin success: passed",
+    "admin publish-failure: passed",
+    "admin list-failure: passed",
+    "admin lost-response: passed",
+    "admin conflict: passed",
+    "empty list: passed"
+  ]
+}

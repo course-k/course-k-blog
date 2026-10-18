@@ -89,17 +89,17 @@ func scanPublic(row scanner) (blog.PublicPost, error) {
 	}
 	return p, err
 }
-func (s *Store) ListPublic(ctx context.Context, limit, offset int) ([]blog.PublicPost, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id,published_title,published_markdown,published_at,public_updated_at FROM posts WHERE published ORDER BY published_at DESC,id LIMIT $1 OFFSET $2", limit, offset)
+func (s *Store) ListPublic(ctx context.Context, limit, offset int) ([]blog.PublicPostSummary, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id,published_title,published_at,public_updated_at FROM posts WHERE published ORDER BY published_at DESC,id LIMIT $1 OFFSET $2", limit, offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []blog.PublicPost{}
+	out := []blog.PublicPostSummary{}
 	for rows.Next() {
-		p, e := scanPublic(rows)
-		if e != nil {
-			return nil, e
+		var p blog.PublicPostSummary
+		if err := rows.Scan(&p.ID, &p.Title, &p.PublishedAt, &p.UpdatedAt); err != nil {
+			return nil, err
 		}
 		out = append(out, p)
 	}

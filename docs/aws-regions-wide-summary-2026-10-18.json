@@ -1,0 +1,283 @@
+{
+  "date": "2026-10-18",
+  "screenedRegions": 34,
+  "pricedRegions": 33,
+  "vpcLinkListedPricedRegions": 20,
+  "vpcLinkAvailabilitySource": "https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-vpc-links-v2.html",
+  "vpcLinkAvailabilityCheckedAtUTC": "2026-10-17T21:30:46.898274+00:00",
+  "latencySource": "https://cloudping.co/",
+  "rows": [
+    {
+      "region": "ap-south-1",
+      "name": "ムンバイ",
+      "monthlyUSD": 46.04852,
+      "rttMs": 129.5,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "ap-south-2",
+      "name": "ハイデラバード",
+      "monthlyUSD": 46.04852,
+      "rttMs": 113.89,
+      "vpcLinkListed": false,
+      "status": "VPC Link対応表未掲載"
+    },
+    {
+      "region": "us-east-1",
+      "name": "バージニア北部",
+      "monthlyUSD": 47.95965,
+      "rttMs": 149.12,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "us-east-2",
+      "name": "オハイオ",
+      "monthlyUSD": 47.95965,
+      "rttMs": 135.58,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "us-west-2",
+      "name": "オレゴン",
+      "monthlyUSD": 47.95965,
+      "rttMs": 99.08,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "eu-west-1",
+      "name": "アイルランド",
+      "monthlyUSD": 49.01065,
+      "rttMs": 204.48,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "mx-central-1",
+      "name": "メキシコ中部",
+      "monthlyUSD": 49.97233,
+      "rttMs": 172.08,
+      "vpcLinkListed": false,
+      "status": "VPC Link対応表未掲載"
+    },
+    {
+      "region": "eu-north-1",
+      "name": "ストックホルム",
+      "monthlyUSD": 50.3922,
+      "rttMs": 248.27,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "ca-central-1",
+      "name": "カナダ中部",
+      "monthlyUSD": 52.01678,
+      "rttMs": 144.71,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "eu-south-2",
+      "name": "スペイン",
+      "monthlyUSD": 53.17793,
+      "rttMs": 233.38,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "eu-west-2",
+      "name": "ロンドン",
+      "monthlyUSD": 53.34678,
+      "rttMs": 214.13,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "eu-central-1",
+      "name": "フランクフルト",
+      "monthlyUSD": 54.19817,
+      "rttMs": 228.35,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "eu-west-3",
+      "name": "パリ",
+      "monthlyUSD": 54.4592,
+      "rttMs": 223.13,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "eu-south-1",
+      "name": "ミラノ",
+      "monthlyUSD": 54.49205,
+      "rttMs": 218.8,
+      "vpcLinkListed": false,
+      "status": "VPC Link対応表未掲載"
+    },
+    {
+      "region": "us-west-1",
+      "name": "北カリフォルニア",
+      "monthlyUSD": 55.72678,
+      "rttMs": 108.66,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "ap-east-2",
+      "name": "台北",
+      "monthlyUSD": 56.06232,
+      "rttMs": 34.13,
+      "vpcLinkListed": false,
+      "status": "VPC Link対応表未掲載"
+    },
+    {
+      "region": "ap-southeast-5",
+      "name": "マレーシア",
+      "monthlyUSD": 56.06886,
+      "rttMs": 74.35,
+      "vpcLinkListed": false,
+      "status": "VPC Link対応表未掲載"
+    },
+    {
+      "region": "ap-southeast-7",
+      "name": "タイ",
+      "monthlyUSD": 56.06886,
+      "rttMs": 103.85,
+      "vpcLinkListed": false,
+      "status": "VPC Link対応表未掲載"
+    },
+    {
+      "region": "il-central-1",
+      "name": "テルアビブ",
+      "monthlyUSD": 56.63716,
+      "rttMs": 264.27,
+      "vpcLinkListed": false,
+      "status": "VPC Link対応表未掲載"
+    },
+    {
+      "region": "me-south-1",
+      "name": "バーレーン",
+      "monthlyUSD": 57.7112,
+      "rttMs": 166.25,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "me-central-1",
+      "name": "UAE",
+      "monthlyUSD": 57.7132,
+      "rttMs": 167.44,
+      "vpcLinkListed": false,
+      "status": "VPC Link対応表未掲載"
+    },
+    {
+      "region": "ap-northeast-2",
+      "name": "ソウル",
+      "monthlyUSD": 58.57617,
+      "rttMs": 33.37,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "ap-southeast-2",
+      "name": "シドニー",
+      "monthlyUSD": 59.77698,
+      "rttMs": 107.85,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "ap-southeast-4",
+      "name": "メルボルン",
+      "monthlyUSD": 59.77698,
+      "rttMs": 139.53,
+      "vpcLinkListed": false,
+      "status": "VPC Link対応表未掲載"
+    },
+    {
+      "region": "eu-central-2",
+      "name": "チューリッヒ",
+      "monthlyUSD": 60.49515,
+      "rttMs": 223.62,
+      "vpcLinkListed": false,
+      "status": "VPC Link対応表未掲載"
+    },
+    {
+      "region": "af-south-1",
+      "name": "ケープタウン",
+      "monthlyUSD": 60.6011,
+      "rttMs": 396.7,
+      "vpcLinkListed": false,
+      "status": "VPC Link対応表未掲載"
+    },
+    {
+      "region": "ap-southeast-1",
+      "name": "シンガポール",
+      "monthlyUSD": 60.90058,
+      "rttMs": 70.21,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "ap-southeast-3",
+      "name": "ジャカルタ",
+      "monthlyUSD": 60.90458,
+      "rttMs": 86.46,
+      "vpcLinkListed": false,
+      "status": "VPC Link対応表未掲載"
+    },
+    {
+      "region": "ap-northeast-1",
+      "name": "東京",
+      "monthlyUSD": 60.96158,
+      "rttMs": 2.16,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "ap-northeast-3",
+      "name": "大阪",
+      "monthlyUSD": 60.96158,
+      "rttMs": 10.14,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "ap-southeast-6",
+      "name": "ニュージーランド",
+      "monthlyUSD": 63.67987,
+      "rttMs": 141.67,
+      "vpcLinkListed": false,
+      "status": "VPC Link対応表未掲載"
+    },
+    {
+      "region": "ap-east-1",
+      "name": "香港",
+      "monthlyUSD": 66.31248,
+      "rttMs": 52.14,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "sa-east-1",
+      "name": "サンパウロ",
+      "monthlyUSD": 80.57575,
+      "rttMs": 261.13,
+      "vpcLinkListed": true,
+      "status": "対応表掲載"
+    },
+    {
+      "region": "ca-west-1",
+      "name": "カルガリー",
+      "monthlyUSD": null,
+      "rttMs": 117.94,
+      "vpcLinkListed": false,
+      "status": "DB同型料金なし"
+    }
+  ]
+}
