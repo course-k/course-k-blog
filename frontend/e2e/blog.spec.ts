@@ -2,6 +2,9 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 
 test('reader and owner flow against real PostgreSQL and production SSR', async ({ page, browser }) => {
+  if (process.env.RUN_LOCAL_E2E !== '1') {
+    throw new Error('専用の破棄可能なlocalhost:8080環境を用意し、RUN_LOCAL_E2E=1を指定してください。記事の作成・公開を行います。')
+  }
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   const login = await readFile(new URL('../../config/local-login.txt', import.meta.url), 'utf8')
@@ -47,11 +50,11 @@ test('reader and owner flow against real PostgreSQL and production SSR', async (
   await reading.setViewportSize({ width: 1280, height: 900 })
   await reading.goto('/')
   await expect(reading.getByRole('link', { name: new RegExp(title) })).toBeVisible()
-  await reading.screenshot({ path: '../../outputs/blog-prototype-desktop.png', fullPage: true })
+  await reading.screenshot({ path: 'test-results/e2e/desktop.png', fullPage: true })
   await reading.setViewportSize({ width: 390, height: 844 })
-  await reading.screenshot({ path: '../../outputs/blog-prototype-mobile.png', fullPage: true })
+  await reading.screenshot({ path: 'test-results/e2e/mobile.png', fullPage: true })
   expect(await reading.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await page.screenshot({ path: '../../outputs/blog-prototype-editor.png', fullPage: true })
+  await page.screenshot({ path: 'test-results/e2e/editor.png', fullPage: true })
   page.once('dialog', dialog => dialog.accept())
   await page.getByRole('button', { name: '非公開に戻す', exact: true }).click()
   await expect(page.getByRole('status')).toContainText('非公開にしました')

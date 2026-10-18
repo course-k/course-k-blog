@@ -1,0 +1,91 @@
+name: Repository checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repository:
+    name: Repository and infrastructure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: python3 scripts/check-repository.py
+      - run: python3 -m unittest discover -s scripts/aws -p 'test_*.py' -v
+      - run: python3 -m unittest discover -s infra/monitoring -p 'test_*.py' -v
+      - run: python3 scripts/aws/validation.py --config infra/aws/validation-environment.example.json plan
+
+  frontend:
+    name: Frontend and offline UI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run check
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+        env:
+          PLAYWRIGHT_CHANNEL: chromium
+
+  backend:
+    name: Go and real PostgreSQL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: blog_test
+          POSTGRES_USER: blog
+          # Disposable CI service; no production credentials or data.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U blog -d blog_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.2'
+          cache: false
+      - run: go mod download
+      - run: go test -race -v ./...
+        env:
+          TEST_DATABASE_URL: ''
+          TEST_TLS_DATABASE_URL: ''
+      - run: go vet ./...
+      - run: go test -count=1 -race -v ./internal/postgres
+        env:
+          TEST_DATABASE_URL: postgres://blog@127.0.0.1:${{ job.services.postgres.ports[5432] }}/blog_test?sslmode=disable
+          TEST_TLS_DATABASE_URL: ''

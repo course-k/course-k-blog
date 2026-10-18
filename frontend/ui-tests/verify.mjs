@@ -7,7 +7,12 @@ const html = await readFile(
 );
 const out = new URL("../test-results/ui/", import.meta.url);
 await mkdir(out, { recursive: true });
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const channel = process.env.PLAYWRIGHT_CHANNEL || "chrome";
+if (!["chrome", "chromium"].includes(channel)) throw new Error("Choose chrome or chromium explicitly.");
+const browser = await chromium.launch({
+  ...(channel === "chrome" ? { channel } : {}),
+  headless: true,
+});
 const context = await browser.newContext({ offline: true });
 await context.route("**/*", (route) =>
   route.request().url() === "https://ui-fixture.invalid/diagram.svg"

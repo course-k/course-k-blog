@@ -44,29 +44,84 @@ docker compose up --build
 
 停止は `docker compose down`。データボリュームを消す `down -v` は通常の停止に使わない。ローカルDBの起動成功や再起動後の保持を、本番のバックアップ復元成功と扱わない。
 
-## 検証コマンド
+## 検証の種類と実行順
 
-Goの単体検証はbackendで実行する。
-
-```sh
-go mod download
-go test -race -v ./...
-go vet ./...
-```
-
-PostgreSQL結合試験は `TEST_DATABASE_URL` がなければSKIP。ローカルComposeの専用テストDB起動後、ルートで `node scripts/test-postgres.mjs` を実行する。これは専用試験用データを作成・削除する検証である。
-
-フロントはfrontendで実行する。
+以下はリポジトリのルートから実行する。Node.js 24以上・Go 1.27以上・Python 3.10以上が必要。初回の依存取得にはネットワークを使う。
 
 ```sh
-npm ci
-npm run build
-npm run typecheck
-npm run test:runtime
+npm --prefix frontend ci
+go -C backend mod download
 ```
 
-ルート型はビルドで生成される。`npm run test:e2e` は実Go・DBとブラウザを必要とし、固定APIによる画面試験と区別する。環境のブラウザアクセス拒否を回避する目的で実行しない。固定APIのSSR試験は `npm run test:ssr`、画面試験は `npm run test:ui`。後者は対応ブラウザを必要とする。画面試験は固定APIの部品確認であり、実Go・DBへの接続確認ではない。
+| 種類 | コマンド | 必要な環境・確認範囲 |
+|---|---|---|
+| 文書・構文 | `python3 scripts/check-repository.py` | Git管理対象と新規ファイルの相対リンク、JSON・Python構文、差分の空白。外部URLやMarkdownの見出しアンカー、AWSの意味的な妥当性は検査しない |
+| フロント基本 | `npm --prefix frontend run check` | 本番ビルド→型検査→runtime→固定APIのSSR。ビルドでルート型を生成するため、この順序で実行 |
+| 固定APIの画面 | `npm --prefix frontend run test:ui` | Chrome、一時プロファイル、架空の固定API。画面幅・表示・操作・失敗時の復帰をオフラインで確認。実Go・DBへ接続しない |
+| Goの基本 | `TEST_DATABASE_URL= TEST_TLS_DATABASE_URL= go -C backend test -race -v ./...` と `go -C backend vet ./...` | 認証・HTTP・保存契約等。実DBとTLS専用試験はSKIPするため、実PostgreSQLやTLSの成功と扱わない |
+| 実PostgreSQL | 下記の専用DB手順 | 移行・公開版分離・競合・セッション等を実DBで確認。テストデータの作成・削除を伴う |
+| AWS操作補助 | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/aws -p 'test_*.py' -v` | 偽のAWS応答を使い、対象・実行順・秘密値の扱いを確認。AWS CLIを起動しない |
+| 監視 | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s infra/monitoring -p 'test_*.py' -v` | 応答の判定を確認。実際の通知到達を意味しない |
+| ローカル通し確認 | 下記の明示実行手順 | 実ブラウザ→SSR/API→実DB。仮記事を作成・公開・更新・非公開にする |
+| AWS実経路 | [AWS手順](infra/README.md) | 対象・課金・公開範囲を確認して別途実施。通常のPR検証から実行しない |
 
-AWS用設定は `infra/` にあるが、テンプレートの存在だけで本番配備済みとは判断しない。課金資源の作成、独自ドメイン変更、実記事の公開は、このREADMEのローカル起動手順に含まれない。
+### 実PostgreSQLの専用環境
 
-AWS設定の用途・反映状態・検証配置の実行入口は[AWS手順](infra/README.md)を参照する。オフラインの確認は `python3 scripts/aws/validation.py --config infra/aws/validation-environment.example.json plan`、対応試験は `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/aws -p 'test_*.py' -v`。これらはAWSへ接続しない。
+既存の開発DBや本番DBへ自動接続しない。DB名が `_test` で終わる専用接続先を `TEST_DATABASE_URL` で明示する。次は独立した一時コンテナの例で、Dockerが必要。
+
+```sh
+docker run --rm -d --name course-k-blog-postgres-check \
+  -e POSTGRES_DB=blog_test -e POSTGRES_USER=blog \
+  -e POSTGRES_HOST_AUTH_METHOD=trust \
+  -p 127.0.0.1:15432:5432 postgres:17-alpine
+docker exec course-k-blog-postgres-check pg_isready -U blog -d blog_test
+TEST_DATABASE_URL='postgres://blog@127.0.0.1:15432/blog_test?sslmode=disable' \
+  node scripts/test-postgres.mjs
+docker stop course-k-blog-postgres-check
+```
+
+`pg_isready`の成功後に試験する。15432が使用中なら別の空きポートを選び、接続先も合わせる。trust認証はこの使い捨て・loopback限定DBの設定で、本番や共有環境には使わない。試験成功は再起動・障害時のバックアップ復元成功とは別。
+
+### TLS専用試験
+
+実DBの通常接続とTLS検証は別に実行する。通常のPRジョブはTLS専用環境を持たないため `TestTLSVerification` はSKIPする。
+TLSを変更した場合は、localhostだけに有効なサーバー証明書と信頼CAを持つ使い捨てPostgreSQLを別途用意し、`TEST_TLS_DATABASE_URL` に `verify-full` と信頼CAを含む接続先、`TEST_TLS_WRONG_CA_FILE` に別CAのファイルを指定する。DB名は `_test`、ホスト名は `localhost` とする。
+
+```sh
+go -C backend test -count=1 -race -v ./internal/postgres -run '^TestTLSVerification$'
+```
+
+接続先の指定がなければSKIPする。証明書とDBの準備自動化は未整備なので、通常DB試験の成功をTLS試験の成功として報告しない。
+
+### ブラウザの選択と通し確認
+
+ローカルではChromeを使用する。別環境やCIでPlaywright管理のChromiumを使う場合は、先にfrontendで `npx playwright install --with-deps chromium` を実行し、`PLAYWRIGHT_CHANNEL=chromium` を明示する。ブラウザ起動やアクセスが拒否された場合は未実行として報告し、別手段で同じアクセス制限を回避しない。
+
+通し確認は、仮記事の作成・公開を許容できる**専用の破棄可能なローカル環境**を `http://localhost:8080` に用意してから実行する。通常利用中のCompose環境を無断で停止・置換しない。`config/local-login.txt` の認証情報と対象DB・APIが同じ環境に属することを確認する。
+
+```sh
+RUN_LOCAL_E2E=1 npm --prefix frontend run test:e2e
+```
+
+環境を指定するフラグがない場合は書き込み前に失敗する。試験は仮記事を最後に非公開にするが、完全削除はしない。途中失敗時は公開状態が残り得るため確認する。出力はGit対象外の `frontend/test-results/` 等へ保存する。
+`node scripts/check-restart.mjs` は対象ComposeのDB・API・Webを再起動する別の明示操作であり、通常の検査には含めない。
+
+## PRで確認する範囲
+
+[検証ワークフロー](.github/workflows/checks.yml)はPR・main更新・手動実行を対象とし、次の3ジョブを分けて実行する。小規模なモノレポのためパス条件で省略せず、対応版の取り違えを防ぐ。
+
+- **Repository and infrastructure**：文書・構文、AWS操作補助、監視の試験、AWSへ接続しない計画表示。
+- **Frontend and offline UI**：lockfileから依存取得、基本検査、Playwright管理のChromiumによる固定API画面試験。
+- **Go and real PostgreSQL**：Goの基本検査と、ジョブ専用の一時PostgreSQLサービスへの結合試験。実DBの接続値を渡してキャッシュを使わず実行し、SKIPを結合成功と扱わない。
+
+ワークフローは読み取り権限で動き、AWS認証情報・デプロイ処理・実記事の公開処理を含めない。通し確認、DockerのARM64ビルド、実AWSの配備・復元・通知・容量は別の確認範囲。GitHub上の実行結果を確認するまでは、CI成功・必須チェック設定済みとは表現しない。mainへの自動デプロイはない。
+
+Actionsの利用方法は[checkout](https://github.com/actions/checkout)、[setup-node](https://github.com/actions/setup-node)、[setup-go](https://github.com/actions/setup-go)の公式資料を参照する。CIでの実行時間はGitHubの利用枠を使うため、反復実行は変更に必要な範囲とする。
+
+## 変更を進める手順
+
+1. mainを基準に作業ブランチを作り、変更する仕様と完了条件を確認する。無関係なローカル変更を混ぜない。
+2. コードと採用理由・仕様を同じ変更で揃える。文書は現行の結果を更新し、作業経緯のための文書を増やさない。
+3. 変更に対応する検証を実施し、成功・失敗・SKIP・未実行を分けてPRへ記載する。画面/API境界を変えたら、固定API試験に加えて実API/DBの通し確認を対象にする。
+4. PRの差分・上記3ジョブ・未確認事項を確認してmainへ取り込む。GitHub側のマージ制限は別途設定が必要で、手順を文書化しただけでは強制されない。
+5. 配備・費用・DNS・権限変更・実記事の公開は、具体的な対象と影響を確認して別の操作として実施する。
