@@ -180,7 +180,10 @@
         "Timestamp": "2026-10-18T07:34:55.745000+00:00",
         "LogicalResourceId": "Stage",
         "ResourceStatus": "CREATE_FAILED",
-        "ResourceStatusReason": "Resource handler returned message: \"Insufficient permissions to enable logging. User: arn:aws:sts::757412973334:assumed-role/course-k-validation-operator/blog-validation is not authorized to perform: logs:CreateLogDelivery because no identity-based policy allows the logs:CreateLogDelivery action (Service: ApiGatewayV2, Status Code: 400, Request ID: 57954351-d885-4399-9a64-e15c4c10717b) (SDK Attempt Count: 1)\" (RequestToken: 89a7e7b4-7b50-d7c3-72a7-865d38f288e3, HandlerErrorCode: InvalidRequest)"
+        "errorSummary": "HTTP API access logging could not be enabled because logs:CreateLogDelivery was not authorized.",
+        "missingAction": "logs:CreateLogDelivery",
+        "service": "ApiGatewayV2",
+        "handlerErrorCode": "InvalidRequest"
       }
     ],
     "gatewayRevisionConfirmedInConsole": true,
@@ -323,5 +326,9 @@
         ]
       }
     ]
+  },
+  "evidenceHandling": {
+    "policy": "Publish selected verification facts and structured error summaries, not raw AWS failure responses.",
+    "rawResponses": "Kept only in the ignored local validation directory; request identifiers and credentials are excluded from this document."
   }
 }

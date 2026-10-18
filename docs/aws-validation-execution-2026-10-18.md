@@ -85,3 +85,13 @@ RuntimeBoundary、信頼先、PassRole、DB/S3の権限は変更しない。全4
 以前のGateway修正版や元ファイルは上書きせず残した。日付付きファイルは各管理者更新の再現用スナップショットで、採用済みの最新ファイルは本段落で明示する。
 
 今後は、ロールバックという状態だけで前と同じ原因と判断しない。失敗イベントのアクション・対象・理由を最初に確認し、管理者の更新を再依頼する前にAWSに反映済みの内容を照合する。
+
+## 検証記録のGitGuardian検出への対応
+
+GitGuardian Security Checksが、コミットd457a4cの検証エビデンスJSONからGeneric High Entropy Secretを1件検出。該当箇所はStageの失敗応答に含まれるCloudFormation RequestTokenで、AWS操作の識別子だった。AWSのAccessKeyId/SecretAccessKey/SessionTokenとは区別する。検出された値自体は本記録へ転載しない。
+
+根拠：[AWS ProgressEventのRequestToken定義](https://docs.aws.amazon.com/cloudcontrolapi/latest/APIReference/API_ProgressEvent.html)、[GitGuardianの汎用検出器](https://docs.gitguardian.com/secrets-detection/secrets-detection-engine/detectors/generics/generic_high_entropy_secret)。汎用検出器がtokenという名前とランダムな値に反応することと、実際の認証情報漏えいは同一ではない。今回は資格情報の失効・再発行を要する対象と判断しない。
+
+共有エビデンスから生のResourceStatusReasonを除き、必要な失敗要約、missingAction、service、handlerErrorCodeだけを構造化して残した。検証の原因・時刻・結果は保持し、RequestToken/Request IDを転載しない。未加工の応答はGit無視対象のローカル検証フォルダーで管理する。追跡対象のテキストを確認し、長いRequestTokenの代入値が残っていないこと、対象JSONの構文が正しいこと、代表的なAWS/GitHub認証情報の形式が存在しないことを確認した。正規表現の確認だけでリポジトリ全体のあらゆる秘密値がないと保証しない。
+
+今後はAWS応答全体をそのまま共有記録へコピーせず、証拠として必要なフィールドだけを選ぶ。GitGuardianのスキャンを無効化したり、ファイル全体を除外したりしない。過去コミットの検出は残りうるため、最新チェックの結果と区別する。共有ブランチの履歴の強制書き換えは行わない。
