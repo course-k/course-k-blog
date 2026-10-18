@@ -4,7 +4,7 @@
 
 ## 最新のアップロード対象
 
-ログ修正版は反映・実動作確認済み。現在の追加候補は[スナップショット修正版](../infra/access/validation-access-snapshot-fix-20261018.template.json)。撤去のCreateDBSnapshot不足1件を補い、対象・地域・CloudFormation経由の制限は維持。未反映。管理者ブラウザ操作のためMacのロック解除待ち。以下はログ修正時点の履歴。
+ログ修正版は反映・実動作確認済み。現在の追加候補は[スナップショット修正版](../infra/access/validation-access-snapshot-fix-20261018.template.json)。撤去のCreateDBSnapshot不足1件を補い、対象・地域・CloudFormation経由の制限は維持。未反映。今回の撤去は管理者コンソールから通常削除を再試行して完了し、操作者への権限追加は行っていない。将来の操作者によるスナップショット付き撤去には、この不足への対応が必要。以下はログ修正時点の履歴。
 
 現在は[validation-access-logging-fix-20261018.template.json](../infra/access/validation-access-logging-fix-20261018.template.json)を使用する。説明に`gateway logging revision 2026-10-18`があることを確認する。
 
