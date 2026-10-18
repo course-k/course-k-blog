@@ -1,4 +1,4 @@
-> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](current-design.md)です。
+> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](../blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](../current-design.md)です。
 
 # AWSリージョン：料金と公開遅延の広域比較
 
@@ -84,11 +84,11 @@ CloudPingの測定は各AWS地域のLambdaからAWSサービスのエンドポ�
 
 ## 証拠と保存物
 
-- [公式料金の選択行・SKU・原本URL・SHA256](aws-regions-wide-evidence-2026-10-18.json)
-- [地域別の計算内訳](aws-regions-wide-costs-2026-10-18.json)
-- [公開測定の取得値](aws-regions-wide-latency-2026-10-18.json)
-- [対応確認を含む集計](aws-regions-wide-summary-2026-10-18.json)
-- [CSV](aws-regions-wide-comparison-2026-10-18.csv)
+- [公式料金の選択行・SKU・原本URL・SHA256](../evidence/aws-regions-wide-evidence-2026-10-18.json)
+- [地域別の計算内訳](../evidence/aws-regions-wide-costs-2026-10-18.json)
+- [公開測定の取得値](../evidence/aws-regions-wide-latency-2026-10-18.json)
+- [対応確認を含む集計](../evidence/aws-regions-wide-summary-2026-10-18.json)
+- [CSV](../evidence/aws-regions-wide-comparison-2026-10-18.csv)
 - [公式リージョン別料金インデックス](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/region_index.json)
 - [CloudPing公開表](https://cloudping.co/)と[測定方式のREADME](https://github.com/mda590/cloudping.co)
 - [VPC Link V2の地域/AZ対応](https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-vpc-links-v2.html)

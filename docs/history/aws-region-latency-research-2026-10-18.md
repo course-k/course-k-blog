@@ -1,4 +1,4 @@
-> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](current-design.md)です。
+> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](../blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](../current-design.md)です。
 
 # バージニア北部の通信遅延：公開情報による判断
 
@@ -33,7 +33,7 @@ RTTは1往復。画面の初回表示には、接続確立、暗号化の交渉�
 
 ## 現在のコードとの照合
 
-[管理画面](../frontend/src/routes/admin.tsx)と[共通Markdown描画](../frontend/src/components/Markdown.tsx)、[記事取得](../frontend/src/lib/posts.ts)を実際に読んで確認。
+[管理画面](../../frontend/src/routes/admin.tsx)と[共通Markdown描画](../../frontend/src/components/Markdown.tsx)、[記事取得](../../frontend/src/lib/posts.ts)を実際に読んで確認。
 
 | 操作 | 現実装 | 地域の遅延との関係 |
 |---|---|---|

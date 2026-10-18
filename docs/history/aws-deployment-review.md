@@ -1,4 +1,4 @@
-> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](current-design.md)です。
+> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](../blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](../current-design.md)です。
 
 # 2タスク構成：AWS配備前レビュー
 
@@ -19,7 +19,7 @@ API Gateway HTTP API → VPC Link
                                             └─ 内部DNSでGoへ
 ```
 
-[全体CloudFormation草案](../infra/review/two-task-stack.template.json)に66リソースを定義。以前の入口だけのテンプレートとは別で、二つを重ねて配備しない。
+[全体CloudFormation草案](../../infra/review/two-task-stack.template.json)に66リソースを定義。以前の入口だけのテンプレートとは別で、二つを重ねて配備しない。
 
 | 対象 | 設定案 | 目的 |
 |---|---|---|
@@ -42,7 +42,7 @@ GoはLISTEN_ADDR=0.0.0.0:8081、NodeはHOST=0.0.0.0/PORT=3000。Go→DBはverify
 
 ## 2. 月額試算
 
-東京、月730時間、ARMオンデマンド、税別USD。Spot・長期契約・期間限定クレジットなし。10月17日に公式料金JSONを再取得し、[取得単価](aws-price-evidence-2026-10-17.json)と[計算明細](aws-two-task-costs-2026-10-17.json)を保存。
+東京、月730時間、ARMオンデマンド、税別USD。Spot・長期契約・期間限定クレジットなし。10月17日に公式料金JSONを再取得し、[取得単価](../evidence/aws-price-evidence-2026-10-17.json)と[計算明細](../evidence/aws-two-task-costs-2026-10-17.json)を保存。
 
 | 項目 | 月額USD・概算 |
 |---|---:|
@@ -114,4 +114,4 @@ RDS自動バックアップ7日は提案設定であり、公開/更新後・破
 AWS validate-template・Change Set・ECS起動・実経路・RDS復元は未実施。cfn-lintは実AWSで動くことや必要権限・提供バージョン・費用を保証しない。
 LLMは設定草案・既存コードとの差・単価抽出・計算と文書化に使用。AWS認証情報の参照・リソース作成・アプリ機能変更・実データ移動は行っていない。
 
-主要根拠：[ECS Service](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ecs-service.html)、[Cloud Map Service](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-servicediscovery-service.html)、[RDS秘密値管理](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-secrets-manager.html)、[単価証拠](aws-price-evidence-2026-10-17.json)。
+主要根拠：[ECS Service](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-ecs-service.html)、[Cloud Map Service](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-servicediscovery-service.html)、[RDS秘密値管理](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-secrets-manager.html)、[単価証拠](../evidence/aws-price-evidence-2026-10-17.json)。

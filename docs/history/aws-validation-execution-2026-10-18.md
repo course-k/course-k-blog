@@ -1,4 +1,4 @@
-> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](current-design.md)です。
+> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](../blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](../current-design.md)です。
 
 # AWSオレゴン実検証の記録
 
@@ -68,7 +68,7 @@ LLMは権限・配置案、読み取り専用事前確認、変更セット照�
 
 DB/VPC/ECSを含む全体の再作成はせず、HttpApi/Stage/GatewayLogsの3資源のみの検証スタック`course-k-blog-validation-permission-check`で確認した。同じTagResourceのAccessDeniedが再現し、ロールバック。DB・アプリタスクは作成していない。
 
-取り違え防止のため、[日付付きのアップロード用修正版](../infra/access/validation-access-gateway-fix-20261018.template.json)を別名で用意。内容はコミット済みの修正版と説明以外が同一で、IAM資源は同じ6件、RuntimeBoundaryや出力に変更なし。元ファイルに残った変更は保持した。日付付きファイルはこの管理者更新用スナップショットであり、将来の編集対象を二つへ増やす意図ではない。
+取り違え防止のため、[日付付きのアップロード用修正版](../../infra/access/validation-access-gateway-fix-20261018.template.json)を別名で用意。内容はコミット済みの修正版と説明以外が同一で、IAM資源は同じ6件、RuntimeBoundaryや出力に変更なし。元ファイルに残った変更は保持した。日付付きファイルはこの管理者更新用スナップショットであり、将来の編集対象を二つへ増やす意図ではない。
 
 修正版はcfn-lintとAWS Access Analyzer（findingsなし）を確認。本人へ確認画面の説明に`gateway permission revision 2026-10-18`が表示されることを確かめて、既存アクセス用スタックを更新するよう依頼した。反映・実動作の成功は未確認。
 
@@ -82,7 +82,7 @@ DB/VPC/ECSを含む全体の再作成はせず、HttpApi/Stage/GatewayLogsの3�
 
 ネイティブのブラウザ操作で、本人の管理コンソールを読み取り確認した。CloudFormationはUPDATE_COMPLETE、テンプレート説明はgateway permission revision 2026-10-18、IAMのOperatorPolicy1にもapigateway:*と元のResource/Conditionが反映されていた。これらの画面では権限の編集・保存操作を行っていない。API Gateway V2のコンソール上の許可要約だけから不許可と断定せず、実際のJSONと失敗イベントを優先した。
 
-[HTTP APIログ設定の公式資料](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-logging.html)と照合し、[ログ配信用のアップロード修正版](../infra/access/validation-access-logging-fix-20261018.template.json)を準備した。元のGateway修正版を維持し、OperatorPolicy2へCreate/Get/Update/Delete/ListLogDelivery、PutResourcePolicy、DescribeResourcePoliciesの7操作を追加。変更操作はus-west-2かつCloudFormation/API Gatewayからの代理呼出しに限定。API Gatewayが内部でログ配信を設定するため、CalledVia条件はCloudFormationまたはAPI Gatewayとした。ReadPreflightには配信・ポリシー状態の読み取り3操作を追加し、オレゴンのまま制限。Resource=*が必要な配信APIを含むので、今回のロググループだけにIAMで完全限定したとは言わない。
+[HTTP APIログ設定の公式資料](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-logging.html)と照合し、[ログ配信用のアップロード修正版](../../infra/access/validation-access-logging-fix-20261018.template.json)を準備した。元のGateway修正版を維持し、OperatorPolicy2へCreate/Get/Update/Delete/ListLogDelivery、PutResourcePolicy、DescribeResourcePoliciesの7操作を追加。変更操作はus-west-2かつCloudFormation/API Gatewayからの代理呼出しに限定。API Gatewayが内部でログ配信を設定するため、CalledVia条件はCloudFormationまたはAPI Gatewayとした。ReadPreflightには配信・ポリシー状態の読み取り3操作を追加し、オレゴンのまま制限。Resource=*が必要な配信APIを含むので、今回のロググループだけにIAMで完全限定したとは言わない。
 
 RuntimeBoundary、信頼先、PassRole、DB/S3の権限は変更しない。全4ポリシーをAccess Analyzerで確認しERROR/SECURITY_WARNING/WARNINGなし（従来のS3重複SUGGESTIONのみ）。cfn-lint成功、管理ポリシー文字数も上限内。静的検査・公式資料との照合は成功したが、この追加権限による実ログ配信は反映後に検証する。
 
@@ -138,7 +138,7 @@ Goだけのforce-new-deploymentでタスクIDが変わり、NodeのタスクID�
 
 スタック削除はDatabaseでDELETE_FAILED。不足はrds:CreateDBSnapshotであり、ログ権限の再発ではない。テンプレートのDeletionPolicy=Snapshotに必要な操作を、こちらのアクセス定義で漏らしていた。DBは削除保護解除済みだが、削除自体は完了しておらず課金が続き得る。
 
-[スナップショット用修正版](../infra/access/validation-access-snapshot-fix-20261018.template.json)は、反映済みログ修正版にrds:CreateDBSnapshotだけを追加。検証用プレフィックス、オレゴン、CloudFormation経由の条件は維持。ValidateTemplate成功、変更したOperatorPolicy1はAccess Analyzer findingsなし、4924文字。今回cfn-lintは実行環境に見つからず未実行。既存の元テンプレートの未コミット変更は上書きしない。
+[スナップショット用修正版](../../infra/access/validation-access-snapshot-fix-20261018.template.json)は、反映済みログ修正版にrds:CreateDBSnapshotだけを追加。検証用プレフィックス、オレゴン、CloudFormation経由の条件は維持。ValidateTemplate成功、変更したOperatorPolicy1はAccess Analyzer findingsなし、4924文字。今回cfn-lintは実行環境に見つからず未実行。既存の元テンプレートの未コミット変更は上書きしない。
 
 管理者ブラウザで修正を準備しようとしたが、ツールはMacロックを報告。ロックを迂回せず本人へ解除を依頼した。権限修正は未反映。直接サービス操作の権限を広げて回避しない。
 

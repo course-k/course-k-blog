@@ -9,7 +9,7 @@
 - **実装済み**：現在のコードが持つ動作。採用承認とは区別する。
 - **未決・未実装**：判断や作業が残るもの。
 
-本書は現行仕様・責務・設計理由の正本とする。**進捗・残作業・次の着手点は[公開台帳](blog-publication-roadmap-2026-10-18.md)だけで管理する。** UI/UXの採用方針は2026年10月18日更新の[最新の採用事項](ui-ux-decisions-current.md)を優先し、[設計判断・比較履歴](ui-ux-design.md)に理由と検証状況を残す。過去資料と相違する場合、仕様・責務は本書、UIの採用値はUI採用事項、進捗は公開台帳を優先する。実装と違う場合は相違を修正課題にし、実装に合わせて要望を変更しない。個別のコード定数は現状値であり、恒久的な要件ではない。
+本書は現行仕様・責務・設計理由の正本とする。**進捗・残作業・次の着手点は[公開台帳](blog-publication-roadmap-2026-10-18.md)だけで管理する。** UI/UXの採用方針は2026年10月18日更新の[最新の採用事項](ui-ux-decisions-current.md)を優先し、[設計判断・比較履歴](history/ui-ux-design.md)に理由と検証状況を残す。過去資料と相違する場合、仕様・責務は本書、UIの採用値はUI採用事項、進捗は公開台帳を優先する。実装と違う場合は相違を修正課題にし、実装に合わせて要望を変更しない。個別のコード定数は現状値であり、恒久的な要件ではない。
 
 ## 2. 目的・範囲・決定事項
 
@@ -30,7 +30,7 @@
 | R09 | 個人GitHubの非公開リポジトリで管理 | course-k/course-k-blog。変更はブランチとPR |
 | R10 | UI/UXを本人と検討し、選択理由を記録 | 一覧・本文B・目次・管理配置・外部別タブ・配色方向を採用済み。詳細は最新の採用事項を参照 |
 
-2026年10月18日、UI/UXについて本人から追加方針：配色・書体・ボタン配置・レイアウトを生成時の習慣で決めず、目的、参照した知見、比較案、採用理由を説明できる設計とする。catnoseさんのNani翻訳・Zenn・しずかなインターネット等を参考に挙げたが、見た目の模倣や個別スタイルの採用指示ではない。主要判断の根拠と仮説・好みを区別し、全数値を形式的に理論化する運用にはしない。詳細は[UI/UX引継ぎ指示書](ui-ux-handoff-2026-10-18.md)に反映。
+2026年10月18日、UI/UXについて本人から追加方針：配色・書体・ボタン配置・レイアウトを生成時の習慣で決めず、目的、参照した知見、比較案、採用理由を説明できる設計とする。catnoseさんのNani翻訳・Zenn・しずかなインターネット等を参考に挙げたが、見た目の模倣や個別スタイルの採用指示ではない。主要判断の根拠と仮説・好みを区別し、全数値を形式的に理論化する運用にはしない。詳細は[UI/UX引継ぎ指示書](history/ui-ux-handoff-2026-10-18.md)に反映。
 
 初回公開の提案範囲：閲覧、自作記事の執筆・公開管理、外部記事同期、画像、認証、バックアップ・復元、運用上の異常把握。
 検索・SNS投稿連携・コメント・会員登録・複数執筆者・予約公開は初回必須に追加しない。通常のURL共有とSNS専用機能は区別する。
@@ -115,19 +115,19 @@ PC・スマホ、キーボード、長いコード・表、失敗時の復帰を
 
 2026年10月17日、本人の「はい、進めましょう」により、NodeとGoを別ECSサービス・タスクとし、HTTP API＋VPC Link＋各Cloud Map登録先で直接振り分ける方針で検証準備を進める。独立Nginxタスクは初期案に含めない。容量・費用・課金操作まで一括承認した扱いにはしない。
 
-[比較と採用理由](ingress-comparison-2026-10-17.md)、[具体的な設定と成立性検証の準備](aws-two-task-validation.md)を参照。AWSで確認済みの範囲と限界は[公開台帳C4/R5](blog-publication-roadmap-2026-10-18.md)を参照。以前の専用プロキシ優先案は1タスク同居前提の履歴。ローカルのCaddy構成は既存動作を維持し、本番の採用構成と区別する。
+[比較と採用理由](history/ingress-comparison-2026-10-17.md)、[具体的な設定と成立性検証の準備](history/aws-two-task-validation.md)を参照。AWSで確認済みの範囲と限界は[公開台帳C4/R5](blog-publication-roadmap-2026-10-18.md)を参照。以前の専用プロキシ優先案は1タスク同居前提の履歴。ローカルのCaddy構成は既存動作を維持し、本番の採用構成と区別する。
 
-配置全体の具体化は[配備前レビュー・全体費用・撤去復旧](aws-deployment-review.md)と[CloudFormation草案](../infra/review/two-task-stack.template.json)を参照。Node 0.5vCPU/1GiB、Go 0.25vCPU/1GiBを試験の開始値とした。本番必要容量と継続費用は、完成機能の負荷とオレゴンの条件で判断する。過去の東京試算を現在のオレゴン費用として使わない。
+配置全体の具体化は[配備前レビュー・全体費用・撤去復旧](history/aws-deployment-review.md)と[CloudFormation草案](../infra/review/two-task-stack.template.json)を参照。Node 0.5vCPU/1GiB、Go 0.25vCPU/1GiBを試験の開始値とした。本番必要容量と継続費用は、完成機能の負荷とオレゴンの条件で判断する。過去の東京試算を現在のオレゴン費用として使わない。
 
-生存確認・保護ヘッダー・RDS CA・移行/疎通設定の実装理由は[配備準備の記録](aws-readiness-implementation-2026-10-17.md)に残す。実配備と撤去の結果は[AWS実行記録](aws-validation-execution-2026-10-18.md)を参照。
+生存確認・保護ヘッダー・RDS CA・移行/疎通設定の実装理由は[配備準備の記録](history/aws-readiness-implementation-2026-10-17.md)に残す。実配備と撤去の結果は[AWS実行記録](history/aws-validation-execution-2026-10-18.md)を参照。
 
-[Docker検証・制限付き負荷・TLS試験](aws-validation-ready-2026-10-18.md)はローカル段階の証拠であり、本番容量の確定値ではない。
+[Docker検証・制限付き負荷・TLS試験](history/aws-validation-ready-2026-10-18.md)はローカル段階の証拠であり、本番容量の確定値ではない。
 
 ### AWSリージョンの決定（2026年10月18日）
 
 本人が広域の料金・公開遅延比較を踏まえ、**オレゴン（us-west-2）**を採用。理由は、同構成の米国3地域は月約47.96ドルで同額、公開地域間遅延ではオレゴンが短めであること。算出可能な33地域で最安のインドとの差は月約1.91ドルのため、費用と通信待ち時間のバランスを重視した選択。家庭回線での性能や将来の全サービスの提供を保証する判断ではない。
 
-[比較と限界](aws-regions-wide-comparison-2026-10-18.md)を参照。地域の採用、仮データでの実配備検証、正式公開の準備を区別する。進捗・対象ブランチは公開台帳、個別の実行結果はAWS実行記録を参照する。
+[比較と限界](history/aws-regions-wide-comparison-2026-10-18.md)を参照。地域の採用、仮データでの実配備検証、正式公開の準備を区別する。進捗・対象ブランチは公開台帳、個別の実行結果はAWS実行記録を参照する。
 
 ### ローカルの現在の実装
 
@@ -153,7 +153,7 @@ Composeではサービスごとにネットワークが別なのでサービス�
 ECS＋Fargateの採用以外は配置の提案。RDS Single-AZ、0.5vCPU/2GiBの1タスク、DB micro/20GB、SSMから秘密値注入が候補。同一タスク内はlocalhost接続。コンテナ同居は強い権限分離ではなく、更新・増減も一緒になる。
 API Gateway入口はALB固定費を避ける案だが、制約・構成要素は増える。完成HTML、Cookie、静的配信、更新時の接続を実AWSで検証する。画像の大容量送信は認証後のS3直接アップロードが候補。
 本番容量・月額は未確定。過去の約49〜53ドル/月・税別は設計例の試算で、費用承認や上限保証ではない。最新料金の再調査は今回行っていない。
-詳細・比較履歴は [AWS配置設計案](ecs-fargate-deployment-design-2026-10-15.md) に残す。公開URLは未決で、blog.course-k.comは推奨案。
+詳細・比較履歴は [AWS配置設計案](history/ecs-fargate-deployment-design-2026-10-15.md) に残す。公開URLは未決で、blog.course-k.comは推奨案。
 
 ## 6. API：現在の実装契約
 
@@ -220,7 +220,7 @@ DB移行は`migrate`コマンド。トランザクションとDBロックを使�
 2026年10月15日の調査はQiita92・note1・Wantedly14、計107件。調査時点の取得結果であり、現在の件数・DB登録・継続同期の証拠ではない。
 Qiita公式API・note RSS・Wantedly公開一覧HTMLの取得を候補とする。Wantedlyは非公式形式依存で、利用条件と継続取得の範囲が未確定。技術的取得成功だけで定期運用の条件を満たしたとしない。
 日次＋手動同期を提案。外部障害・429・形式変更でも既存記事を保持する。フィードに現れなくなっただけで削除しない。手動補正・非表示を保持し、複数実行で重複登録しない。
-RSSや一覧の取得範囲外を含め「全件」と断言しない。Wantedlyで前回との連続性が失われたら補完待ちを明示する。詳細は [取得調査](external-integration-verification-2026-10-15.md)。
+RSSや一覧の取得範囲外を含め「全件」と断言しない。Wantedlyで前回との連続性が失われたら補完待ちを明示する。詳細は [取得調査](history/external-integration-verification-2026-10-15.md)。
 
 ## 9. 認証・保護・保存運用
 
@@ -259,9 +259,9 @@ RDS自動バックアップ7日、ダンプ4世代、復旧作業4時間は提�
 
 本人の対話で提示された要望・選択、既存の仕様案・配置案・検証記録と、以下の実ソースを照合した。
 
-- [画面](../frontend/src/routes/)、[SSR取得](../frontend/src/lib/posts.ts)、[共通Markdown](../frontend/src/components/Markdown.tsx)
+- [画面](../frontend/src/routes)、[SSR取得](../frontend/src/lib/posts.ts)、[共通Markdown](../frontend/src/components/Markdown.tsx)
 - [API](../backend/internal/httpapi/server.go)、[記事型](../backend/internal/blog/blog.go)、[保存SQL・移行処理](../backend/internal/postgres/store.go)、[初期DDL](../backend/internal/postgres/migrations/001_initial.sql)
 - [起動時検証](../backend/cmd/api/main.go)、[ローカル構成](../compose.yaml)
-- [実施済み検証記録](blog-prototype-progress-2026-10-15.md)、[採用決定の範囲](ecs-fargate-decision-2026-10-15.md)
+- [実施済み検証記録](history/blog-prototype-progress-2026-10-15.md)、[採用決定の範囲](history/ecs-fargate-decision-2026-10-15.md)
 
 LLMは今回の整理・文章化・コードとの照合に使用。既存コードの全てを本人がレビューしたとは扱わない。過去の実装を遡って事前合意済みとせず、今回確認できた事実と残る判断を記載した。

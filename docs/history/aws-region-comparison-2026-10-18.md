@@ -1,4 +1,4 @@
-> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](current-design.md)です。
+> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](../blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](../current-design.md)です。
 
 # 東京とバージニア北部：同条件の費用比較
 
@@ -43,9 +43,9 @@ AWS Well-Architectedも地域差を比較し、遅延やデータ所在地等の
 
 ## 証拠・再計算
 
-- [取得単価と原本URL・SHA256](aws-region-price-evidence-2026-10-18.json)：両地域の公式公開Price Listを同日に実取得。認証不要。
-- [計算内訳](aws-region-comparison-2026-10-18.json)：合計は丸め前の各項目を合算。
-- [以前の東京明細](aws-two-task-costs-2026-10-17.json)：今回の東京再取得でも60.961575ドルと一致。
+- [取得単価と原本URL・SHA256](../evidence/aws-region-price-evidence-2026-10-18.json)：両地域の公式公開Price Listを同日に実取得。認証不要。
+- [計算内訳](../evidence/aws-region-comparison-2026-10-18.json)：合計は丸め前の各項目を合算。
+- [以前の東京明細](../evidence/aws-two-task-costs-2026-10-17.json)：今回の東京再取得でも60.961575ドルと一致。
 - [Fargate公式料金](https://aws.amazon.com/fargate/pricing/)
 - [RDS PostgreSQL公式料金](https://aws.amazon.com/rds/postgresql/pricing/)
 - [公開IPv4公式料金](https://aws.amazon.com/vpc/pricing/)

@@ -1,4 +1,4 @@
-> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](current-design.md)です。
+> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](../blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](../current-design.md)です。
 
 # 追加候補：バージニア北部・オハイオ・オレゴン
 
@@ -12,7 +12,7 @@
 
 前回と同じ730時間・ARM64 Fargate Node0.5vCPU/1GiB、Go0.25vCPU/1GiB、RDS PostgreSQL db.t4g.microとgp3 20GiB、同じ利用量・予備費・無料枠前提。3米国地域の丸め前の合計は全て47.95965ドル。計算資源だけを見て総額を同額と仮定したものではなく、他の項目も公式単価を取得・計算した。
 
-[4地域の公式単価証拠](aws-region-candidates-evidence-2026-10-18.json)、[各項目の計算](aws-region-candidates-costs-2026-10-18.json)。前回の東京/バージニア比較記録も残す。
+[4地域の公式単価証拠](../evidence/aws-region-candidates-evidence-2026-10-18.json)、[各項目の計算](../evidence/aws-region-candidates-costs-2026-10-18.json)。前回の東京/バージニア比較記録も残す。
 
 ## 通信値の意味
 

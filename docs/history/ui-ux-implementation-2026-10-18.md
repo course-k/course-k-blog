@@ -1,4 +1,4 @@
-> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](current-design.md)です。
+> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](../blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](../current-design.md)です。
 
 # 採用UIの実装と検証（2026年10月18日）
 
@@ -23,7 +23,7 @@
 
 `frontend/ui-tests/ssr.test.mjs` は本番ビルドのentry.fetchへプロセス内でRequestを渡す。API取得だけを固定応答へ置換し、HTTPサーバーは起動しない。本文・目次・一覧がHTMLに含まれること、404、取得失敗を空一覧にしないことを確認。実Go API・PostgreSQL・Cookieの結合検証ではない。
 
-実行結果：本番ビルド、型検査、SSR 3件、既存runtime 3件成功。画面テストの結果は[記録](ui-ux-evidence/implementation/results.json)を参照。
+実行結果：本番ビルド、型検査、SSR 3件、既存runtime 3件成功。画面テストの結果は[記録](../evidence/ui-ux-evidence/implementation/results.json)を参照。
 
 文字コントラスト（白地）：本文13.86:1、補足5.55:1、リンク7.70:1、エラー7.21:1。入力枠3.24:1。ライムの印は媒体名を併記する補助装飾で、色だけを識別手段にしない。全アクセシビリティ要件の完了宣言ではない。
 
@@ -38,9 +38,9 @@
 
 すべて実装部品＋架空データの検証画面。公開サイトの画面ではない。
 
-- [一覧・PC](ui-ux-evidence/implementation/list-1280.png)、[一覧・スマホ](ui-ux-evidence/implementation/list-390.png)（最初のカードはフォーカス表示）
-- [本文・PC](ui-ux-evidence/implementation/article-1280.png)、[本文・スマホ](ui-ux-evidence/implementation/article-390.png)
-- [管理・PC](ui-ux-evidence/implementation/admin-desktop.png)、[管理・スマホ](ui-ux-evidence/implementation/admin-mobile.png)
+- [一覧・PC](../evidence/ui-ux-evidence/implementation/list-1280.png)、[一覧・スマホ](../evidence/ui-ux-evidence/implementation/list-390.png)（最初のカードはフォーカス表示）
+- [本文・PC](../evidence/ui-ux-evidence/implementation/article-1280.png)、[本文・スマホ](../evidence/ui-ux-evidence/implementation/article-390.png)
+- [管理・PC](../evidence/ui-ux-evidence/implementation/admin-desktop.png)、[管理・スマホ](../evidence/ui-ux-evidence/implementation/admin-mobile.png)
 
 ## 残作業・引継ぎ
 

@@ -1,4 +1,4 @@
-> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](current-design.md)です。
+> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](../blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](../current-design.md)です。
 
 # AWS検証用アクセス設定
 
@@ -6,9 +6,9 @@
 
 ## 最新のアップロード対象
 
-ログ修正版は反映・実動作確認済み。現在の追加候補は[スナップショット修正版](../infra/access/validation-access-snapshot-fix-20261018.template.json)。撤去のCreateDBSnapshot不足1件を補い、対象・地域・CloudFormation経由の制限は維持。未反映。今回の撤去は管理者コンソールから通常削除を再試行して完了し、操作者への権限追加は行っていない。将来の操作者によるスナップショット付き撤去には、この不足への対応が必要。以下はログ修正時点の履歴。
+ログ修正版は反映・実動作確認済み。現在の追加候補は[スナップショット修正版](../../infra/access/validation-access-snapshot-fix-20261018.template.json)。撤去のCreateDBSnapshot不足1件を補い、対象・地域・CloudFormation経由の制限は維持。未反映。今回の撤去は管理者コンソールから通常削除を再試行して完了し、操作者への権限追加は行っていない。将来の操作者によるスナップショット付き撤去には、この不足への対応が必要。以下はログ修正時点の履歴。
 
-現在は[validation-access-logging-fix-20261018.template.json](../infra/access/validation-access-logging-fix-20261018.template.json)を使用する。説明に`gateway logging revision 2026-10-18`があることを確認する。
+現在は[validation-access-logging-fix-20261018.template.json](../../infra/access/validation-access-logging-fix-20261018.template.json)を使用する。説明に`gateway logging revision 2026-10-18`があることを確認する。
 
 Gateway修正版の反映はCloudFormationとIAMで確認済み。タグ権限は解消し、最新試験の不足はログ配信のCreateLogDeliveryだった。「同じタグエラー」とした前の説明は訂正する。ログ配信に必要な公式の権限セットを追加し、cfn-lint・Access Analyzerで検査済み。既存アクセス用スタックへの反映待ち。詳細は実検証記録の最新節を参照。
 
@@ -38,7 +38,7 @@ AWS STSでcourse-k-deployの本人接続を再確認。配備用ロールへのA
 
 ## 再開用の事前確認ツール
 
-[scripts/aws-validation-preflight.py](../scripts/aws-validation-preflight.py)を追加した。専用のローカル設定に、ブラウザ認証の`course-k-blog`を参照する`course-k-validation-operator`プロファイルを設定済み。既存のグローバルプロファイルは変更していない。
+[scripts/aws-validation-preflight.py](../../scripts/aws-validation-preflight.py)を追加した。専用のローカル設定に、ブラウザ認証の`course-k-blog`を参照する`course-k-validation-operator`プロファイルを設定済み。既存のグローバルプロファイルは変更していない。
 
 このツールはAWS資源を変更しない。想定アカウントと操作者ロールをSTSで照合した後、オレゴンのAZ、PostgreSQL 17の提供版、db.t4g.micro/gp3/20GiBの注文可否、FargateのOn-Demand vCPU枠、CloudFormationテンプレートの検証を行う。認証情報は出力・保存しない。結果はGit無視対象の`config/aws-validation/preflight-result.json`へ保存する。枠の値は空き容量や配備成功の保証ではない。
 
@@ -64,7 +64,7 @@ python3 scripts/aws-validation-preflight.py \
 
 ## 用意した権限の構成
 
-[アクセス設定テンプレート](../infra/access/validation-access.template.json)を、本人が管理者のコンソールからオレゴン（us-west-2）へ配備する。スタック名は `course-k-validation-access`。
+[アクセス設定テンプレート](../../infra/access/validation-access.template.json)を、本人が管理者のコンソールからオレゴン（us-west-2）へ配備する。スタック名は `course-k-validation-access`。
 
 作るのはIAMの設定のみで、アプリ・DB・ネットワークは作成しない。
 

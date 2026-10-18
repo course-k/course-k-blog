@@ -1,4 +1,4 @@
-> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](current-design.md)です。
+> 位置づけ：本書は対象時点の判断・調査・実装・検証の記録です。本文中の「現在」「未着手」「次」は当時の状態を含みます。進捗と残作業の正本は[公開台帳](../blog-publication-roadmap-2026-10-18.md)、現行仕様は[設計書](../current-design.md)です。
 
 # 2タスク配置：成立性検証の準備
 
@@ -17,7 +17,7 @@ Node → api.blog.internal:8081 → Go → RDS
 
 ## 用意した具体的な設定
 
-[HTTP APIルートのCloudFormation草案](../infra/review/http-api-routing.template.json)：API、2統合、3ルート、default stageの7リソース。既存のVPC Link ID、Node/Go用Cloud Map ARNをパラメーターとして受ける。秘密値・実アカウントIDは含まない。
+[HTTP APIルートのCloudFormation草案](../../infra/review/http-api-routing.template.json)：API、2統合、3ルート、default stageの7リソース。既存のVPC Link ID、Node/Go用Cloud Map ARNをパラメーターとして受ける。秘密値・実アカウントIDは含まない。
 これは入口部分だけのレビュー用草案。VPC・ECS・IAM・DB・ログ・独自ドメイン・疎通プローブを含まないため、単独でブログを配備できる完成テンプレートではない。AWSへ送信・適用していない。API Gatewayのルートでは認証を掛けず、管理APIはGoの認証で保護する設計。ネットワーク非公開と未認証で管理操作できないことを区別する。
 
 パスは$request.pathで転送し、stage名が混ざることを避ける。/apiも明示して/api/*だけのマッチ漏れを避ける。新規API草案なので既存公開ルートは変更しない。AutoDeployは検証環境用で、本番の承認付きリリース方式は別に決める。
