@@ -20,13 +20,14 @@ try {
   run('openssl', ['req', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=localhost', '-keyout', join(directory, 'server.key'), '-out', join(directory, 'server.csr')])
   await writeFile(join(directory, 'server.ext'), 'subjectAltName=DNS:localhost\nextendedKeyUsage=serverAuth\n')
   run('openssl', ['x509', '-req', '-days', '1', '-in', join(directory, 'server.csr'), '-CA', join(directory, 'ca.pem'), '-CAkey', join(directory, 'ca.key'), '-CAcreateserial', '-extfile', join(directory, 'server.ext'), '-out', join(directory, 'server.pem')])
-  // Host directory is 0700; mysqld's container UID needs these bind-mounted files.
+  // Bind individual files: mounting the 0700 host directory would prevent Linux
+  // mysqld's UID from traversing it. Other host users still cannot read its keys.
   for (const name of ['ca.pem', 'server.pem', 'server.key']) await chmod(join(directory, name), 0o444)
   const server = createServer()
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   const port = server.address().port
   await new Promise(resolve => server.close(resolve))
-  run('docker', ['run', '--rm', '-d', '--name', container, '-e', 'MYSQL_ALLOW_EMPTY_PASSWORD=yes', '-e', 'MYSQL_ROOT_HOST=%', '-e', 'MYSQL_DATABASE=blog_test', '-p', `127.0.0.1:${port}:3306`, '-v', `${directory}:/tls:ro`, 'mysql:8.4', '--ssl-ca=/tls/ca.pem', '--ssl-cert=/tls/server.pem', '--ssl-key=/tls/server.key', '--require-secure-transport=ON', '--log-bin-trust-function-creators=ON'])
+  run('docker', ['run', '--rm', '-d', '--name', container, '-e', 'MYSQL_ALLOW_EMPTY_PASSWORD=yes', '-e', 'MYSQL_ROOT_HOST=%', '-e', 'MYSQL_DATABASE=blog_test', '-p', `127.0.0.1:${port}:3306`, ...['ca.pem', 'server.pem', 'server.key'].flatMap(name => ['-v', `${join(directory, name)}:/tls/${name}:ro`]), 'mysql:8.4', '--ssl-ca=/tls/ca.pem', '--ssl-cert=/tls/server.pem', '--ssl-key=/tls/server.key', '--require-secure-transport=ON', '--log-bin-trust-function-creators=ON'])
   started = true
   let ready = false
   for (let attempt = 0; attempt < 90; attempt++) {
@@ -51,6 +52,9 @@ try {
   run('go', ['test', '-count=1', '-race', '-v', './internal/mysql', '-run', '^Test(TLSVerification|RuntimeDatabasePrivileges)$'], {
     cwd: `${root}backend`, stdio: 'inherit', env: { ...process.env, TEST_DATABASE_URL: '', TEST_TLS_DATABASE_URL: target.href, TEST_TLS_WRONG_CA_FILE: join(directory, 'wrong.pem'), TEST_RUNTIME_DATABASE_URL: runtime.href },
   })
+} catch (error) {
+  if (started) process.stderr.write(run('docker', ['logs', '--tail', '20', container]))
+  throw error
 } finally {
   if (started) run('docker', ['stop', container])
   await rm(directory, { recursive: true, force: true })
