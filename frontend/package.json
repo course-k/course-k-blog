@@ -13,7 +13,8 @@
     "test:e2e": "playwright test",
     "test:runtime": "node --test runtime.test.mjs",
     "test:ui": "rsbuild build --config ui-test.config.ts && node ui-tests/verify.mjs",
-    "test:ssr": "node --test ui-tests/ssr.test.mjs"
+    "test:ssr": "node --test ui-tests/ssr.test.mjs",
+    "check": "npm run build && npm run typecheck && npm run test:runtime && npm run test:ssr"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.44",

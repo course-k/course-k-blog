@@ -1,34 +1,15 @@
 #!/usr/bin/env python3
-"""Read-only AWS checks for the approved Oregon validation environment.
-
-The CLI handles credentials. This script never prints or persists credentials.
-It makes no resource-creation, permission-change, or deployment calls.
-"""
+"""Read-only Oregon preflight. Login and role handling use the shared validation session."""
 import argparse
 import json
-import os
 from pathlib import Path
 import re
-import shutil
-import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
-REGION = 'us-west-2'
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'aws'))
+from core import REGION, STATE, TEMPLATE, Session, load_config, private_json
 
-
-def cli_environment():
-    env = os.environ.copy()
-    for name in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_SECURITY_TOKEN', 'AWS_PROFILE', 'AWS_DEFAULT_PROFILE'):
-        env.pop(name, None)
-    directory = ROOT / 'config' / 'aws-validation'
-    env.update(AWS_CONFIG_FILE=str(directory / 'config'),
-               AWS_SHARED_CREDENTIALS_FILE=str(directory / 'credentials'),
-               AWS_LOGIN_CACHE_DIRECTORY=str(directory / 'login-cache'), AWS_PAGER='')
-    return env
-
-
-def run_checks(call, expected_account, template):
+def run_checks(call, expected_account, template, requested_version=None):
     identity = call('sts', 'get-caller-identity')
     expected = f'arn:aws:sts::{expected_account}:assumed-role/course-k-validation-operator/'
     if identity.get('Account') != expected_account or not identity.get('Arn', '').startswith(expected):
@@ -42,7 +23,9 @@ def run_checks(call, expected_account, template):
                         key=lambda value: tuple(int(n) for n in re.findall(r'\d+', value)))
     if not postgres17:
         raise ValueError('No available PostgreSQL 17 version returned; do not guess an engine version.')
-    chosen = postgres17[-1]
+    chosen = requested_version or postgres17[-1]
+    if chosen not in postgres17:
+        raise ValueError('Configured PostgreSQL version is not available; do not substitute silently.')
     options = call('rds', 'describe-orderable-db-instance-options', '--engine', 'postgres',
                    '--engine-version', chosen, '--db-instance-class', 'db.t4g.micro')
     gp3 = [o for o in options.get('OrderableDBInstanceOptions', [])
@@ -60,61 +43,32 @@ def run_checks(call, expected_account, template):
             'note': 'Read-only preflight, not a successful deployment or proof of free remaining quota.'}
 
 
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--expected-account', required=True)
-    parser.add_argument('--source-profile', default='course-k-blog')
-    parser.add_argument('--cli', default=os.getenv('AWS_VALIDATION_CLI') or shutil.which('aws'))
+    parser.add_argument('--config', type=Path, required=True)
+    parser.add_argument('--cli')
     args = parser.parse_args()
-    if not re.fullmatch(r'\d{12}', args.expected_account) or not args.cli:
-        parser.error('A 12-digit expected account and AWS CLI binary are required.')
-    env = cli_environment()
-    version = subprocess.run([args.cli, '--version'], env=env, capture_output=True, text=True, check=True)
-    match = re.search(r'aws-cli/(\d+)\.(\d+)\.(\d+)', version.stdout)
-    if not match or tuple(map(int, match.groups())) < (2, 32, 0):
-        raise ValueError('AWS CLI 2.32.0+ is required for the dedicated browser-login profile.')
-    directory = ROOT / 'config' / 'aws-validation'
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    source = json.loads((ROOT / 'infra/review/two-task-stack.template.json').read_text())
-    compact = directory / 'preflight-template.json'
-    compact.write_text(json.dumps(source, separators=(',', ':')))
+    config = load_config(args.config)
+    session = Session(config, args.cli)
+    compact = STATE / config['stack'] / 'preflight-template.json'
+    compact.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # ValidateTemplate accepts at most 51,200 bytes via TemplateBody.
+    body = json.dumps(json.loads(TEMPLATE.read_text()), separators=(',', ':'))
+    if len(body.encode()) > 51200:
+        raise ValueError('Template exceeds direct validation limit.')
+    compact.write_text(body)
     compact.chmod(0o600)
-
-    # Assume directly and keep short-lived credentials in this process only.
-    # Role profiles would otherwise create a cache in the global ~/.aws/cli.
-    role = subprocess.run([args.cli, 'sts', 'assume-role', '--role-arn',
-                           f'arn:aws:iam::{args.expected_account}:role/course-k-validation-operator',
-                           '--role-session-name', 'blog-validation', '--profile', args.source_profile,
-                           '--region', REGION, '--output', 'json', '--no-cli-pager'],
-                          env=env, capture_output=True, text=True)
-    if role.returncode:
-        raise RuntimeError('AssumeRole failed: ' + role.stderr.strip())
-    credentials = json.loads(role.stdout)['Credentials']
-    env.update(AWS_ACCESS_KEY_ID=credentials['AccessKeyId'],
-               AWS_SECRET_ACCESS_KEY=credentials['SecretAccessKey'],
-               AWS_SESSION_TOKEN=credentials['SessionToken'])
-
-    def call(*operation):
-        response = subprocess.run([args.cli, *operation, '--region', REGION,
-                                   '--output', 'json', '--no-cli-pager', '--cli-connect-timeout', '10',
-                                   '--cli-read-timeout', '30'], env=env, capture_output=True, text=True)
-        if response.returncode:
-            # These operations neither request nor return secret values. Never use --debug here.
-            raise RuntimeError(f'{operation[0]} {operation[1]} failed: {response.stderr.strip()}')
-        return json.loads(response.stdout)
-
-    report = run_checks(call, args.expected_account, compact)
-    destination = directory / 'preflight-result.json'
-    destination.write_text(json.dumps(report, indent=2) + '\n')
-    destination.chmod(0o600)
+    report = run_checks(session.call, config['account'], compact, config['parameters']['PostgresVersion'])
+    private_json(STATE / config['stack'] / 'preflight-result.json', report)
     print(json.dumps(report, indent=2))
     if not report['requiredZonesAvailable'] or not report['microGp3_20GiBOrderable']:
-        raise ValueError('A required availability condition was not met; review before deployment.')
+        raise ValueError('Required availability condition was not met.')
 
 
 if __name__ == '__main__':
     try:
         main()
-    except (ValueError, RuntimeError, subprocess.CalledProcessError) as error:
-        print(str(error), file=sys.stderr)
+    except (ValueError, RuntimeError, OSError, KeyError):
+        print('Read-only preflight failed; raw AWS output suppressed.', file=sys.stderr)
         sys.exit(1)
