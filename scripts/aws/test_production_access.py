@@ -50,6 +50,17 @@ class ProductionAccessTest(unittest.TestCase):
         self.assertNotIn('s3:DeleteObjectVersion', actions)
         self.assertNotIn('rds:DeleteDBSnapshot', actions)
 
+    def test_custom_domain_and_required_mfa_have_deployment_permissions(self):
+        from production import production_template
+        app = production_template()['Resources']
+        self.assertEqual(app['OwnerPool']['Properties']['MfaConfiguration'], 'ON')
+        self.assertIn('PublicDomain', app)
+        actions = {a for s in self.statements for a in s['Action']}
+        self.assertTrue({'cognito-idp:SetUserPoolMfaConfig', 'cognito-idp:GetUserPoolMfaConfig'} <= actions)
+        gateway = next(s for s in self.statements if s.get('Sid') == 'GatewayThroughStack')
+        self.assertIn('/domainnames*', json.dumps(gateway['Resource']))
+        self.assertEqual(gateway['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'], 'cloudformation.amazonaws.com')
+
     def test_managed_policies_fit_iam_size_limit(self):
         for resource in self.resources.values():
             if resource['Type'] == 'AWS::IAM::ManagedPolicy':

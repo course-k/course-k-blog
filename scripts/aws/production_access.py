@@ -41,6 +41,9 @@ def production_access_template():
                'CleanupRetainedLogs', 'CleanupValidationSnapshots'}
     policy = resources['OperatorPolicy3']['Properties']['PolicyDocument']
     policy['Statement'] = [s for s in policy['Statement'] if s.get('Sid') not in cleanup]
+    gateway = next(s for s in resources['OperatorPolicy1']['Properties']['PolicyDocument']['Statement']
+                   if s.get('Sid') == 'GatewayThroughStack')
+    gateway['Resource'].append({'Fn::Sub': 'arn:${AWS::Partition}:apigateway:us-west-2::/domainnames*'})
     via_stack = {'StringEquals': {'aws:RequestedRegion': 'us-west-2'},
                  'ForAnyValue:StringEquals': {'aws:CalledVia': 'cloudformation.amazonaws.com'}}
     regional = {'StringEquals': {'aws:RequestedRegion': 'us-west-2'}}
@@ -57,6 +60,7 @@ def production_access_template():
          'Resource': {'Ref': 'CertificateArn'}, 'Condition': regional},
         {'Sid': 'IdentityThroughStack', 'Effect': 'Allow',
          'Action': ['cognito-idp:CreateUserPool', 'cognito-idp:DescribeUserPool', 'cognito-idp:UpdateUserPool',
+                    'cognito-idp:SetUserPoolMfaConfig', 'cognito-idp:GetUserPoolMfaConfig',
                     'cognito-idp:DeleteUserPool', 'cognito-idp:CreateUserPoolClient', 'cognito-idp:DescribeUserPoolClient',
                     'cognito-idp:UpdateUserPoolClient', 'cognito-idp:DeleteUserPoolClient',
                     'cognito-idp:CreateUserPoolDomain', 'cognito-idp:DescribeUserPoolDomain',
