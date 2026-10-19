@@ -60,6 +60,15 @@ class RecoveryContractTests(unittest.TestCase):
         self.assertNotEqual(values['SOURCE_DB_HOST'], values['RESTORE_DB_HOST'])
         self.assertEqual(values['MEDIA_BUCKET'], {'Ref': 'RestoreMediaBucket'})
 
+    def test_rollback_probe_is_only_a_definition_never_a_service_update(self):
+        task = self.resources['RollbackTestTask']
+        self.assertEqual(task['Condition'], 'RestoreRuntimeTest')
+        self.assertEqual(task['Properties']['Family'], {'Fn::Sub': '${AWS::StackName}-rollback-probe'})
+        containers = task['Properties']['ContainerDefinitions']
+        self.assertEqual(next(c for c in containers if c['Name'] == 'go')['Command'], ['deployment-failure-probe'])
+        self.assertEqual(self.resources['ApplicationService'], production_template()['Resources']['ApplicationService'])
+        self.assertNotIn('RollbackTestTask', json.dumps(self.resources['ApplicationService']))
+
 
 if __name__ == '__main__':
     unittest.main()
