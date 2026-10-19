@@ -13,6 +13,7 @@ def backfill_template():
         'ExternalBackfillImage': copy.deepcopy(template['Parameters']['GoImage']),
         'ExternalBackfillItems': {'Type': 'String', 'Default': '', 'MaxLength': 4096},
     })
+    template['Parameters']['ExternalBackfillImage'].pop('Description', None)
     template['Conditions']['ExternalBackfill'] = {'Fn::And': [{'Condition': 'DatabaseTools'}, {'Condition': 'RunApplication'}, {'Fn::Equals': [ref('EnableExternalBackfill'), 'true']}]}
     template['Rules']['BackfillRequiresInputs'] = {
         'RuleCondition': {'Fn::Equals': [ref('EnableExternalBackfill'), 'true']},
@@ -27,6 +28,7 @@ def backfill_template():
     task['Condition'] = 'ExternalBackfill'
     task['Properties'].update(Family=sub('${AWS::StackName}-external-backfill'), ExecutionRoleArn={'Fn::GetAtt': ['ApplicationExecutionRole', 'Arn']})
     container = task['Properties']['ContainerDefinitions'][0]
+    container.pop('PortMappings', None)
     container.update(Name='externalimport', Image=ref('ExternalBackfillImage'), EntryPoint=['/usr/local/bin/externalimport'], Command=['--confirm-owner-metadata'])
     container['Secrets'] = [{'Name': 'DATABASE_URL', 'ValueFrom': ref('DatabaseUrlParameterArn')}]
     container['Environment'] = [
