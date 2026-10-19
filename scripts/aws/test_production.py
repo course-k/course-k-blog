@@ -54,13 +54,15 @@ class ProductionTemplateTest(unittest.TestCase):
         self.assertEqual(rules[0]['NoncurrentVersionExpiration']['NoncurrentDays'], 7)
         role = self.resources['ApplicationTaskRole']['Properties']['Policies'][0]['PolicyDocument']['Statement'][0]
         self.assertNotIn('s3:DeleteObjectVersion', role['Action'])
-        boundary = self.resources['ProductionRuntimeBoundary']['Properties']['PolicyDocument']['Statement']
-        self.assertIn(role, boundary)
         self.assertNotIn('s3:*', json.dumps(role))
         lookup = self.resources['ApplicationTaskRole']['Properties']['Policies'][0]['PolicyDocument']['Statement'][1]
         self.assertEqual(lookup['Action'], ['s3:ListBucket'])
         self.assertEqual(lookup['Resource'], [{'Fn::GetAtt': ['ImagesBucket', 'Arn']}, {'Fn::GetAtt': ['BackupsBucket', 'Arn']}])
-        self.assertIn(lookup, boundary)
+        self.assertNotIn('ProductionRuntimeBoundary', self.resources)
+        self.assertIn('RuntimeBoundaryArn', self.template['Parameters'])
+        for resource in self.resources.values():
+            if resource['Type'] == 'AWS::IAM::Role':
+                self.assertEqual(resource['Properties']['PermissionsBoundary'], {'Ref': 'RuntimeBoundaryArn'})
 
     def test_network_database_and_probe_are_preserved(self):
         base = json.loads((ROOT / 'infra/aws/validation-stack.template.json').read_text())

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Render the production extension of the tested topology without AWS access."""
-import copy
 import json
 from pathlib import Path
 import sys
@@ -24,7 +23,11 @@ def production_template():
     template['Description'] = 'Course K production blog. Runtime stays off until identity, migration and recurring charges are approved.'
     parameters = template['Parameters']
     parameters.pop('AdminHashParameterArn')
-    parameters.pop('RuntimeBoundaryArn')
+    parameters['RuntimeBoundaryArn'] = {
+        'Type': 'String',
+        'AllowedPattern': r'arn:aws:iam::[0-9]{12}:policy/course-k-blog-production-access-RuntimeBoundary-[a-zA-Z0-9]+',
+        'Description': 'Administrator-owned boundary from course-k-blog-production-access; not editable by the operator.',
+    }
     parameters['PublicOrigin'] = {'Type': 'String', 'AllowedPattern': r'https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?', 'Description': 'Dedicated blog hostname, HTTPS, no path or trailing slash.'}
     parameters.update({
         'CertificateArn': {'Type': 'String', 'AllowedPattern': r'arn:aws:acm:us-west-2:[0-9]{12}:certificate/[a-z0-9-]+', 'Description': 'Issued regional ACM certificate covering PublicOrigin. Validate DNS before deployment.'},
@@ -38,19 +41,12 @@ def production_template():
     }
     resources = template['Resources']
     resources['HttpApi']['Properties']['Name'] = sub('${AWS::StackName}')
-    access = json.loads((ROOT / 'infra/access/validation-access-pending.template.json').read_text())
-    boundary = copy.deepcopy(access['Resources']['RuntimeBoundary'])
-    boundary['Properties'].pop('ManagedPolicyName', None)
-    encoded = json.dumps(boundary).replace('course-k-blog-validation-*', '${AWS::StackName}*').replace('course-k/blog-validation/', 'course-k/blog-production/')
-    boundary = json.loads(encoded)
     objects = {'Effect': 'Allow', 'Action': ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'], 'Resource': [sub('${ImagesBucket.Arn}/images/*'), sub('${BackupsBucket.Arn}/images/*'), sub('${BackupsBucket.Arn}/backups/*')]}
     bucket_lookup = {'Effect': 'Allow', 'Action': ['s3:ListBucket'], 'Resource': [{'Fn::GetAtt': ['ImagesBucket', 'Arn']}, {'Fn::GetAtt': ['BackupsBucket', 'Arn']}]}
     # S3 reports a missing object as 403 without ListBucket; backup must distinguish 404 from denial.
-    boundary['Properties']['PolicyDocument']['Statement'].extend([copy.deepcopy(objects), copy.deepcopy(bucket_lookup)])
-    resources['ProductionRuntimeBoundary'] = boundary
     for resource in resources.values():
         if resource['Type'] == 'AWS::IAM::Role' and 'PermissionsBoundary' in resource['Properties']:
-            resource['Properties']['PermissionsBoundary'] = ref('ProductionRuntimeBoundary')
+            resource['Properties']['PermissionsBoundary'] = ref('RuntimeBoundaryArn')
     resources['GoService']['DependsOn'] = ['InternetRoute', 'OwnerDomain']
     resources['GoTaskRole']['Properties']['Policies'] = [{'PolicyName': 'private-objects', 'PolicyDocument': {'Version': '2012-10-17', 'Statement': [objects, bucket_lookup]}}]
     statement = resources['GoExecutionRole']['Properties']['Policies'][0]['PolicyDocument']['Statement'][-1]
@@ -77,6 +73,7 @@ def production_template():
     resources.update({
         'OwnerPool': {'Type': 'AWS::Cognito::UserPool', 'DeletionPolicy': 'Retain', 'UpdateReplacePolicy': 'Retain', 'Properties': {
             'UserPoolTier': 'LITE', 'DeletionProtection': 'ACTIVE', 'AdminCreateUserConfig': {'AllowAdminCreateUserOnly': True},
+            'UserPoolTags': {'Project': 'course-k-blog-production'},
             'UsernameAttributes': ['email'], 'AutoVerifiedAttributes': ['email'], 'UsernameConfiguration': {'CaseSensitive': False},
             'MfaConfiguration': 'ON', 'EnabledMfas': ['SOFTWARE_TOKEN_MFA'],
             'AccountRecoverySetting': {'RecoveryMechanisms': [{'Name': 'verified_email', 'Priority': 1}]},
@@ -109,7 +106,7 @@ def production_template():
         'OwnerPoolId': {'Value': ref('OwnerPool')}, 'OwnerClientId': {'Value': ref('OwnerClient')},
         'PublicDnsTarget': {'Value': {'Fn::GetAtt': ['PublicDomain', 'RegionalDomainName']}},
         'PublicDnsZoneId': {'Value': {'Fn::GetAtt': ['PublicDomain', 'RegionalHostedZoneId']}},
-        'RuntimeBoundaryArn': {'Value': ref('ProductionRuntimeBoundary')},
+        'RuntimeBoundaryArn': {'Value': ref('RuntimeBoundaryArn')},
     })
     consolidate_runtime(template)
     return template
