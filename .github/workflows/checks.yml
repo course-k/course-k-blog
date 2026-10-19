@@ -36,6 +36,8 @@ jobs:
           "$RUNNER_TEMP/cfn-lint/bin/pip" install --disable-pip-version-check cfn-lint==1.57.2
           python3 scripts/aws/production.py > "$RUNNER_TEMP/production.template.json"
           "$RUNNER_TEMP/cfn-lint/bin/cfn-lint" -r us-west-2 -t "$RUNNER_TEMP/production.template.json"
+          python3 scripts/aws/recovery.py > "$RUNNER_TEMP/recovery.template.json"
+          "$RUNNER_TEMP/cfn-lint/bin/cfn-lint" -r us-west-2 -t "$RUNNER_TEMP/recovery.template.json"
       - run: python3 scripts/aws/validation.py --config infra/aws/validation-environment.example.json plan
 
   frontend:
