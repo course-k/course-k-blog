@@ -8,6 +8,7 @@ from production import ref, sub
 
 def backfill_template():
     template = recovery_template()
+    template['Description'] = 'Production blog with opt-in recovery and metadata import.'
     template['Parameters'].update({
         'EnableExternalBackfill': {'Type': 'String', 'Default': 'false', 'AllowedValues': ['true', 'false']},
         'ExternalBackfillImage': copy.deepcopy(template['Parameters']['GoImage']),
