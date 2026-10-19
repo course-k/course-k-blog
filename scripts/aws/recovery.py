@@ -101,9 +101,18 @@ def recovery_template():
         {'Name': 'BACKUP_ID', 'Value': ref('RestoreBackupId')},
     ]
     resources['RestoreVerificationTask'] = verification
+    template['Conditions']['RestoreRuntimeTest'] = {'Fn::And': [{'Condition': 'RestoreExercise'}, {'Condition': 'RunApplication'}]}
+    rollback_task = copy.deepcopy(resources['ApplicationTask'])
+    rollback_task['Condition'] = 'RestoreRuntimeTest'
+    rollback_task['Properties']['Family'] = sub('${AWS::StackName}-rollback-probe')
+    # The known image exits on an unknown command before opening the DB. This
+    # models an essential-container startup failure without changing stored data.
+    next(c for c in rollback_task['Properties']['ContainerDefinitions'] if c['Name'] == 'go')['Command'] = ['deployment-failure-probe']
+    resources['RollbackTestTask'] = rollback_task
     template['Outputs'].update({
         'RestoreDbEndpoint': {'Condition': 'RestoreExercise', 'Value': {'Fn::GetAtt': ['RestoreDatabase', 'Endpoint.Address']}},
         'RestoreMediaBucket': {'Condition': 'RestoreExercise', 'Value': ref('RestoreMediaBucket')},
+        'RollbackTestTaskDefinition': {'Condition': 'RestoreRuntimeTest', 'Value': ref('RollbackTestTask')},
         **{name + 'Definition': {'Condition': 'RestoreTools', 'Value': ref(name)} for name in ['RestoreBootstrapTask', 'RestoreMigrationTask', 'RestoreVerificationTask']},
     })
     return template
