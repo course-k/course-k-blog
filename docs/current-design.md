@@ -279,19 +279,19 @@ Go側はすでにStore契約とDB実装が分かれ、公開版の保存をSQL�
 
 | テーブル | 主な列・型 | 意味・制約 |
 |---|---|---|
-| posts | id text PK | 固定記事ID |
-| posts | title text、markdown text | 作業版。DBもタイトル1〜200文字・本文262144バイト以下を制約 |
-| posts | published_title text、published_markdown text | 最後に公開した本文のスナップショット |
+| posts | id varchar(100) PK | 固定記事ID |
+| posts | title varchar(200)、markdown mediumtext | 作業版。DBもタイトル1〜200文字・本文262144バイト以下を制約 |
+| posts | published_title varchar(200)、published_markdown mediumtext | 最後に公開した本文のスナップショット |
 | posts | published boolean | 読者に公開中か。既定false |
-| posts | published_at timestamptz nullable | 初回公開日。再公開で置換しない |
-| posts | public_updated_at timestamptz nullable | 公開版の更新日。公開中は公開日時と共に必須 |
-| posts | updated_at timestamptz、version bigint | 作業更新日と競合検知。versionは正数、初期1 |
-| sessions | token_hash text PK、expires_at timestamptz | 生トークンを保存せず有効期限を管理 |
+| posts | published_at datetime(6) nullable | 初回公開日。再公開で置換しない |
+| posts | public_updated_at datetime(6) nullable | 公開版の更新日。公開中は公開日時と共に必須 |
+| posts | updated_at datetime(6)、version bigint | 作業更新日と競合検知。versionは正数、初期1 |
+| sessions | token_hash varchar(100) PK、expires_at datetime(6) | 生トークンを保存せず有効期限を管理 |
 | login_attempts | window_start bigint PK、attempts integer | 15分の時間枠ごとの全体試行数 |
-| schema_migrations | version integer PK、checksum text | 明示的移行の実施履歴・改変検知 |
+| schema_migrations | version integer PK、checksum varchar(64) | 明示的移行の実施履歴・改変検知 |
 
-公開記事は公開日降順＋ID順の部分索引。セッション期限にも索引がある。接続プールは1プロセス最大5・待機2で、2タスク更新時には合計が増える。容量検証前の設定値。
-DB移行は`migrate`コマンド。トランザクションとDBロックを使い、既適用SQLのチェックサム違いを拒否する。埋め込んだ移行001〜006を番号順に列挙して適用する。既適用SQLを編集して再適用しない。
+公開記事はpublished・公開日降順・ID順の複合索引。日時はMySQLのdatetime(6)へUTCで保存する。セッション期限にも索引がある。接続プールは1プロセス最大5・待機2で、2タスク更新時には合計が増える。容量検証前の設定値。
+DB移行は`migrate`コマンド。MySQLの暗黙コミットを考慮し、接続単位の名前付きロックで直列化し、冪等な文を適用する。既適用SQLのチェックサム違いを拒否する。現在のMySQL移行は埋め込んだ001_initial.sql（schema version 1）である。既適用SQLを編集して再適用しない。
 
 ### 機能の追加モデル
 
@@ -320,7 +320,7 @@ Wantedlyは非公式HTML形式依存。[robots.txt](https://www.wantedly.com/rob
 
 Qiitaは最大100件×20ページ、最後のページまで取得できた場合だけallとする。未認証APIの利用枠を考慮し、同期要求は最低10分空ける。通常は1日後、失敗時は1時間後へ予約し、HTTPの再送をループしない。Wantedlyは毎回robots.txtを確認し、禁止なら停止、Crawl-delayは期限付きの待機で尊重する。
 
-実取得でQiita92件・note1件・Wantedly10件を確認した。note RSSとWantedly初期HTMLは全過去記事を保証しない。Wantedlyの古い記事を含む初回補完と、gap状態の解消手順は公開前の残件。フィードから消えた記事も自動削除しない。変更なしの同期では補正用versionを増やさず、不必要な競合を作らない。
+実取得でQiita92件・note1件・Wantedly10件を確認した。note RSSとWantedly初期HTMLは全過去記事を保証しない。Wantedlyは公開プロフィールの14件を照合し、初期表示外の4件を単発管理コマンドで補完した。既存補正や同期の取得範囲は変更しない。将来のgapは状態表示と初回補完と同じ検証手順で扱う。フィードから消えた記事も自動削除しない。変更なしの同期では補正用versionを増やさず、不必要な競合を作らない。
 
 ## 9. 認証・画像・保存運用と選定理由
 
@@ -354,7 +354,7 @@ DB JSONの出力合計64MiB、展開アーカイブ128MiBを上限にし、超�
 
 開始値は取得済みアーカイブ4世代（BACKUP_RETAINで1〜30）。非公開S3は画像用とバックアップ用を分ける。本番案では旧アーカイブの非現行S3版を7日後に削除し、4世代制御で発生する保存費用を抑える。現行の画像コピーへ日数だけの削除期限を付けない。暗号化とSHA256は完全性確認に使い、WORMやアカウント侵害への保証とは扱わない。
 
-復元は同じ移行版の空DB（名前が_testまたは_restore）と別の画像保存先へ行う。既存データがあれば中断し、セッション・ログインフローを持ち越さない。別DB・別画像先への実復元と、200記事×50KiBの作業版/公開版の復元をローカルで確認した。実RDS/S3の復元、回復に要する時間・損失許容・通知到達は未確認。[運用・本番手順](../infra/production.md)で公開前に確認する。
+復元は同じ移行版の空DB（名前が_testまたは_restore）と別の画像保存先へ行う。既存データがあれば中断し、セッション・ログインフローを持ち越さない。別DB・別画像先への実復元と、200記事×50KiBの作業版/公開版の復元をローカルで確認した。実RDS/S3でも5テーブルと画像2点の復元・一致、通知メール到達を確認した。RDS PITRや資格情報紛失の回復、損失許容・復旧目標の合意は未確認。[運用・本番手順](../infra/production.md)で公開前に確認する。
 
 ## 10. 受入条件
 
@@ -375,7 +375,7 @@ DB JSONの出力合計64MiB、展開アーカイブ128MiBを上限にし、超�
 
 ## 11. 未決の設計事項
 
-公開URLと通知先は記録済み。UI配色等の暫定値、Wantedlyの過去記事補完、許容損失・復旧目標、本番容量の受入は具体化が残る。継続費用の条件と承認は運用手順・公開台帳で管理する。画像・認証・変更時バックアップは上記方式で実装済みだが、AWSでの運用受入は別途必要。現在の明示的な採用事項を最初から再議論せず、具体化が必要な箇所だけを扱う。
+公開URLと通知先は記録済み。本人の最終画面確認、許容損失・復旧目標の合意は残る。本番容量の確認は公開台帳の測定範囲に限り、将来のアクセス増を保証しない。継続費用の条件と承認は運用手順・公開台帳で管理する。画像・認証・変更時バックアップは上記方式で実装済みだが、AWSでの運用受入は別途必要。現在の明示的な採用事項を最初から再議論せず、具体化が必要な箇所だけを扱う。
 
 オレゴンでの最大72時間・目安10 USDの仮データ検証承認を、正式公開の継続課金へ拡張しない。次の作業順・判断待ち・担当境界は公開台帳へ記載する。通常の実装判断は理由・比較・検証を記録し、仕様・選好・費用・公開範囲を変える判断は具体案を示して確認する。
 
