@@ -24,7 +24,7 @@ infra/           基盤設定・Nginx転送・DB初期化・監視とそのテ�
 scripts/         再利用可能な開発・検証・配備補助
 docs/            現行設計・UI設計・進捗・保存方針
 .github/         PR運用設定
-README.md        入口・開発と検証の手順
+README.md        プロジェクト概要・機能・構成・起動の入口
 compose.yaml     ローカル環境の接続設定
 Caddyfile        ローカルのパス振り分け
 config/          ローカル秘密値・キャッシュ・一時作業（Git対象外）
