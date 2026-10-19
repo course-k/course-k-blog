@@ -43,32 +43,14 @@ flowchart LR
 
 比較した選択肢と判断の詳細は[設計書](docs/current-design.md)、配色・文字組み・操作配置の理由は[UI設計](docs/ui-ux-decisions-current.md)にまとめています。
 
-## 実装で重視していること
+## 実装の読みどころ
 
-- **編集内容を意図せず公開しない**：作業版と公開版を分け、公開中の記事を下書き保存しても読者が見る内容を維持します。本文と画像参照は同じDBトランザクションで更新します。
-- **通信失敗を保存失敗と決めつけない**：応答が失われた場合は入力を保持し、保存結果を照合します。新規作成には作成キーを使い、同じ操作の再試行による重複を防ぎます。
+- **通信失敗を保存失敗と決めつけない**：応答が失われた場合は入力を保持し、保存結果を照合します。新規作成には作成キーを使い、同じ操作の再試行による重複を防ぎます。[編集操作](frontend/src/features/editor/useAdminEditor.ts)と[作成キーの保存](backend/internal/mysql/creation.go)を参照できます。
 - **検証した範囲を分ける**：固定APIの画面試験、実MySQL、ブラウザからの通し試験、実AWSの確認を区別します。バックアップは作成だけでなく別RDSへの復元も確認しています。
 
-## ローカルで動かす
+## 開発・検証
 
-Docker Compose 2.24.4以上、Node.js 24以上、Go 1.27以上が必要です。初回設定の生成でもホスト上のGoを使います。依存パッケージ・コンテナイメージの取得にネットワークを使います。
-
-初回はリポジトリを取得し、次を実行します。
-
-```sh
-git clone https://github.com/course-k/course-k-blog.git
-cd course-k-blog
-node scripts/setup-local.mjs
-docker compose up --build
-```
-
-- 記事一覧：`http://localhost:8080`
-- 管理画面：`http://localhost:8080/admin`
-- ローカル用ログイン情報：生成された`config/local-login.txt`
-
-設定生成は初回だけです。設定がすでにある場合はComposeを起動します。既存設定は自動上書きしません。通常の停止は`docker compose down`です。`down -v`はDB・画像・バックアップのボリュームも削除します。
-
-ローカルはCaddy・MySQL・ファイル保存・ローカル認証を使い、本番はNginx・RDS・S3・Cognitoを使います。詳しい起動・テスト・設定の復旧方法は[開発ガイド](docs/development.md)を参照してください。
+ローカルで動かすための必要環境・設定・起動方法と、各テストの実行方法は[開発ガイド](docs/development.md)にまとめています。本番の配置・更新・バックアップは[運用手順](infra/production.md)を参照してください。
 
 ## コードとドキュメント
 

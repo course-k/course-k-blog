@@ -6,6 +6,13 @@
 
 必要環境：Docker Compose 2.24.4以上、Node.js 24以上、Go 1.27以上、依存パッケージ取得先への接続。
 
+リポジトリを取得する。
+
+```sh
+git clone https://github.com/course-k/course-k-blog.git
+cd course-k-blog
+```
+
 初回だけ、ルートで実行する。設定が存在する場合は生成処理を再実行せず、そのままComposeを起動する。
 
 ```sh
