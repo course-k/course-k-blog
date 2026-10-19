@@ -38,6 +38,8 @@ jobs:
           "$RUNNER_TEMP/cfn-lint/bin/cfn-lint" -r us-west-2 -t "$RUNNER_TEMP/production.template.json"
           python3 scripts/aws/recovery.py > "$RUNNER_TEMP/recovery.template.json"
           "$RUNNER_TEMP/cfn-lint/bin/cfn-lint" -r us-west-2 -t "$RUNNER_TEMP/recovery.template.json"
+          python3 scripts/aws/backfill.py > "$RUNNER_TEMP/backfill.template.json"
+          "$RUNNER_TEMP/cfn-lint/bin/cfn-lint" -r us-west-2 -t "$RUNNER_TEMP/backfill.template.json"
       - run: python3 scripts/aws/validation.py --config infra/aws/validation-environment.example.json plan
 
   frontend:
