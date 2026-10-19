@@ -43,11 +43,6 @@ flowchart LR
 
 比較した選択肢と判断の詳細は[設計書](docs/current-design.md)、配色・文字組み・操作配置の理由は[UI設計](docs/ui-ux-decisions-current.md)にまとめています。
 
-## 実装の読みどころ
-
-- **通信失敗を保存失敗と決めつけない**：応答が失われた場合は入力を保持し、保存結果を照合します。新規作成には作成キーを使い、同じ操作の再試行による重複を防ぎます。[編集操作](frontend/src/features/editor/useAdminEditor.ts)と[作成キーの保存](backend/internal/mysql/creation.go)を参照できます。
-- **検証した範囲を分ける**：固定APIの画面試験、実MySQL、ブラウザからの通し試験、実AWSの確認を区別します。バックアップは作成だけでなく別RDSへの復元も確認しています。
-
 ## 開発・検証
 
 ローカルで動かすための必要環境・設定・起動方法と、各テストの実行方法は[開発ガイド](docs/development.md)にまとめています。本番の配置・更新・バックアップは[運用手順](infra/production.md)を参照してください。
