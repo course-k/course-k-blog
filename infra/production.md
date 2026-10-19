@@ -1,8 +1,8 @@
 # 本番配置と運用
 
-**コードとオフライン検査は準備済み。AWSへの適用、通知の受信確認、本番復元は未実施。** 進捗は[公開台帳](../docs/blog-publication-roadmap-2026-10-18.md)、仕様と理由は[現行設計](../docs/current-design.md)で管理する。
+**本番用IAMは適用済み。費用承認後、本番基盤・DB初期化・スキーマ移行は完了。3コンテナの1タスクとDNS/HTTPSも配置済み。本人の初回ログイン・MFA・通知購読は操作待ち。通知の受信確認、本番復元は未実施。** 進捗は[公開台帳](../docs/blog-publication-roadmap-2026-10-18.md)、仕様と理由は[現行設計](../docs/current-design.md)で管理する。
 
-MySQL移行後のローカル結合試験・TLS・権限分離・通し試験と、本番での配置確認は分けて扱う。以下にある以前の性能測定値はPostgreSQL時点のもので、MySQLの同一性能を保証しない。MySQL 8.4の正確なマイナー版とmicro/gp3の提供可否は配置前に読み取り確認する。
+MySQL移行後のローカル結合試験・TLS・権限分離・通し試験と、本番での配置確認は分けて扱う。以下にある以前の性能測定値はPostgreSQL時点のもので、MySQLの同一性能を保証しない。初回は提供可否を確認したMySQL 8.4.11、db.t4g.micro/gp3 20GiBを配置した。
 
 ## 使用する定義
 
@@ -41,7 +41,7 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 
 通常はNode/Go/Nginxの1タスク（ARM64、0.5vCPU/2GiB）、公開IPv4 1個、非公開RDS MySQL db.t4g.micro・gp3 20GiB。ネットワークは新規VPC・4サブネット・3セキュリティグループ、入口はHTTP API・VPC Link・Cloud Map・Nginx、保存は非公開S3 2バケット。ECR 4リポジトリのうち1件は初期化用。ECSタスク定義は通常用・移行用・初期化用の3件だが、常駐サービスは1件だけで、移行用・初期化用を常駐させない。ほかにCognito、SNSメール購読、7アラーム、ログ5グループ、15分間隔の疎通確認Lambdaと定期ルールを含む。詳細な資材の正本は生成定義とし、ここではアプリ本体の全68論理資源を68台のサーバーと解釈しない。
 
-費用は本書の開始例で税前約39.03 USD/月。実際の承認額は未確定で、後日案の約18.13 USDを今回の料金として扱わない。通常1タスクでも更新時は一時的に2タスクになる。DB作成時点からDB課金が始まるため、EnableRuntime=falseを無課金の待機と扱わない。
+費用は本書の開始例で税前約39.03 USD/月。税前約39.03 USD/月と初回の復元・負荷試験の追加5 USD以内は本人承認済みで、後日案の約18.13 USDを今回の料金として扱わない。通常1タスクでも更新時は一時的に2タスクになる。DB作成時点からDB課金が始まるため、EnableRuntime=falseを無課金の待機と扱わない。
 
 ### 本番権限の準備で照合する差分
 
@@ -77,7 +77,7 @@ python3 scripts/aws/production_access.py > config/aws-production/access.template
 
 2026-10-19、本番用操作者でアカウントを照合し、`course-k-blog-production-foundation-bb01050`を実行せず作成した。EnableRuntime=false / EnableDatabaseTools=falseで追加48件のみ。削除・置換はない。RDS・S3・Cognito・入口・監視等の基盤を含み、アプリの常駐タスクはまだ起動しない。変更セットはCREATE_COMPLETE / AVAILABLEだが、これは配置成功ではない。
 
-この変更セットの実行からDB等の課金が始まる。通常月の開始例約39.03 USDと初回復元/負荷試験の一時追加費を示し、承認後に実行する。実URL・ARN・パラメーターと未実行状態はGit対象外のconfig/aws-productionへ保存する。古い本番用アクセス変更セット3890116は未実行のまま使わず、承認を受けて適用した補正版bb01050を基準にする。
+この変更セットは費用承認後、mainの定義と一致することを照合して実行した。DB等の課金が始まる。通常月は税前約39.03 USD、初回復元/負荷試験の追加作業予算は5 USD以内で承認済み。実URL・ARN・パラメーターと未実行状態はGit対象外のconfig/aws-productionへ保存する。古い本番用アクセス変更セット3890116は未実行のまま使わず、承認を受けて適用した補正版bb01050を基準にする。
 
 ### 回復目標の扱い
 
@@ -102,6 +102,14 @@ python3 scripts/aws/production_access.py > config/aws-production/access.template
 初期化・移行・復元用のタスクは必要時だけ動かす。ECSの完了コードと移行結果を確認し、アプリが起動したことだけで移行成功にしない。DNSの実URL、承認済み額、適用済みdigest等はGit対象外の環境設定へ保存する。
 
 更新は変更前バックアップを確認し、後方互換の移行を先に行い、変更したコンテナのイメージを新digestへ指定し、Node/Go/Nginxを含むタスク全体を更新する。変更しないイメージは同じdigestを維持する。ローリング更新中は新旧2タスク・公開IPv4 2個が一時的に並行する。通常の1タスク料金は更新中の追加分を含まず、その分は予備枠へ計上する。ECS circuit breakerは起動に失敗した配置を戻すが、起動できる論理不具合までは判定しない。直前に稼働したdigestを保持し、公開疎通・投稿・画像・監視を検査する。不具合時は先のdigestへ戻し、DDLが非互換なら自動で巻き戻さず復元案を扱う。ECRの整理では現行・直前・復元に必要なイメージを消さない。
+
+## 現在の配置結果
+
+2026-10-19、mainのdd049adと一致する基盤変更セットを費用承認後に実行し、CREATE_COMPLETEを確認した。RDSは暗号化・非公開・7日バックアップ・削除保護、両S3は公開アクセス全面ブロック・SSE-S3・版管理が有効。DB初期化と001〜006の移行は別々の単発タスクで終了コード0を確認。通常用と移行用の接続値はSSM SecureStringに分離し、Gitやコマンド引数へ秘密値を保存していない。
+
+同じmainからARM64の4イメージを作成し、専用ECRへ登録。アプリはNode/Go/Nginxのdigest固定・通常1タスクでUPDATE_COMPLETE、全コンテナHEALTHYを確認した。XServer DomainにblogのCNAMEを追加し、通常HTTPSで疎通できる。具体的ARN・イメージdigest・接続先・操作状態はGit対象外のconfig/aws-productionへ保持する。
+
+未ログイン管理APIの401、両S3の匿名403、JavaScriptなしのSSR、公開一覧の外部103件、疎通監視の実行を確認した。Cognitoの本人初期設定とSNS購読確認、記事/画像の操作・復元・負荷・失敗版からの戻し・通知到達は未完了で、正式公開受入と区別する。
 
 ## 保存と回復の操作
 
@@ -149,3 +157,7 @@ api revoke-sessions --confirm
 [Fargate](https://aws.amazon.com/fargate/pricing/)、[RDS](https://aws.amazon.com/rds/mysql/pricing/)、[S3](https://aws.amazon.com/s3/pricing/)、[CloudWatch](https://aws.amazon.com/cloudwatch/pricing/)、[Cloud Map](https://aws.amazon.com/cloud-map/pricing/)、[Route 53](https://aws.amazon.com/route53/pricing/)、[Cognito](https://aws.amazon.com/cognito/pricing/)を参照。Cognitoの直接ログイン1MAUは通常10,000MAUの共通枠に収まるが、組織/アカウント全体の残枠は未確認。private hosted zoneの問い合わせはRoute 53で追加料金なし。公開DNSは既存サービスを使う前提で、新しいRoute 53公開ゾーンを必須にしない。
 
 税・為替・ドメイン更新・有償CI、転送枠を超える通信、増えた画像/ログ/旧版/スナップショット、RDSの追加CPUクレジット等は別。通常のSSM Standardパラメーターと既存VPCを使い、Spot・予約割引・期限付きクレジットで安く見せない。概算を月額上限の保証にはしない。実公開前にアカウントの料金条件と残枠を照合し、予算通知を設定して、本人が許容した額に収まる計画にする。
+
+## 予算通知
+
+AWS Budgetsに月45 USDの予算通知を設定した。対象はブログだけの費用ではなく、AWSアカウント全体。実績85％（38.25 USD）・実績100％・予測100％で本人の登録メールへ通知する。受信先はActive (legacy)を確認済みで、メール到達は運用受入で確認する。自動停止などのアクションは設定せず、料金の強制上限ではない。費用監視と通知の利用は[公式料金](https://aws.amazon.com/aws-cost-management/aws-budgets/pricing/)上無料で、既存の他の予算設定は変更していない。
