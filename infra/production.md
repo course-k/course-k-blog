@@ -39,7 +39,7 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 
 公開先は`https://blog.course-k.com`、リージョンはus-west-2、スタック名は`course-k-blog-production`を使う。本人メール・通知先とオレゴンの発行済み証明書ARNはGit対象外の`config/aws-production/domain.json`に記録済み。再度選び直さず、配置前に証明書の有効性と接続先を読み取り確認する。後日の静的配信・Lambda化は今回の配置へ混ぜない。
 
-通常はNode/Go/Nginxの1タスク（ARM64、0.5vCPU/2GiB）、公開IPv4 1個、非公開RDS MySQL db.t4g.micro・gp3 20GiB。ネットワークは新規VPC・4サブネット・3セキュリティグループ、入口はHTTP API・VPC Link・Cloud Map・Nginx、保存は非公開S3 2バケット。ECR 4リポジトリのうち1件は初期化用。ECSタスク定義は通常用・移行用・初期化用の3件だが、常駐サービスは1件だけで、移行用・初期化用を常駐させない。ほかにCognito、SNSメール購読、7アラーム、ログ5グループ、15分間隔の疎通確認Lambdaと定期ルールを含む。詳細な資材の正本は生成定義とし、ここでは全69論理資源を69台のサーバーと解釈しない。
+通常はNode/Go/Nginxの1タスク（ARM64、0.5vCPU/2GiB）、公開IPv4 1個、非公開RDS MySQL db.t4g.micro・gp3 20GiB。ネットワークは新規VPC・4サブネット・3セキュリティグループ、入口はHTTP API・VPC Link・Cloud Map・Nginx、保存は非公開S3 2バケット。ECR 4リポジトリのうち1件は初期化用。ECSタスク定義は通常用・移行用・初期化用の3件だが、常駐サービスは1件だけで、移行用・初期化用を常駐させない。ほかにCognito、SNSメール購読、7アラーム、ログ5グループ、15分間隔の疎通確認Lambdaと定期ルールを含む。詳細な資材の正本は生成定義とし、ここではアプリ本体の全68論理資源を68台のサーバーと解釈しない。
 
 費用は本書の開始例で税前約39.03 USD/月。実際の承認額は未確定で、後日案の約18.13 USDを今回の料金として扱わない。通常1タスクでも更新時は一時的に2タスクになる。DB作成時点からDB課金が始まるため、EnableRuntime=falseを無課金の待機と扱わない。
 
@@ -50,7 +50,7 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 | 対象 | 本番計画で必要な範囲 |
 |---|---|
 | スタック・資源名 | 検証用の`course-k-blog-validation-*`ではなく、本番スタックと対応リソースに限定したCloudFormation操作・参照 |
-| 実行ロール・権限境界 | 本番用の境界1件と実行/タスク用ロール6件。作成・参照・インラインポリシー・必要なPassRoleを照合。操作者が自分の権限を自由に変更できる設計にしない |
+| 実行ロール・権限境界 | 管理者が境界1件を作成し、操作者は本番の実行/タスク用ロール6件にその境界を必須で付ける。参照・インラインポリシー・必要なPassRoleを照合。操作者が自分の権限を自由に変更できる設計にしない |
 | RDS | MySQL 8.4のパラメーターグループ、非公開DB、サブネットグループ、管理者secret、削除前スナップショット。作成・復旧・保護の変更範囲を限定 |
 | Cognito | UserPool・Client・Domainの作成/更新/参照に加え、本人1人の登録と回復。管理者用の操作とアプリが行うOIDC通信を区別 |
 | API・証明書 | HTTP APIの独自ホスト名とマッピング、既存ACM証明書の参照、API Gatewayのログ配信 |
@@ -59,13 +59,27 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 
 既存の検証用候補ポリシーには、Cognito・新しい管理ポリシーの作成・MetricFilter等の本番差分を満たさない箇所がある。実AWSでの付与済みポリシーとの比較・実効評価は未実施。手元の候補を反映済みとして扱わない。操作者から読めない設定だけが残る場合は、管理者での読み取りが必要な項目を一括する。
 
+### 管理者が適用する本番用アクセス設定
+
+[scripts/aws/production_access.py](../scripts/aws/production_access.py)で管理者用のアクセス定義を生成する。これはAWS APIを呼ばず、既存の検証用定義も上書きしない。
+
+```sh
+python3 scripts/aws/production_access.py > config/aws-production/access.template.json
+```
+
+管理者はオレゴンの別スタック`course-k-blog-production-access`として内容と名前付きIAM資源を確認して適用する。作成するのはIAMの操作者ロール1件・管理ポリシー5件（うち1件は実行ロールの上限）・既存course-k-deployへのAssumeRoleポリシー1件で、DBや常駐アプリの課金は開始しない。既存の検証用ロール・ポリシーを置き換えない。検証環境用の保存済みオブジェクト版・スナップショット等の直接削除権限は引き継がず、本番データの撤去は管理者の別操作とする。操作者には自分のロールやこの上限ポリシーを変更する権限を与えない。出力のRuntimeBoundaryArnは操作者から読み取れるため、本人へARNのコピーを繰り返し依頼する運用にはしない。
+
+適用後は専用の`course-k-production-operator`へAssumeRoleし、アカウント・ロールを照合して、既存証明書と本番スタックを再確認する。MySQLは読み取りで提供を確認した8.4.11を候補とする。Cognitoの本人管理はProject=course-k-blog-productionタグのプールに限定し、本人1人だけを登録する。CloudFormation経由の作成/更新を広い資源指定で許可する箇所は残るため、万能な最小権限やアカウント全体の隔離を保証する設定とは説明しない。
+
+ポリシー検査・構文検査の成功は実効権限や配置成功を保証しない。生成物と現行ソースを照合し、管理者による権限変更の承認後に適用する。
+
 ### 回復目標の扱い
 
 アプリの変更時バックアップ4世代とRDS自動バックアップ7日は維持する。公開反映後は速やかに取得し、下書き等はUTCの日付境界でまとめる現在の方針を変えない。復元の開始目標は「本人が操作できる状況で、手順に沿って24時間以内に復旧できるかを検証する」を提案値とし、保証や本人承認済みの要件にはしない。許容損失は取得周期だけで決めず、最後に成功したアーカイブ世代とRDSの復元可能時点を示して判断する。検証結果と本人の許容範囲が合うまでは、運用受入を完了にしない。
 
 公開ホスト名、月額上限、通知先、復旧時に許容する損失と時間を本人と確定する。既存AWSアクセス権は検証用の名前・SSMパス・サービスに限定されており、この本番定義をそのまま適用できる権限ではない。実環境の必要権限を一括で照合し、管理者向けの具体的な変更セットを用意する。現在の権限やDNSを勝手に広げない。
 
-スタック名は小文字の`course-k-blog-production`、SSMパスは`/course-k/blog-production/`を使用する。RuntimeBoundaryは本番スタック内で作り、検証用境界を流用しない。DB用パスワード・DSNは権限0600のGit対象外ファイルからSSM SecureStringへ登録し、コマンド引数・ログ・PRへ値を出さない。通常DML用と移行DDL用は分ける。
+スタック名は小文字の`course-k-blog-production`、SSMパスは`/course-k/blog-production/`を使用する。RuntimeBoundaryは管理者用の別スタック`course-k-blog-production-access`で作り、その出力ARNを本番定義へ渡す。操作者へ境界の作成・更新権限を与えず、検証用境界も流用しない。DB用パスワード・DSNは権限0600のGit対象外ファイルからSSM SecureStringへ登録し、コマンド引数・ログ・PRへ値を出さない。通常DML用と移行DDL用は分ける。
 
 ## 配置・更新の順序
 

@@ -8,6 +8,7 @@
 
 | ファイル | 役割・適用状態 |
 |---|---|
+| scripts/aws/production_access.py（リポジトリ直下） | 管理者用の本番アクセス設定を生成。操作者と実行ロールの権限上限を本番アプリから分離する。未適用で、既存の検証用設定を更新しない |
 | aws/validation-stack.template.json | Node / Go別サービス、非公開RDS、S3、入口、監視を含む一つの検証スタック。基本構成の実AWS検証に使った定義を移動したもの。本番用ではない |
 | aws/validation-environment.example.json | 資格情報を含まない環境設定の例。アカウント・接続元プロファイル・新しい検証スタック名・ARN・MySQL版・ローカルイメージを指定する |
 | access/validation-access-applied.template.json | 記録上、AWSへ反映済みのログ配信対応版。移動のみで権限は変更していない。現在のAWSとの再照合は未実施 |
