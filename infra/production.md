@@ -33,19 +33,19 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 
 通常のアプリはApplicationService / ApplicationTask / ApplicationSg。Cloud MapはNginxの8080を登録し、VPC LinkのSGからそのポートだけへ受信を許可する。Node/Goへ直接の受信を開けない。DB初期化・移行・復元の単発タスクにはApplicationSgを指定する。旧検証用のGoSgやNodeServiceを本番へ指定しない。Nginxの一時ボリュームはDockerfileのVOLUMEと同じ`/tmp/nginx`を指定し、非rootの書き込み先を確保する。
 
-## 配置前に確定する値
+## 本番の構成と運用条件
 
-### 今回の配置計画で固定する内容
+### 採用した構成
 
-公開先は`https://blog.course-k.com`、リージョンはus-west-2、スタック名は`course-k-blog-production`を使う。本人メール・通知先とオレゴンの発行済み証明書ARNはGit対象外の`config/aws-production/domain.json`に記録済み。再度選び直さず、配置前に証明書の有効性と接続先を読み取り確認する。後日の静的配信・Lambda化は今回の配置へ混ぜない。
+公開先は`https://blog.course-k.com`、リージョンはus-west-2、スタック名は`course-k-blog-production`を使う。本人メール・通知先とオレゴンの発行済み証明書ARNはGit対象外の`config/aws-production/domain.json`に記録済み。証明書の発行とDNS/HTTPS接続は確認済み。後日の静的配信・Lambda化は現行構成に含めない。
 
 通常はNode/Go/Nginxの1タスク（ARM64、0.5vCPU/2GiB）、公開IPv4 1個、非公開RDS MySQL db.t4g.micro・gp3 20GiB。ネットワークは新規VPC・4サブネット・3セキュリティグループ、入口はHTTP API・VPC Link・Cloud Map・Nginx、保存は非公開S3 2バケット。ECR 4リポジトリのうち1件は初期化用。ECSタスク定義は通常用・移行用・初期化用の3件だが、常駐サービスは1件だけで、移行用・初期化用を常駐させない。ほかにCognito、SNSメール購読、7アラーム、ログ5グループ、15分間隔の疎通確認Lambdaと定期ルールを含む。詳細な資材の正本は生成定義とし、ここではアプリ本体の全68論理資源を68台のサーバーと解釈しない。
 
 費用は本書の開始例で税前約39.03 USD/月。税前約39.03 USD/月と初回の復元・負荷試験の追加5 USD以内は本人承認済みで、後日案の約18.13 USDを今回の料金として扱わない。通常1タスクでも更新時は一時的に2タスクになる。DB作成時点からDB課金が始まるため、EnableRuntime=falseを無課金の待機と扱わない。
 
-### 本番権限の準備で照合する差分
+### 本番権限の分離
 
-既存の`course-k-validation-operator`は検証用接頭辞へ制限されている。接続できても本番へ配置できるとは判断しない。管理者へ断片的な権限追加を依頼せず、次の範囲をまとめて本番用の変更案へ具体化・検査する。以下は必要範囲の整理であり、適用できるIAMポリシーを完成させた意味ではない。
+検証用の`course-k-validation-operator`と本番用の`course-k-production-operator`を分離する。本番用アクセス設定は管理者が適用済みで、次の範囲を対象とする。
 
 | 対象 | 本番計画で必要な範囲 |
 |---|---|
@@ -57,7 +57,7 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 | S3・ECR・SSM | 本番専用バケット/リポジトリ/SSMパスへの配置と運用。通常DB用とDDL用の秘密値を分離し、不要な版削除や他サービスへの操作を与えない |
 | 監視・通知 | ロググループだけでなくMetricFilter、アラーム、SNSトピック/購読、疎通Lambdaと定期ルールを照合 |
 
-既存の検証用候補ポリシーには、Cognito・新しい管理ポリシーの作成・MetricFilter等の本番差分を満たさない箇所がある。本番用アクセス設定は本人承認後に適用し、新しい操作者で証明書と本番スタックを読み取り確認した。実施済みの基盤作成・単発タスク・アプリ配置は本番用ロールで成功した。未実施の復元・回復操作まで実効権限を確認済みとは扱わない。手元の候補を反映済みとして扱わない。操作者から読めない設定だけが残る場合は、管理者での読み取りが必要な項目を一括する。
+本番用ロールで、基盤作成・DB初期化・移行・アプリ配置・別RDSへの復元と一時資源の撤去を確認済み。RDSスナップショット/PITR復旧、本人の資格情報紛失時の回復は未試験であり、これらの実効権限まで確認済みとは扱わない。
 
 ### 管理者が適用する本番用アクセス設定
 
@@ -73,17 +73,9 @@ python3 scripts/aws/production_access.py > config/aws-production/access.template
 
 ポリシー検査・構文検査の成功は実効権限や配置成功を保証しない。生成物と現行ソースを照合し、管理者による権限変更の承認後に適用する。
 
-### 基盤変更セットの確認結果
-
-2026-10-19、本番用操作者でアカウントを照合し、`course-k-blog-production-foundation-bb01050`を実行せず作成した。EnableRuntime=false / EnableDatabaseTools=falseで追加48件のみ。削除・置換はない。RDS・S3・Cognito・入口・監視等の基盤を含み、アプリの常駐タスクはまだ起動しない。変更セットはCREATE_COMPLETE / AVAILABLEだが、これは配置成功ではない。
-
-この変更セットは費用承認後、mainの定義と一致することを照合して実行した。DB等の課金が始まる。通常月は税前約39.03 USD、初回復元/負荷試験の追加作業予算は5 USD以内で承認済み。実URL・ARN・パラメーターと実行状態はGit対象外のconfig/aws-productionへ保存する。古い本番用アクセス変更セット3890116は未実行のまま使わず、承認を受けて適用した補正版bb01050を基準にする。
-
 ### 回復目標の扱い
 
-アプリの変更時バックアップ4世代とRDS自動バックアップ7日は維持する。公開反映後は速やかに取得し、下書き等はUTCの日付境界でまとめる現在の方針を変えない。復元の開始目標は「本人が操作できる状況で、手順に沿って24時間以内に復旧できるかを検証する」を提案値とし、保証や本人承認済みの要件にはしない。許容損失は取得周期だけで決めず、最後に成功したアーカイブ世代とRDSの復元可能時点を示して判断する。本人は実環境の復元確認後、現行の取得周期・通知後の手動復旧・復旧時間の保証なしで開始する方針を受入済み。24時間は契約・保証・確定した運用目標として扱わない。
-
-公開ホスト名・通知先は記録済みの値を使い、月額の許容範囲と復旧時に許容する損失・時間を配置前に確定する。既存AWSアクセス権は検証用の名前・SSMパス・サービスに限定されており、この本番定義をそのまま適用できる権限ではない。実環境の必要権限を一括で照合し、管理者向けの具体的な変更セットを用意する。現在の権限やDNSを勝手に広げない。
+アプリの変更時バックアップ4世代とRDS自動バックアップ7日を維持する。公開反映後は速やかに取得し、下書き等はUTCの日付境界でまとめる。障害通知を受けて手順に沿い手動で復元する方針を本人が受入済みで、復旧時間の保証や数値目標は設けていない。許容損失は取得周期だけで決めず、最後に成功したアーカイブ世代とRDSの復元可能時点を示して判断する。
 
 スタック名は小文字の`course-k-blog-production`、SSMパスは`/course-k/blog-production/`を使用する。RuntimeBoundaryは管理者用の別スタック`course-k-blog-production-access`で作り、その出力ARNを本番定義へ渡す。操作者へ境界の作成・更新権限を与えず、検証用境界も流用しない。DB用パスワード・DSNは権限0600のGit対象外ファイルからSSM SecureStringへ登録し、コマンド引数・ログ・PRへ値を出さない。通常DML用と移行DDL用は分ける。
 
@@ -174,11 +166,11 @@ api revoke-sessions --confirm
 
 [Fargate](https://aws.amazon.com/fargate/pricing/)、[RDS](https://aws.amazon.com/rds/mysql/pricing/)、[S3](https://aws.amazon.com/s3/pricing/)、[CloudWatch](https://aws.amazon.com/cloudwatch/pricing/)、[Cloud Map](https://aws.amazon.com/cloud-map/pricing/)、[Route 53](https://aws.amazon.com/route53/pricing/)、[Cognito](https://aws.amazon.com/cognito/pricing/)を参照。Cognitoの直接ログイン1MAUは通常10,000MAUの共通枠に収まるが、組織/アカウント全体の残枠は未確認。private hosted zoneの問い合わせはRoute 53で追加料金なし。公開DNSは既存サービスを使う前提で、新しいRoute 53公開ゾーンを必須にしない。
 
-税・為替・ドメイン更新・有償CI、転送枠を超える通信、増えた画像/ログ/旧版/スナップショット、RDSの追加CPUクレジット等は別。通常のSSM Standardパラメーターと既存VPCを使い、Spot・予約割引・期限付きクレジットで安く見せない。概算を月額上限の保証にはしない。実公開前にアカウントの料金条件と残枠を照合し、予算通知を設定して、本人が許容した額に収まる計画にする。
+税・為替・ドメイン更新・有償CI、転送枠を超える通信、増えた画像/ログ/旧版/スナップショット、RDSの追加CPUクレジット等は別。通常のSSM Standardパラメーターと本番VPCを使い、Spot・予約割引・期限付きクレジットで安く見せない。概算を月額上限の保証にはしない。通常月の見込み額は本人承認済みで、予算通知を設定した。運用中もアカウントの料金条件・無償枠・実際の利用量を確認し、構成変更時には再見積もりする。
 
 ## 予算通知
 
-AWS Budgetsに月45 USDの予算通知を設定した。対象はブログだけの費用ではなく、AWSアカウント全体。実績85％（38.25 USD）・実績100％・予測100％で本人の登録メールへ通知する。受信先はActive (legacy)を確認済みで、メール到達は運用受入で確認する。自動停止などのアクションは設定せず、料金の強制上限ではない。費用監視と通知の利用は[公式料金](https://aws.amazon.com/aws-cost-management/aws-budgets/pricing/)上無料で、既存の他の予算設定は変更していない。
+AWS Budgetsに月45 USDの予算通知を設定した。対象はブログだけの費用ではなく、AWSアカウント全体。実績85％（38.25 USD）・実績100％・予測100％で本人の登録メールへ通知する。受信先はActive (legacy)を確認済み。予算のしきい値到達による通知発火は未試験。障害通知用SNSのテストメール到達とは区別する。自動停止などのアクションは設定せず、料金の強制上限ではない。費用監視と通知の利用は[公式料金](https://aws.amazon.com/aws-cost-management/aws-budgets/pricing/)上無料で、既存の他の予算設定は変更していない。
 
 ### 最新範囲から漏れる過去の外部記事の初回補完
 
