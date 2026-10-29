@@ -11,14 +11,24 @@ import (
 	"coursek/blog/backend/internal/external"
 )
 
-func (s *Store) ListArticles(ctx context.Context, limit, offset int) ([]external.Article, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT kind,id,title,published_at,updated_at,source,url FROM (
-   SELECT 'own' AS kind,id,published_title AS title,published_at,public_updated_at AS updated_at,'' AS source,'' AS url
+// Shared visibility and date corrections keep the archive and list consistent.
+const publicArticles = `SELECT 'own' AS kind,id,published_title AS title,published_at,public_updated_at AS updated_at,'' AS source,'' AS url
    FROM posts WHERE published
    UNION ALL
    SELECT 'external',CONCAT(source,':',source_id),COALESCE(title_override,title),COALESCE(date_override,published_at),fetched_at,source,url
-   FROM external_posts WHERE NOT hidden
-  ) AS articles ORDER BY published_at DESC,kind,id LIMIT ? OFFSET ?`, limit, offset)
+   FROM external_posts WHERE NOT hidden`
+
+func (s *Store) ListArticles(ctx context.Context, limit, offset int, month string) ([]external.Article, error) {
+	query := `SELECT kind,id,title,published_at,updated_at,source,url FROM (` + publicArticles + `) AS articles`
+	args := []any{}
+	if month != "" {
+		// Match the Asia/Tokyo date displayed on article cards, without MySQL timezone tables.
+		query += ` WHERE DATE_FORMAT(published_at + INTERVAL 9 HOUR, '%Y-%m') = ?`
+		args = append(args, month)
+	}
+	query += ` ORDER BY published_at DESC,kind,id LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -33,6 +43,23 @@ func (s *Store) ListArticles(ctx context.Context, limit, offset int) ([]external
 	}
 	return articles, rows.Err()
 }
+func (s *Store) ArticleMonths(ctx context.Context) ([]external.ArchiveMonth, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DATE_FORMAT(published_at + INTERVAL 9 HOUR, '%Y-%m') AS month,COUNT(*) FROM (`+publicArticles+`) AS articles GROUP BY month ORDER BY month DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	months := []external.ArchiveMonth{}
+	for rows.Next() {
+		var month external.ArchiveMonth
+		if err := rows.Scan(&month.Month, &month.Count); err != nil {
+			return nil, err
+		}
+		months = append(months, month)
+	}
+	return months, rows.Err()
+}
+
 func (s *Store) ListExternal(ctx context.Context) ([]external.Post, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT source,source_id,title,url,published_at,title_override,date_override,hidden,version FROM external_posts ORDER BY published_at DESC,source,source_id`)
 	if err != nil {

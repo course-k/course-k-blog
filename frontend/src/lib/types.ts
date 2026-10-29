@@ -39,7 +39,8 @@ export type ArticleSummary =
       source: "qiita" | "note" | "wantedly";
       url: string;
     };
-export type ArticlePage = { articles: ArticleSummary[]; hasNext: boolean };
+export type ArchiveMonth = { month: string; count: number };
+export type ArticlePage = { articles: ArticleSummary[]; hasNext: boolean; months: ArchiveMonth[] };
 export type ExternalPost = {
   source: "qiita" | "note" | "wantedly";
   id: string;

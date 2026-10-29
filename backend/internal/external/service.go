@@ -17,8 +17,11 @@ type Service struct {
 	Client     Fetcher
 }
 
-func (s *Service) Page(ctx context.Context, page int) (Page, error) {
-	articles, err := s.Repository.ListArticles(ctx, 21, (page-1)*20)
+func (s *Service) Page(ctx context.Context, page int, month string) (Page, error) {
+	if page < 1 || page > 10000 || !ValidMonth(month) {
+		return Page{}, ErrInvalid
+	}
+	articles, err := s.Repository.ListArticles(ctx, 21, (page-1)*20, month)
 	if err != nil {
 		return Page{}, err
 	}
@@ -26,7 +29,11 @@ func (s *Service) Page(ctx context.Context, page int) (Page, error) {
 	if hasNext {
 		articles = articles[:20]
 	}
-	return Page{Articles: articles, HasNext: hasNext}, nil
+	months, err := s.Repository.ArticleMonths(ctx)
+	if err != nil {
+		return Page{}, err
+	}
+	return Page{Articles: articles, HasNext: hasNext, Months: months}, nil
 }
 
 // One poll is small and bounded. The DB lease also coordinates replacement tasks.

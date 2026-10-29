@@ -134,6 +134,26 @@ test("reader and owner flow against real MySQL and production SSR", async ({
       exact: true,
     }),
   ).toHaveAttribute("href", "https://qiita.com/course_k/items/e2e-external");
+  // Exercise the real archive, SSR and database without client-side JavaScript.
+  const parts = new Intl.DateTimeFormat("en", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit" }).formatToParts(new Date(firstPublic.publishedAt));
+  const year = parts.find(p => p.type === "year")!.value;
+  const monthNumber = parts.find(p => p.type === "month")!.value;
+  const month = `${year}-${monthNumber}`;
+  const archive = reading.locator(".month-archive");
+  await archive.locator(":scope > summary").click();
+  const yearGroup = archive.locator("details").filter({ has: reading.locator("summary", { hasText: `${year}年` }) });
+  if (await yearGroup.getAttribute("open") === null) await yearGroup.locator("summary").click();
+  await yearGroup.getByRole("link", { name: new RegExp(`^${Number(monthNumber)}月 `) }).click();
+  await expect(reading).toHaveURL(new RegExp(`month=${month}`));
+  await expect(reading.getByRole("heading", { name: `${year}年${Number(monthNumber)}月の記事`, exact: true })).toBeVisible();
+  await expect(reading.getByRole("link", { name: new RegExp(title) })).toBeVisible();
+  const monthlyResponse = await reading.request.get(`/api/articles?month=${month}`);
+  expect(monthlyResponse.status()).toBe(200);
+  const monthlyData = await monthlyResponse.json();
+  expect(monthlyData.articles.some((a: { id: string }) => a.id === draft.id)).toBe(true);
+  expect(monthlyData.months.some((m: { month: string; count: number }) => m.month === month && m.count > 0)).toBe(true);
+  await reading.getByRole("link", { name: "すべての記事に戻る", exact: true }).click();
+  await expect(reading).toHaveURL(/\/$/);
   await reading.screenshot({
     path: "test-results/e2e/desktop.png",
     fullPage: true,

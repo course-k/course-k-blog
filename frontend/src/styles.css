@@ -124,20 +124,104 @@ footer {
 .site-header nav a {
   padding-block: 12px;
 }
-.intro,
+.author-profile,
+.month-archive,
 section[aria-label="記事一覧"] {
-  max-width: 680px;
+  max-width: 760px;
   margin-inline: auto;
 }
-.intro {
-  padding: 60px 0 36px;
+.author-profile {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 32px 0 28px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--line);
 }
-.intro h1 {
-  margin-bottom: 12px;
+.author-avatar {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #f1f5ed;
+  color: var(--link);
+  font-size: 25px;
 }
-.intro p {
+.author-copy { min-width: 0; }
+.author-profile h1 {
+  font-size: clamp(1.4rem, 3vw, 1.75rem);
+  margin-bottom: 8px;
+}
+.author-profile p {
   color: var(--muted);
   font-size: 0.9rem;
+  max-width: 580px;
+  margin-bottom: 8px;
+}
+.author-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  font-size: 0.8rem;
+}
+.author-links a { padding-block: 8px; }
+.month-archive { margin-bottom: 28px; }
+.month-archive > summary {
+  width: fit-content;
+  padding-block: 10px;
+  min-height: 44px;
+  font-size: 0.9rem;
+}
+.archive-years {
+  padding: 8px 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+.archive-years > details > summary {
+  padding-block: 8px;
+  min-height: 44px;
+  font-size: 0.85rem;
+}
+.archive-months {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 4px 0 16px;
+  padding: 0;
+}
+.archive-months a {
+  display: block;
+  padding: 8px 14px;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+.archive-months span { color: var(--muted); }
+.archive-months a[data-selected="true"] {
+  border-color: var(--link);
+  background: #f1f5ed;
+  font-weight: 600;
+}
+.archive-reset {
+  display: inline-block;
+  padding-block: 8px;
+  min-height: 44px;
+  margin: -12px 0 14px;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+.archive-empty { color: var(--muted); font-size: 0.85rem; }
+@media (max-width: 600px) {
+  .author-profile { gap: 14px; padding-top: 20px; padding-bottom: 20px; margin-bottom: 16px; }
+  .author-avatar { width: 40px; height: 40px; font-size: 21px; }
+  .author-profile h1 { font-size: 1.3rem; }
+  .author-profile p { font-size: 0.85rem; }
+  .author-links a { min-height: 44px; }
+  .month-archive { margin-bottom: 20px; }
 }
 .eyebrow {
   color: var(--muted);
@@ -567,9 +651,6 @@ footer {
   }
   .brand {
     font-size: 0.9rem;
-  }
-  .intro {
-    padding: 32px 0 24px;
   }
   .post-row {
     padding: 24px;
