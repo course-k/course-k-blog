@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import entry from "../dist/server/index.js";
+import ssrEntry from "../dist/server/index.js";
+import { createHandler } from "../runtime.mjs";
+const entry = {
+  fetch: createHandler({
+    render: request => ssrEntry.fetch(request),
+    staticFiles: (_, next) => next(),
+  }),
+};
 const id = "a".repeat(43);
 const post = {
   id,
@@ -56,11 +63,12 @@ test("production SSR contains article, unique TOC anchors and safe Markdown with
   assert(html.includes('href="#article-section-2"'));
   assert(!html.includes("<script>unsafe()</script>"));
   assert(html.includes("course_kのブログ"));
+  assert.match(html, /class="back" href="\/"/);
 });
 test("production SSR list links to published article and has no excerpt", async () => {
   mode = "success";
   const response = await entry.fetch(
-    new Request("http://ui-fixture.invalid/?page=1"),
+    new Request("http://ui-fixture.invalid/"),
   );
   const html = await response.text();
   assert.equal(response.status, 200);
@@ -80,7 +88,7 @@ test("missing and failed article are not rendered as empty article list", async 
   assert((await missing.text()).includes("記事が見つかりません"));
   mode = "failure";
   const failed = await entry.fetch(
-    new Request("http://ui-fixture.invalid/?page=1"),
+    new Request("http://ui-fixture.invalid/"),
   );
   assert.equal(failed.status, 500);
   const html = await failed.text();
@@ -90,8 +98,47 @@ test("missing and failed article are not rendered as empty article list", async 
 test("SSR uses explicit next-page contract rather than the current item count", async () => {
   mode = "next";
   const response = await entry.fetch(
-    new Request("http://ui-fixture.invalid/?page=1"),
+    new Request("http://ui-fixture.invalid/"),
   );
   assert.equal(response.status, 200);
   assert((await response.text()).includes("次のページ"));
+});
+
+test("SSR keeps the homepage at / and generates clean home links", async () => {
+  mode = "next";
+  const response = await entry.fetch(new Request("http://ui-fixture.invalid/"));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("location"), null);
+  const html = await response.text();
+  assert.match(html, /class="brand[^"<>]*" href="\/"/);
+  assert(html.includes('href="/?page=2"'));
+  assert(!html.includes('href="/?page=1"'));
+  assert(!html.includes("前のページ"));
+});
+
+test("production handler permanently redirects the explicit first page to /", async () => {
+  mode = "success";
+  const response = await entry.fetch(
+    new Request("http://ui-fixture.invalid/?page=1"),
+  );
+  assert.equal(response.status, 308);
+  assert.equal(response.headers.get("location"), "/");
+});
+
+test("SSR keeps later page numbers and returns from page 2 to /", async () => {
+  mode = "next";
+  for (const page of [2, 3]) {
+    const response = await entry.fetch(
+      new Request(`http://ui-fixture.invalid/?page=${page}`),
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("location"), null);
+    const html = await response.text();
+    const previous = page === 2 ? "/" : `/?page=${page - 1}`;
+    const previousLink = html.match(/<a\b[^>]*>← 前のページ<\/a>/)?.[0];
+    assert(previousLink?.includes(`href="${previous}"`));
+    const nextLink = html.match(/<a\b[^>]*>次のページ →<\/a>/)?.[0];
+    assert(nextLink?.includes(`href="/?page=${page + 1}"`));
+    assert(!html.includes('href="/?page=1"'));
+  }
 });

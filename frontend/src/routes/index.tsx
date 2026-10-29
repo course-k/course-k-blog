@@ -1,5 +1,5 @@
 import { ArticleList } from "../components/ArticleList";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
 import { listPosts } from "../lib/posts";
 
 export const Route = createFileRoute("/")({
@@ -12,6 +12,9 @@ export const Route = createFileRoute("/")({
       ),
     ),
   }),
+  search: {
+    middlewares: [stripSearchParams({ page: 1 })],
+  },
   loaderDeps: ({ search: { page } }) => ({ page }),
   loader: ({ deps }) => listPosts({ data: deps.page }),
   component: Home,

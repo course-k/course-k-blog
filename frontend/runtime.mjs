@@ -3,8 +3,18 @@ export function createHandler({ render, staticFiles }) {
   return async function fetch(request) {
     let response
     try {
-      const pathname = new URL(request.url).pathname
-      if (pathname === '/healthz' && ['GET', 'HEAD'].includes(request.method)) {
+      const url = new URL(request.url)
+      const pathname = url.pathname
+      // Keep one public URL for the first page, before SSR or API loading.
+      if (pathname === '/' && ['GET', 'HEAD'].includes(request.method)
+        && url.searchParams.getAll('page').length === 1
+        && url.searchParams.get('page') === '1') {
+        url.searchParams.delete('page')
+        response = new Response(null, {
+          status: 308,
+          headers: { Location: pathname + url.search },
+        })
+      } else if (pathname === '/healthz' && ['GET', 'HEAD'].includes(request.method)) {
         response = new Response(request.method === 'HEAD' ? null : '{"ok":true}', {
           headers: { 'Content-Type': 'application/json; charset=utf-8' },
         })

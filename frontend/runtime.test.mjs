@@ -51,3 +51,42 @@ test('response wrapper preserves distinct cookies and redirect status', async ()
   assert.equal(result.headers.get('Location'), '/admin')
   assert.deepEqual(result.headers.getSetCookie(), ['a=1; HttpOnly', 'b=2; HttpOnly'])
 })
+
+test('first page permanently redirects before rendering and preserves other parameters', async () => {
+  const fail = () => { throw new Error('redirect must bypass rendering') }
+  const handler = createHandler({ render: fail, staticFiles: fail })
+  for (const method of ['GET', 'HEAD']) {
+    for (const [path, location] of [
+      ['/?page=1', '/'],
+      ['/?page=1&tag=react', '/?tag=react'],
+      ['/?tag=react&page=1', '/?tag=react'],
+    ]) {
+      const result = await handler(new Request('http://localhost' + path, { method }))
+      assert.equal(result.status, 308)
+      assert.equal(result.headers.get('Location'), location)
+      assert.equal(result.headers.get('X-Content-Type-Options'), 'nosniff')
+      assert.equal(await result.text(), '')
+    }
+  }
+})
+
+test('first-page redirect leaves home, later pages and other endpoints unchanged', async () => {
+  const handler = createHandler({
+    staticFiles: (_, next) => next(),
+    render: () => new Response('rendered'),
+  })
+  for (const [path, method] of [
+    ['/', 'GET'],
+    ['/?page=2', 'GET'],
+    ['/?page=3', 'GET'],
+    ['/admin?page=1', 'GET'],
+    ['/posts/example?page=1', 'GET'],
+    ['/?page=1&page=2', 'GET'],
+    ['/?page=1', 'POST'],
+  ]) {
+    const result = await handler(new Request('http://localhost' + path, { method }))
+    assert.equal(result.status, 200, path)
+    assert.equal(result.headers.get('Location'), null, path)
+    assert.equal(await result.text(), 'rendered', path)
+  }
+})
