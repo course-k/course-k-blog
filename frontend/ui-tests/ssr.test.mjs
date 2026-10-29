@@ -19,10 +19,12 @@ const post = {
 };
 // No network or real API. Only production SSR and a deterministic data fixture.
 let mode = "success";
+let lastArticleURL;
 globalThis.fetch = async (input) => {
   const url = String(input);
   if (!/^http:\/\/127\.0\.0\.1:8081\/api\/(posts|articles)/.test(url))
     throw new Error(`Unexpected network attempt: ${url}`);
+  if (url.includes("/api/articles?")) lastArticleURL = url;
   const data =
     mode === "failure"
       ? { error: "fixture failure" }
@@ -30,6 +32,7 @@ globalThis.fetch = async (input) => {
         ? {}
         : url.includes("?")
           ? {
+              months: [{ month: "2026-10", count: 22 }, { month: "2025-12", count: 1 }],
               articles: [
                 { kind: "own", ...post, markdown: undefined },
                 {
@@ -141,4 +144,31 @@ test("SSR keeps later page numbers and returns from page 2 to /", async () => {
     assert(nextLink?.includes(`href="/?page=${page + 1}"`));
     assert(!html.includes('href="/?page=1"'));
   }
+});
+
+
+test("SSR month filter is shareable, retains pagination and resets to all articles", async () => {
+  mode = "next";
+  const response = await entry.fetch(new Request("http://ui-fixture.invalid/?month=2026-10&page=2"));
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(new URL(lastArticleURL).searchParams.get("month"), "2026-10");
+  assert.equal(new URL(lastArticleURL).searchParams.get("page"), "2");
+  assert(html.includes("2026年10月の記事"));
+  assert.match(html, /href="\/\?month=2026-10"[^>]*>← 前のページ/);
+  assert.match(html, /href="\/\?page=3&amp;month=2026-10"[^>]*>次のページ/);
+  assert.match(html, /href="\/"[^>]*>すべての記事に戻る/);
+  assert(html.includes('data-selected="true"'));
+  assert(!html.includes('page=1'));
+  const redirect = await entry.fetch(new Request("http://ui-fixture.invalid/?month=2026-10&page=1"));
+  assert.equal(redirect.headers.get("location"), "/?month=2026-10");
+});
+
+test("invalid month cannot reach the article API", async () => {
+  mode = "success";
+  lastArticleURL = undefined;
+  const response = await entry.fetch(new Request("http://ui-fixture.invalid/?month=2026-13"));
+  assert.equal(response.status, 307);
+  assert.equal(response.headers.get("location"), "/");
+  assert.equal(lastArticleURL, undefined);
 });

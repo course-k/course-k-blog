@@ -20,7 +20,12 @@ func (s *Server) externalRoutes(mux *http.ServeMux) {
 			}
 			page = n
 		}
-		result, err := service.Page(r.Context(), page)
+		month := r.URL.Query().Get("month")
+		if !external.ValidMonth(month) {
+			write(w, 400, map[string]string{"error": "invalid month"})
+			return
+		}
+		result, err := service.Page(r.Context(), page, month)
 		if err != nil {
 			failure(w, err)
 			return

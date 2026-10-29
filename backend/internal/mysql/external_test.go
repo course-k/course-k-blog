@@ -113,7 +113,7 @@ func TestExternalSyncPersistenceAndTimeline(t *testing.T) {
 	if err := store.CorrectExternal(ctx, source, post.ID, external.Correction{Title: &corrected, Version: version}); err != nil {
 		t.Fatal(err)
 	}
-	articles, err := store.ListArticles(ctx, 21, 0)
+	articles, err := store.ListArticles(ctx, 21, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}

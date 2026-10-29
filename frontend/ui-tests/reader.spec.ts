@@ -26,7 +26,7 @@ for (const width of [1280, 390, 320]) {
   });
 }
 
-for (const width of [1280, 390]) {
+for (const width of [1280, 390, 320]) {
   test(`list ${width}: layout, external link and keyboard focus`, async ({ page }) => {
     await showScreen(page, { screen: "list" }, width);
     const cards = page.locator(".post-row");
@@ -36,7 +36,7 @@ for (const width of [1280, 390]) {
     expect(second).not.toBeNull();
     expect(second!.x).toBe(first!.x);
     expect(second!.y).toBeGreaterThan(first!.y + first!.height);
-    const external = page.getByRole("link", { name: /新しいタブで開く/ });
+    const external = page.locator(".post-row").getByRole("link", { name: /新しいタブで開く/ });
     await expect(external).toHaveAttribute("target", "_blank");
     await expect(external).toHaveAttribute("rel", "noopener noreferrer");
     await cards.first().locator("a").focus();
@@ -49,3 +49,21 @@ test("empty list is distinguished from failure", async ({ page }) => {
   await showScreen(page, { screen: "list", empty: true });
   await expect(page.getByText("最初の記事を準備しています")).toBeVisible();
 });
+
+for (const width of [1280, 390, 320]) {
+  test(`profile and monthly archive ${width}: keyboard disclosure and month links`, async ({ page }) => {
+    await showScreen(page, { screen: "list" }, width);
+    await expect(page.getByRole("heading", { level: 1, name: "course_kのブログ" })).toBeVisible();
+    const profile = await page.getByRole("region", { name: "プロフィール", exact: true }).boundingBox();
+    const article = await page.locator(".post-row").first().boundingBox();
+    expect(profile!.y + profile!.height).toBeLessThan(article!.y);
+    const archive = page.locator(".month-archive");
+    await expect(archive).not.toHaveAttribute("open", "");
+    await archive.locator(":scope > summary").press("Enter");
+    await expect(archive).toHaveAttribute("open", "");
+    await expect(archive.getByRole("link", { name: "10月 (22)", exact: true })).toHaveAttribute("href", "/?month=2026-10");
+    await archive.getByText("2025年", { exact: true }).press("Enter");
+    await expect(archive.getByRole("link", { name: "12月 (3)", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}

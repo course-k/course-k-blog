@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -43,9 +44,19 @@ type Article struct {
 	Source      string    `json:"source,omitempty"`
 	URL         string    `json:"url,omitempty"`
 }
+type ArchiveMonth struct {
+	Month string `json:"month"`
+	Count int    `json:"count"`
+}
+
+var monthPattern = regexp.MustCompile(`^[1-9][0-9]{3}-(0[1-9]|1[0-2])$`)
+
+func ValidMonth(month string) bool { return month == "" || monthPattern.MatchString(month) }
+
 type Page struct {
-	Articles []Article `json:"articles"`
-	HasNext  bool      `json:"hasNext"`
+	Months   []ArchiveMonth `json:"months"`
+	Articles []Article      `json:"articles"`
+	HasNext  bool           `json:"hasNext"`
 }
 type SyncState struct {
 	Source      string     `json:"source"`
@@ -62,7 +73,8 @@ type Batch struct {
 	Coverage string
 }
 type Repository interface {
-	ListArticles(context.Context, int, int) ([]Article, error)
+	ListArticles(context.Context, int, int, string) ([]Article, error)
+	ArticleMonths(context.Context) ([]ArchiveMonth, error)
 	ListExternal(context.Context) ([]Post, error)
 	CorrectExternal(context.Context, string, string, Correction) error
 	SyncStates(context.Context) ([]SyncState, error)

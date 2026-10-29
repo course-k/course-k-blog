@@ -4,6 +4,7 @@ import {
   createRootRoute,
   createRouter,
   RouterProvider,
+  stripSearchParams,
 } from "@tanstack/react-router";
 import { AdminPage } from "../src/components/AdminPage";
 import { ArticleList } from "../src/components/ArticleList";
@@ -202,6 +203,7 @@ function Screen() {
                     ]
               }
               page={1}
+              months={cfg.empty ? [] : [{ month: "2026-10", count: 22 }, { month: "2025-12", count: 3 }]}
             />
             <section
               aria-label="外部記事部品の検証"
@@ -229,7 +231,11 @@ function Screen() {
     </>
   );
 }
-const route = createRootRoute({ component: Screen });
+const route = createRootRoute({
+  component: Screen,
+  validateSearch: (search: Record<string, unknown>) => ({ ...search, page: Number(search.page) || 1 }),
+  search: { middlewares: [stripSearchParams({ page: 1 })] },
+});
 const router = createRouter({
   routeTree: route,
   history: createMemoryHistory({ initialEntries: ["/"] }),
