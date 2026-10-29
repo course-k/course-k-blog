@@ -92,7 +92,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.27.2'
+          go-version: '1.27.3'
           cache: false
       - uses: actions/setup-node@v7
         with:
@@ -125,7 +125,7 @@ jobs:
           package-manager-cache: false
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.27.2'
+          go-version: '1.27.3'
           cache: false
       - run: npm ci
         working-directory: frontend
