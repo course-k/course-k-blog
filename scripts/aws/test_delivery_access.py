@@ -27,7 +27,7 @@ class DeliveryAccessTest(unittest.TestCase):
         actions = {a for s in self.statements for a in s['Action']}
         self.assertFalse(any(a.split(':')[0] in {'s3', 'ssm', 'secretsmanager', 'rds',
                                                'route53', 'cognito-idp', 'ec2'} for a in actions))
-        self.assertEqual({a for a in actions if a.startswith('iam:')}, {'iam:PassRole'})
+        self.assertEqual({a for a in actions if a.startswith('iam:')}, {'iam:PassRole', 'iam:GetRole'})
         self.assertNotIn('sts:AssumeRole', actions)
         self.assertFalse(any(a.endswith('*') for a in actions))
         self.assertNotIn('cloudformation:DeleteStack', actions)
@@ -59,6 +59,18 @@ class DeliveryAccessTest(unittest.TestCase):
         policy = json.dumps(self.role['Policies'][0]['PolicyDocument'], separators=(',', ':'))
         self.assertLess(len(policy), 10240)
         self.assertNotIn('757412973334', json.dumps(self.template))
+
+    def test_cloudformation_required_reads_cannot_be_called_directly(self):
+        read = next(s for s in self.statements if s['Sid'] == 'ReadDefinitionsThroughStack')
+        self.assertEqual(read['Action'], ['ecs:DescribeTaskDefinition'])
+        self.assertEqual(read['Resource'], '*')
+        self.assertEqual(read['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'],
+                         'cloudformation.amazonaws.com')
+        roles = next(s for s in self.statements if s['Sid'] == 'ReadRuntimeRolesThroughStack')
+        self.assertEqual(roles['Action'], ['iam:GetRole'])
+        self.assertEqual(len(roles['Resource']), 4)
+        self.assertEqual(roles['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'],
+                         'cloudformation.amazonaws.com')
 
 
 if __name__ == '__main__':
