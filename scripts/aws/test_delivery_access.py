@@ -25,7 +25,7 @@ class DeliveryAccessTest(unittest.TestCase):
 
     def test_no_direct_data_identity_or_infrastructure_administration(self):
         actions = {a for s in self.statements for a in s['Action']}
-        self.assertFalse(any(a.split(':')[0] in {'s3', 'ssm', 'secretsmanager', 'rds',
+        self.assertFalse(any(a.split(':')[0] in {'s3', 'ssm', 'secretsmanager',
                                                'route53', 'cognito-idp', 'ec2'} for a in actions))
         self.assertEqual({a for a in actions if a.startswith('iam:')}, {'iam:PassRole', 'iam:GetRole'})
         self.assertNotIn('sts:AssumeRole', actions)
@@ -33,6 +33,19 @@ class DeliveryAccessTest(unittest.TestCase):
         self.assertNotIn('cloudformation:DeleteStack', actions)
         self.assertNotIn('ecs:CreateService', actions)
         self.assertNotIn('ecs:DeleteService', actions)
+        self.assertEqual({a for a in actions if a.startswith('rds:')}, {'rds:DescribeDBInstances'})
+        self.assertEqual({a for a in actions if a.startswith('apigateway:')}, {'apigateway:GET'})
+
+    def test_existing_stack_output_reads_are_resource_scoped_and_forwarded_only(self):
+        for sid in ('ReadDatabaseOutputThroughStack', 'ReadGatewayOutputsThroughStack',
+                    'ReadBootstrapRepositoryOutputThroughStack'):
+            statement = next(s for s in self.statements if s['Sid'] == sid)
+            self.assertNotEqual(statement['Resource'], '*')
+            self.assertEqual(statement['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'],
+                             'cloudformation.amazonaws.com')
+            self.assertEqual(statement['Condition']['StringEquals']['aws:RequestedRegion'], 'us-west-2')
+        gateway = next(s for s in self.statements if s['Sid'] == 'ReadGatewayOutputsThroughStack')
+        self.assertNotIn('/*', json.dumps(gateway['Resource']))
 
     def test_changes_are_scoped_to_blog_and_cloudformation(self):
         service = next(s for s in self.statements if s['Sid'] == 'UpdateApplicationThroughStack')

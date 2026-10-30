@@ -259,8 +259,14 @@ class Release:
                 # return the previous completed stack before the update starts.
                 parameters = {p['ParameterKey']: p['ParameterValue'] for p in value['Parameters']}
                 return value if all(parameters.get(key) == image for key, image in images.items()) else None
-            require(status in {'UPDATE_IN_PROGRESS', 'UPDATE_COMPLETE_CLEANUP_IN_PROGRESS'},
-                    'Application update failed or rolled back; inspect stack events')
+            if status not in {'UPDATE_IN_PROGRESS', 'UPDATE_COMPLETE_CLEANUP_IN_PROGRESS'}:
+                # Report only IAM action names, never raw events or secret values.
+                events = self.aws.call('cloudformation', 'describe-stack-events',
+                                       data={'StackName': STACK})['StackEvents'][:30]
+                denied = sorted({action for event in events for action in re.findall(
+                    r'not authorized to perform: ([A-Za-z0-9:]+)', event.get('ResourceStatusReason', ''))})
+                detail = '; denied actions: ' + ', '.join(denied) if denied else ''
+                raise ReleaseError('Application update failed or rolled back; inspect stack events' + detail)
             return None
 
         wait_for(complete, timeout=900)
