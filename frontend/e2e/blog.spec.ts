@@ -100,7 +100,9 @@ test("reader and owner flow against real MySQL and production SSR", async ({
   const ogp = await reading.request.get(`/og/posts/${draft.id}.png`);
   expect(ogp.status()).toBe(200);
   expect(ogp.headers()['content-type']).toBe('image/png');
-  expect(ogp.headers()['cache-control']).toBe('no-store');
+  // The gateway and application may both add the same no-store directive.
+  expect(new Set(ogp.headers()['cache-control'].split(',').map(value => value.trim())))
+    .toEqual(new Set(['no-store']));
   const png = await ogp.body();
   expect(png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))).toBe(true);
   expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1200, 630]);
