@@ -113,7 +113,7 @@ test("SSR keeps the homepage at / and generates clean home links", async () => {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("location"), null);
   const html = await response.text();
-  assert.match(html, /class="brand[^"<>]*" href="\/"/);
+  assert.match(html, /<a(?=[^>]*class="brand[^"<>]*")(?=[^>]*href="\/")[^>]*>/);
   assert(html.includes('href="/?page=2"'));
   assert(!html.includes('href="/?page=1"'));
   assert(!html.includes("前のページ"));
@@ -182,7 +182,8 @@ test("home SSR advertises real brand assets and keeps the logo out of the profil
   assert.match(html, /<meta[^>]+property="og:image"[^>]+content="https:\/\/blog\.course-k\.com\/brand\/ogp-home\.png"/);
   assert.match(html, /<meta[^>]+name="twitter:card"[^>]+content="summary_large_image"/);
   assert.match(html, /<h1[^>]*><img[^>]+src="\/brand\/wordmark\.png"[^>]+alt="course_kのブログ"/);
-  assert.match(html, /<span class="author-avatar"[^>]*>k<\/span>/);
+  assert.match(html, /<span class="author-avatar"><img[^>]+src="\/profile\/rider\.webp"[^>]+alt="バイクに乗るcourse_k"/);
+  assert.match(html, /aria-label="course_kのブログのトップへ"[^>]*><img[^>]+src="\/brand\/mark\.svg"/);
 });
 
 test("article SSR overrides the home sharing card with the published article", async () => {

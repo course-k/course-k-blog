@@ -55,8 +55,8 @@ function Root() {
           本文へ移動
         </a>
         <header className="site-header">
-          <Link to="/" search={{ page: 1 }} className="brand">
-            course_kのブログ
+          <Link to="/" search={{ page: 1 }} className="brand" aria-label="course_kのブログのトップへ">
+            <img src="/brand/mark.svg" width="35" height="28" alt="" />
           </Link>
           <nav aria-label="メイン">
             <Link to="/" search={{ page: 1 }}>

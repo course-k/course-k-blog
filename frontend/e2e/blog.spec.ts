@@ -140,9 +140,9 @@ test("reader and owner flow against real MySQL and production SSR", async ({
   const wordmark = reading.getByRole('heading', { level: 1, name: 'course_kのブログ' }).getByRole('img');
   await expect(wordmark).toHaveAttribute('src', '/brand/wordmark.png');
   expect(await wordmark.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(2027);
-  await expect(reading.locator('.author-avatar')).toHaveText('k');
-  await expect(reading.locator('.author-avatar img')).toHaveCount(0);
-  for (const asset of ['/favicon.svg', '/favicon.ico', '/apple-touch-icon.png', '/brand/wordmark.png', '/brand/ogp-home.png']) {
+  await expect(reading.getByRole('img', { name: 'バイクに乗るcourse_k', exact: true })).toHaveAttribute('src', '/profile/rider.webp');
+  await expect(reading.getByRole('link', { name: 'course_kのブログのトップへ', exact: true }).locator('img')).toHaveAttribute('src', '/brand/mark.svg');
+  for (const asset of ['/favicon.svg', '/favicon.ico', '/apple-touch-icon.png', '/brand/wordmark.png', '/brand/ogp-home.png', '/brand/mark.svg', '/profile/rider.webp']) {
     const response = await reading.request.get(asset);
     expect(response.status(), asset).toBe(200);
     expect(response.headers()['content-type'], asset).toMatch(/^image\//);

@@ -23,6 +23,12 @@ export async function showScreen(page: Page, config: FixtureConfig, width = 1280
     if (url === "https://ui-fixture.invalid/brand/wordmark.png") {
       return route.fulfill({ contentType: "image/png", path: new URL("../public/brand/wordmark.png", import.meta.url).pathname });
     }
+    if (url === "https://ui-fixture.invalid/brand/mark.svg") {
+      return route.fulfill({ contentType: "image/svg+xml", path: new URL("../public/brand/mark.svg", import.meta.url).pathname });
+    }
+    if (url === "https://ui-fixture.invalid/profile/rider.webp") {
+      return route.fulfill({ contentType: "image/webp", path: new URL("../public/profile/rider.webp", import.meta.url).pathname });
+    }
     if (url === "https://ui-fixture.invalid/diagram.svg") {
       return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300"><rect width="1200" height="300" fill="#f6f7f6"/></svg>' });
     }
