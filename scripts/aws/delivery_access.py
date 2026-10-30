@@ -22,6 +22,10 @@ def delivery_access_template():
                    for family in ('application', 'migration')]
     cluster = sub(ecs + f'cluster/{stack}-Cluster-*')
     service = sub(ecs + f'service/{stack}-Cluster-*/{stack}-ApplicationService-*')
+    deployments = sub(ecs + f'service-deployment/{stack}-Cluster-*/{stack}-ApplicationService-*/*')
+    runtime_roles = [sub(iam + f'{stack}-{name}-*') for name in (
+        'ApplicationExecutionRole', 'ApplicationTaskRole', 'MigrationExecutionRole', 'MigrationTaskRole',
+    )]
 
     def allow(sid, actions, resources, condition=regional):
         return {'Sid': sid, 'Effect': 'Allow', 'Action': actions,
@@ -47,11 +51,21 @@ def delivery_access_template():
                 + f'{stack}-{name}repository-*') for name in ('node', 'go', 'router')]),
         allow('ReadApplicationService', ['ecs:DescribeServices'], service),
         allow('ReadApplicationCluster', ['ecs:DescribeClusters'], cluster),
-        allow('ReadDefinitions', ['ecs:DescribeTaskDefinition', 'ecs:ListTagsForResource'], definitions),
+        allow('ReadDefinitionTags', ['ecs:ListTagsForResource'], definitions),
+        # This API has no resource-level IAM support. Permit only forwarded
+        # CloudFormation calls; the role can operate only the existing blog stack.
+        allow('ReadDefinitionsThroughStack', ['ecs:DescribeTaskDefinition'], '*', through_stack),
+        # IAM uses a global endpoint; do not impose the ECS regional condition.
+        allow('ReadRuntimeRolesThroughStack', ['iam:GetRole'], runtime_roles, {
+            'ForAnyValue:StringEquals': {'aws:CalledVia': 'cloudformation.amazonaws.com'},
+        }),
         allow('RegisterDefinitionsThroughStack', [
-            'ecs:RegisterTaskDefinition', 'ecs:DeregisterTaskDefinition', 'ecs:TagResource',
+            'ecs:RegisterTaskDefinition', 'ecs:DeregisterTaskDefinition', 'ecs:TagResource', 'ecs:UntagResource',
         ], definitions, through_stack),
-        allow('UpdateApplicationThroughStack', ['ecs:UpdateService'], service, through_stack),
+        allow('UpdateApplicationThroughStack', [
+            'ecs:UpdateService', 'ecs:ListTagsForResource', 'ecs:TagResource', 'ecs:UntagResource',
+            'ecs:ListServiceDeployments', 'ecs:DescribeServiceDeployments', 'ecs:StopServiceDeployment',
+        ], [service, deployments], through_stack),
         allow('ReadApplicationTasks', ['ecs:ListTasks'], '*', {
             **regional, 'ArnLike': {'ecs:cluster': cluster},
         }),
@@ -62,14 +76,11 @@ def delivery_access_template():
         allow('RunBackup', ['ecs:RunTask'], definitions[0], {
             **regional, 'ArnLike': {'ecs:cluster': cluster},
         }),
-        allow('PassRuntimeRoles', ['iam:PassRole'], [
-            sub(iam + f'{stack}-{name}-*') for name in (
-                'ApplicationExecutionRole', 'ApplicationTaskRole',
-                'MigrationExecutionRole', 'MigrationTaskRole',
-            )
-        ], {'StringEquals': {'iam:PassedToService': 'ecs-tasks.amazonaws.com'}}),
+        allow('PassRuntimeRoles', ['iam:PassRole'], runtime_roles,
+              {'StringEquals': {'iam:PassedToService': 'ecs-tasks.amazonaws.com'}}),
         allow('UpdateApplicationAlarmsThroughStack', [
             'cloudwatch:PutMetricAlarm', 'cloudwatch:DescribeAlarms', 'cloudwatch:ListTagsForResource',
+            'cloudwatch:TagResource', 'cloudwatch:UntagResource',
         ], [sub('arn:${AWS::Partition}:cloudwatch:us-west-2:${AWS::AccountId}:alarm:'
                 + f'{stack}-Application{name}Alarm-*')
             for name in ('CPUUtilization', 'MemoryUtilization')], through_stack),
