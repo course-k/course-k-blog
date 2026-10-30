@@ -54,6 +54,11 @@ for (const width of [1280, 390, 320]) {
   test(`profile and monthly archive ${width}: keyboard disclosure and month links`, async ({ page }) => {
     await showScreen(page, { screen: "list" }, width);
     await expect(page.getByRole("heading", { level: 1, name: "course_kのブログ" })).toBeVisible();
+    const wordmark = page.getByRole("heading", { level: 1, name: "course_kのブログ" }).getByRole("img");
+    await expect(wordmark).toHaveAttribute("src", "/brand/wordmark.png");
+    expect(await wordmark.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(2027);
+    await expect(page.locator(".author-avatar")).toHaveText("k");
+    await expect(page.locator(".author-avatar img")).toHaveCount(0);
     const profile = await page.getByRole("region", { name: "プロフィール", exact: true }).boundingBox();
     const article = await page.locator(".post-row").first().boundingBox();
     expect(profile!.y + profile!.height).toBeLessThan(article!.y);

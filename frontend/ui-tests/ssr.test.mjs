@@ -172,3 +172,27 @@ test("invalid month cannot reach the article API", async () => {
   assert.equal(response.headers.get("location"), "/");
   assert.equal(lastArticleURL, undefined);
 });
+
+test("home SSR advertises real brand assets and keeps the logo out of the profile avatar", async () => {
+  mode = "success";
+  const response = await entry.fetch(new Request("http://ui-fixture.invalid/"));
+  const html = await response.text();
+  assert.match(html, /<link[^>]+rel="icon"[^>]+href="\/favicon\.svg"/);
+  assert.match(html, /<link[^>]+rel="apple-touch-icon"[^>]+href="\/apple-touch-icon\.png"/);
+  assert.match(html, /<meta[^>]+property="og:image"[^>]+content="https:\/\/blog\.course-k\.com\/brand\/ogp-home\.png"/);
+  assert.match(html, /<meta[^>]+name="twitter:card"[^>]+content="summary_large_image"/);
+  assert.match(html, /<h1[^>]*><img[^>]+src="\/brand\/wordmark\.png"[^>]+alt="course_kのブログ"/);
+  assert.match(html, /<span class="author-avatar"[^>]*>k<\/span>/);
+});
+
+test("article SSR overrides the home sharing card with the published article", async () => {
+  mode = "success";
+  const response = await entry.fetch(new Request(`http://ui-fixture.invalid/posts/${id}`));
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(html, /<meta[^>]+property="og:title"[^>]+content="SSR検証の記事"/);
+  assert.match(html, /<meta[^>]+property="og:type"[^>]+content="article"/);
+  assert.match(html, new RegExp(`<meta[^>]+property="og:image"[^>]+content="https://blog\\.course-k\\.com/og/posts/${id}\\.png`));
+  assert.equal((html.match(/property="og:image" /g) || []).length, 1);
+  assert(!html.includes('content="https://blog.course-k.com/brand/ogp-home.png"'));
+});

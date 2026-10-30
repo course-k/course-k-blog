@@ -1,5 +1,5 @@
 // The outer handler also protects static and error responses, which bypass Start.
-export function createHandler({ render, staticFiles }) {
+export function createHandler({ render, staticFiles, articleImages }) {
   return async function fetch(request) {
     let response
     try {
@@ -19,7 +19,8 @@ export function createHandler({ render, staticFiles }) {
           headers: { 'Content-Type': 'application/json; charset=utf-8' },
         })
       } else {
-        response = await staticFiles(request, () => render(request))
+        response = await articleImages?.(request)
+          ?? await staticFiles(request, () => render(request))
       }
     } catch {
       // Do not return upstream details or credentials to clients.

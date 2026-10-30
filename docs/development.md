@@ -26,6 +26,8 @@ docker compose up --build
 
 停止は `docker compose down`。データボリュームを消す `down -v` は通常の停止に使わない。ローカルDBの起動成功や再起動後の保持を、本番のバックアップ復元成功と扱わない。
 
+題字・ファビコン・共通OGPはfrontend/publicから配信する。記事のOGPは本番用Nodeサーバーが公開記事APIからPNGを生成するため、配信の確認にはComposeまたは本番ビルド後の`npm --prefix frontend start`を使う。`rsbuild dev`だけではこの画像入口を検証しない。sharpの事前ビルド済み依存と、日本語フォント・許諾・Fontconfig設定をDockerイメージへ含める。描画の一時キャッシュは`/tmp/course-k-blog-fontconfig`を使う。
+
 ## 検証の種類と実行順
 
 以下はリポジトリのルートから実行する。Node.js 24以上・Go 1.27以上・Python 3.10以上が必要。初回の依存取得にはネットワークを使う。
@@ -38,7 +40,7 @@ go -C backend mod download
 | 種類 | コマンド | 必要な環境・確認範囲 |
 |---|---|---|
 | 文書・構文 | `python3 scripts/check-repository.py` | Git管理対象と新規ファイルの相対リンク、JSON・Python構文、差分の空白。外部URLやMarkdownの見出しアンカー、AWSの意味的な妥当性は検査しない |
-| フロント基本 | `npm --prefix frontend run check` | 本番ビルド→本体と試験の型検査→runtime→管理API通信→固定APIのSSR。ビルドでルート型を生成するため、この順序で実行 |
+| フロント基本 | `npm --prefix frontend run check` | 本番ビルド→本体と試験の型検査→runtime→管理API通信→固定APIのSSR→記事OGP。ビルドでルート型と公開アセットを生成するため、この順序で実行。OGPは日本語・長いタイトル・PNG寸法・非公開後の拒否・公開状態の再確認を検証 |
 | 固定APIの画面 | `npm --prefix frontend run test:ui` | Chrome、一時プロファイル、架空の固定API。画面幅・表示・操作・失敗時の復帰をオフラインで確認。実Go・DBへ接続しない |
 | Goの基本 | `TEST_DATABASE_URL= TEST_TLS_DATABASE_URL= go -C backend test -race -v ./...` と `go -C backend vet ./...` | 認証・HTTP・保存契約等。実DB・TLS専用・外部媒体の実取得試験はSKIPするため、実MySQLやTLSの成功と扱わない |
 | 実MySQL | 下記の専用DB手順 | 移行・公開版分離・競合・セッション等を実DBで確認。テストデータの作成・削除を伴う |

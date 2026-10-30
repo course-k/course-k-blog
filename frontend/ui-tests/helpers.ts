@@ -14,11 +14,21 @@ export const test = base.extend<{ pageErrors: string[] }>({
 
 export async function showScreen(page: Page, config: FixtureConfig, width = 1280) {
   await page.setViewportSize({ width, height: 900 });
-  await page.route("**/*", route => route.request().url() === "https://ui-fixture.invalid/diagram.svg"
-    ? route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300"><rect width="1200" height="300" fill="#f6f7f6"/></svg>' })
-    : route.abort());
   const html = await readFile(new URL("../dist/ui-test/index.html", import.meta.url), "utf8");
-  await page.setContent(html.replace("<head>", `<head><script>window.fixture=${JSON.stringify(config)}</script>`));
+  await page.route("**/*", route => {
+    const url = route.request().url();
+    if (url === "https://ui-fixture.invalid/") {
+      return route.fulfill({ contentType: "text/html", body: html.replace("<head>", `<head><script>window.fixture=${JSON.stringify(config)}</script>`) });
+    }
+    if (url === "https://ui-fixture.invalid/brand/wordmark.png") {
+      return route.fulfill({ contentType: "image/png", path: new URL("../public/brand/wordmark.png", import.meta.url).pathname });
+    }
+    if (url === "https://ui-fixture.invalid/diagram.svg") {
+      return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300"><rect width="1200" height="300" fill="#f6f7f6"/></svg>' });
+    }
+    return route.abort();
+  });
+  await page.goto("https://ui-fixture.invalid/");
   await expect(page.locator("main")).toBeVisible();
 }
 
