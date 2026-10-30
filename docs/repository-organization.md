@@ -55,10 +55,10 @@ config/          ローカル秘密値・キャッシュ・一時作業（Git対
 | 対象 | 役割・参照先 |
 |---|---|
 | infra/aws/ | 共有トポロジーと検証設定例。本番版はscripts/aws/production.pyがCognito・保存権限・独自ホスト名・通知を加え、常駐部分を1タスクへ変換して生成し、巨大な定義の二重管理を避ける |
-| infra/access/ | 旧検証用IAMの保存版と候補版。本番はscripts/aws/production_access.pyから別途生成する。旧検証用の適用状態と候補の差分は[検証環境の手順](../infra/README.md#使用する設定)を参照し、本番へ流用しない |
+| infra/access/ | 旧検証用IAMの保存版と候補版。本番操作者はscripts/aws/production_access.py、GitHub配備用アクセス候補はscripts/aws/delivery_access.pyから別途生成する。旧検証用の適用状態と候補の差分は[検証環境の手順](../infra/README.md#使用する設定)を参照し、本番へ流用しない |
 | scripts/aws/・config/ | 検証用の操作補助と本番定義の生成・契約試験。環境値・認証キャッシュ・ローカル状態・生成物はconfigへ分離。本番の実施結果は公開台帳と運用手順を参照 |
 | infra/production.md | 本番配置・更新・保存/回復・認証・容量/費用の手順。実AWSでの確認は公開台帳R5/R6 |
-| .github/ | 文書・基盤補助、フロント固定API、Go/実DB、実ブラウザ/SSR/API/DBの検証ワークフローとPRテンプレート。GitHubでの合否は対象PRの各ジョブを参照。マージ制限の設定は未確認。自動配備はない |
+| .github/ | 文書・基盤補助、フロント固定API、Go/実DB、実ブラウザ/SSR/API/DBの検証ワークフローとPRテンプレート。GitHubでの合否は対象PRの各ジョブを参照。マージ制限の設定は未確認。mainの全検査成功後に専用OIDC権限でアプリを自動配備 |
 
 詳細な作業状態は公開台帳R1〜R6へ集約する。AWS試験成功を配備の完全な再現性や本番運用の完成として扱わない。
 

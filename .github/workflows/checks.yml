@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: checks-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer PR revision may cancel checks; never interrupt a production update.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   repository:
@@ -36,6 +37,8 @@ jobs:
           "$RUNNER_TEMP/cfn-lint/bin/pip" install --disable-pip-version-check cfn-lint==1.57.2
           python3 scripts/aws/production.py > "$RUNNER_TEMP/production.template.json"
           "$RUNNER_TEMP/cfn-lint/bin/cfn-lint" -r us-west-2 -t "$RUNNER_TEMP/production.template.json"
+          python3 scripts/aws/delivery_access.py > "$RUNNER_TEMP/delivery-access.template.json"
+          "$RUNNER_TEMP/cfn-lint/bin/cfn-lint" -r us-west-2 -t "$RUNNER_TEMP/delivery-access.template.json"
           python3 scripts/aws/recovery.py > "$RUNNER_TEMP/recovery.template.json"
           "$RUNNER_TEMP/cfn-lint/bin/cfn-lint" -r us-west-2 -t "$RUNNER_TEMP/recovery.template.json"
           python3 scripts/aws/backfill.py > "$RUNNER_TEMP/backfill.template.json"
@@ -107,7 +110,7 @@ jobs:
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - run: go test -count=1 -race -v ./internal/mysql
         env:
-          TEST_DATABASE_URL: mysql://root@127.0.0.1:${{ job.services.mysql.ports[3306] }}/blog_test?tls=false
+          TEST_DATABASE_URL: mysql://root@127.0.0.1:${{ job.services.mysql.ports['3306'] }}/blog_test?tls=false
           TEST_TLS_DATABASE_URL: ''
       - run: node ../scripts/test-mysql-tls.mjs
 
@@ -137,3 +140,66 @@ jobs:
       - run: node scripts/test-local-e2e.mjs --single-task
         env:
           PLAYWRIGHT_CHANNEL: chromium
+
+  deploy:
+    name: Deploy production
+    needs: [repository, frontend, backend, acceptance]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: course-k-blog-production-delivery
+      cancel-in-progress: false
+    env:
+      # Public deployment identifier, not an access key. IAM trust restricts main.
+      AWS_ACCOUNT_ID: '757412973334'
+      AWS_REGION: us-west-2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Select current main application revision
+        id: revision
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          current=$(git ls-remote https://github.com/course-k/course-k-blog.git refs/heads/main | cut -f1)
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo 'Skipping a superseded main revision'
+            echo 'deploy=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$GITHUB_EVENT_NAME" = push ] && git diff --quiet "$BEFORE" "$GITHUB_SHA" -- frontend backend infra/router scripts/aws/delivery.py .github/workflows/checks.yml; then
+            echo 'No application delivery changes'
+            echo 'deploy=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'deploy=true' >> "$GITHUB_OUTPUT"
+      - name: Prepare AWS CLI
+        if: steps.revision.outputs.deploy == 'true'
+        run: |
+          if ! command -v aws >/dev/null; then
+            curl --fail --silent --show-error --location https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip --output "$RUNNER_TEMP/awscliv2.zip"
+            unzip -q "$RUNNER_TEMP/awscliv2.zip" -d "$RUNNER_TEMP/aws-install"
+            "$RUNNER_TEMP/aws-install/aws/install" --install-dir "$RUNNER_TEMP/aws-cli" --bin-dir "$RUNNER_TEMP/bin"
+            echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Connect to the dedicated AWS role using OIDC
+        if: steps.revision.outputs.deploy == 'true'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/course-k-blog-github-deploy
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+          role-session-name: github-blog-${{ github.run_id }}
+          role-duration-seconds: 3600
+          retry-max-attempts: 3
+          action-timeout-s: 90
+          unset-current-credentials: true
+      - name: Back up, update application images, and verify production
+        if: steps.revision.outputs.deploy == 'true'
+        run: python3 scripts/aws/delivery.py --account "$AWS_ACCOUNT_ID" --commit "$GITHUB_SHA" --apply
