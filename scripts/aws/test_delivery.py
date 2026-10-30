@@ -54,6 +54,19 @@ class DeliveryTest(unittest.TestCase):
         aws.stack.assert_not_called()
         self.assertEqual(aws.call.call_count, 1)
 
+    def test_runtime_verification_does_not_need_account_wide_definition_reads(self):
+        aws = MagicMock()
+        task = {'taskDefinitionArn': 'expected', 'containers': [{'name': 'go', 'healthStatus': 'HEALTHY'}]}
+        aws.call.side_effect = [{'taskArns': ['running']}, {'tasks': [task]}]
+        release = Release(aws, '123456789012', 'a' * 40)
+        release.cluster, release.service_arn = 'blog-cluster', 'blog-service'
+        self.assertEqual(release.running_task('expected'), task)
+        self.assertEqual([c.args[:2] for c in aws.call.call_args_list],
+                         [('ecs', 'list-tasks'), ('ecs', 'describe-tasks')])
+        aws.call.side_effect = [{'taskArns': ['other']}, {'tasks': [{**task, 'taskDefinitionArn': 'other'}]}]
+        with self.assertRaisesRegex(ReleaseError, 'differs'):
+            release.running_task('expected')
+
     def test_backup_failure_prevents_production_change(self):
         release = Release(MagicMock(), '123456789012', 'a' * 40)
         release.preflight = MagicMock()

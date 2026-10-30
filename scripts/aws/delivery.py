@@ -128,15 +128,31 @@ class Release:
         self.service_arn = self.resources['ApplicationService']
         self.old_task = self.resources['ApplicationTask']
         validate_service(self.service(), self.old_task)
-        task = self.definition(self.old_task)
-        require(task['runtimePlatform']['cpuArchitecture'] == 'ARM64', 'Expected ARM64 runtime')
+        template = self.aws.call('cloudformation', 'get-template', data={'StackName': STACK})['TemplateBody']
+        if isinstance(template, str):
+            template = json.loads(template)
+        require(template['Resources']['ApplicationTask']['Properties']['RuntimePlatform']['CpuArchitecture']
+                == 'ARM64', 'Expected ARM64 runtime')
+        task = self.running_task(self.old_task)
         expected = {'node': 'NodeImage', 'go': 'GoImage', 'router': 'RouterImage'}
-        require({c['name']: c['image'] for c in task['containerDefinitions']} ==
+        require({c['name']: c['image'] for c in task['containers']} ==
                 {name: self.previous[key] for name, key in expected.items()}, 'Stack and running images differ')
         print('AWS identity, current production deployment and unchanged database schema verified', flush=True)
 
-    def definition(self, task):
-        return self.aws.call('ecs', 'describe-task-definition', data={'taskDefinition': task})['taskDefinition']
+    def running_task(self, definition):
+        # DescribeTaskDefinition has no resource-level IAM scoping. Read only
+        # this service's running task instead of granting account-wide reads.
+        tasks = self.aws.call('ecs', 'list-tasks', data={
+            'cluster': self.cluster, 'serviceName': self.service_arn})['taskArns']
+        require(len(tasks) == 1, 'Unexpected number of production tasks')
+        result = self.aws.call('ecs', 'describe-tasks', data={'cluster': self.cluster, 'tasks': tasks})
+        require(not result.get('failures') and len(result.get('tasks', [])) == 1,
+                'Production task cannot be identified')
+        task = result['tasks'][0]
+        require(task['taskDefinitionArn'] == definition, 'Running task differs from stack definition')
+        require(all(c.get('healthStatus') == 'HEALTHY' for c in task['containers']),
+                'Production containers are not healthy')
+        return task
 
     def service(self):
         result = self.aws.call('ecs', 'describe-services', data={
@@ -252,15 +268,10 @@ class Release:
         outputs = {o['OutputKey']: o['OutputValue'] for o in stack['Outputs']}
         task = outputs['ApplicationTaskDefinition']
         validate_service(self.service(), task)
+        running = self.running_task(task)
         expected = {'node': images['NodeImage'], 'go': images['GoImage'], 'router': images['RouterImage']}
-        require({c['name']: c['image'] for c in self.definition(task)['containerDefinitions']} == expected,
+        require({c['name']: c['image'] for c in running['containers']} == expected,
                 'Running task definition does not match released images')
-        tasks = self.aws.call('ecs', 'list-tasks', data={
-            'cluster': self.cluster, 'serviceName': self.service_arn})['taskArns']
-        require(len(tasks) == 1, 'Unexpected number of production tasks')
-        result = self.aws.call('ecs', 'describe-tasks', data={'cluster': self.cluster, 'tasks': tasks})
-        require(not result.get('failures') and all(c.get('healthStatus') == 'HEALTHY'
-                for t in result['tasks'] for c in t['containers']), 'Production containers are not healthy')
         for path in ('/healthz', '/api/readyz', '/'):
             with urllib.request.urlopen(ORIGIN + path, timeout=30) as response:
                 require(response.status == 200, 'Public HTTPS verification failed')
