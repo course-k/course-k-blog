@@ -13,6 +13,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /web/dist ./dist
 COPY server.mjs runtime.mjs ogp.mjs healthcheck.mjs ./
 COPY assets ./assets
+RUN mkdir -p /tmp/course-k-blog-fontconfig && chown node:node /tmp/course-k-blog-fontconfig
 USER node
 EXPOSE 3000
 CMD ["npm", "start"]
