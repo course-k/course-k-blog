@@ -51,7 +51,7 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 
 接続元は`course-k/course-k-blog`の`main`だけで、GitHubの通常のsubject形式と所有者・リポジトリID付き形式を完全一致で許可する。PR、別ブランチ、Environmentを使うsubjectは許可しない。GitHub Actionsで`id-token: write`を宣言し、`course-k-blog-github-deploy`を利用する。長期アクセスキーや管理者権限をGitHubへ渡さない。
 
-権限はオレゴンの本番ブログ用ECR（node/go/router）へのイメージ登録、既存本番スタックの変更セット、CloudFormation経由のアプリ・移行タスク定義更新と既存サービス更新、関連する監視の更新、更新前バックアップ用のアプリタスク起動に絞る。CloudFormationの公式リソース仕様が要求するタスク定義・実行ロールの照会と、同じサービス/監視のタグ・配備状態操作も、CloudFormationを経由する場合だけ許可する。DescribeTaskDefinitionはARNで限定できないため、この経路に限ってResource=*を使い、GitHubから直接の全定義照会は許可しない。渡せる実行ロールは既存のアプリ・移行用4種で、自分の権限変更、IAMユーザー作成、別ロールへの切替、RDS/DNS/ネットワークの変更、S3や秘密値の直接読み取りは許可しない。ただし、配備されるアプリは実行時の権限で記事・画像・バックアップへアクセスできる。配備権限が記事データから完全に隔離される意味ではない。
+権限はオレゴンの本番ブログ用ECR（node/go/router）へのイメージ登録、既存本番スタックの変更セット、CloudFormation経由のアプリ・移行タスク定義更新と既存サービス更新、関連する監視の更新、更新前バックアップ用のアプリタスク起動に絞る。CloudFormationの公式リソース仕様が要求するタスク定義・実行ロールの照会と、同じサービス/監視のタグ・配備状態操作も、CloudFormationを経由する場合だけ許可する。DescribeTaskDefinitionとDeregisterTaskDefinitionはARNで限定できないため、この経路に限ってResource=*を使い、GitHubから直接の全定義照会・無効化は許可しない。サービスのRegistryArn解決に必要なCloud Map GetServiceは、既存の本番サービス1件だけをCloudFormation経由で照会できる。渡せる実行ロールは既存のアプリ・移行用4種で、自分の権限変更、IAMユーザー作成、別ロールへの切替、RDS/DNS/ネットワークの変更、S3や秘密値の直接読み取りは許可しない。ただし、配備されるアプリは実行時の権限で記事・画像・バックアップへアクセスできる。配備権限が記事データから完全に隔離される意味ではない。
 
 [検証ワークフロー](../.github/workflows/checks.yml)の`Deploy production`が、mainへのpushまたはmainを指定した手動実行で、4つの検査ジョブがすべて成功した後に実行される。PRでは配備しない。新しいmainに置き換わった版と、文書だけのpushは配備しない。実行中の本番更新を新しいpushでキャンセルせず、配備を直列化する。GitHub環境変数のアカウント番号は接続先識別子であり、秘密鍵ではない。公式AWS認証アクションv6.3.0をコミットで固定し、OIDCで取得する一時権限を配備ジョブだけに与える。
 

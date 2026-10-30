@@ -55,12 +55,18 @@ def delivery_access_template():
         # This API has no resource-level IAM support. Permit only forwarded
         # CloudFormation calls; the role can operate only the existing blog stack.
         allow('ReadDefinitionsThroughStack', ['ecs:DescribeTaskDefinition'], '*', through_stack),
+        # DeregisterTaskDefinition also has no resource-level IAM support.
+        # CloudFormation uses it to retire replaced revisions and finish rollback.
+        allow('RetireDefinitionsThroughStack', ['ecs:DeregisterTaskDefinition'], '*', through_stack),
+        allow('ReadApplicationDiscoveryThroughStack', ['servicediscovery:GetService'],
+              sub('arn:${AWS::Partition}:servicediscovery:us-west-2:${AWS::AccountId}:service/srv-4uf2ei7tn3cmfk73'),
+              through_stack),
         # IAM uses a global endpoint; do not impose the ECS regional condition.
         allow('ReadRuntimeRolesThroughStack', ['iam:GetRole'], runtime_roles, {
             'ForAnyValue:StringEquals': {'aws:CalledVia': 'cloudformation.amazonaws.com'},
         }),
         allow('RegisterDefinitionsThroughStack', [
-            'ecs:RegisterTaskDefinition', 'ecs:DeregisterTaskDefinition', 'ecs:TagResource', 'ecs:UntagResource',
+            'ecs:RegisterTaskDefinition', 'ecs:TagResource', 'ecs:UntagResource',
         ], definitions, through_stack),
         allow('UpdateApplicationThroughStack', [
             'ecs:UpdateService', 'ecs:ListTagsForResource', 'ecs:TagResource', 'ecs:UntagResource',

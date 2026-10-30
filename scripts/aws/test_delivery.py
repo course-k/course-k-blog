@@ -77,6 +77,31 @@ class DeliveryTest(unittest.TestCase):
             release.apply()
         release.change_images.assert_not_called()
 
+    def test_retry_after_completed_rollback_but_not_during_cleanup(self):
+        aws = MagicMock()
+        images = {'NodeImage': 'candidate'}
+        parameters = [{'ParameterKey': 'NodeImage', 'ParameterValue': 'old'}]
+        aws.stack.side_effect = [
+            {'StackStatus': 'UPDATE_ROLLBACK_COMPLETE', 'Parameters': parameters},
+            {'StackStatus': 'UPDATE_COMPLETE',
+             'Parameters': [{'ParameterKey': 'NodeImage', 'ParameterValue': 'candidate'}]},
+        ]
+        aws.call.side_effect = [
+            {'Id': 'release-change-set'},
+            {'Status': 'CREATE_COMPLETE', 'Changes': [{'ResourceChange': {
+                'LogicalResourceId': 'ApplicationTask', 'Action': 'Modify', 'Replacement': 'True'}}]},
+            {},
+        ]
+        release = Release(aws, '123456789012', 'a' * 40)
+        release.change_images(images, 'update')
+        self.assertEqual(aws.call.call_args_list[-1].args[:2], ('cloudformation', 'execute-change-set'))
+        aws.reset_mock()
+        aws.stack.side_effect = None
+        aws.stack.return_value = {'StackStatus': 'UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS'}
+        with self.assertRaisesRegex(ReleaseError, 'Stack changed'):
+            release.change_images(images, 'update')
+        aws.call.assert_not_called()
+
     def test_failed_public_verification_restores_previous_images_and_fails_release(self):
         release = Release(MagicMock(), '123456789012', 'a' * 40)
         release.previous = {k: 'old-' + k for k in ('NodeImage', 'GoImage', 'RouterImage')}
