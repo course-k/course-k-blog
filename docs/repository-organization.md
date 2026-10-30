@@ -19,6 +19,8 @@ frontend/        画面・SSR・Markdown・フロント固有の検証
   src/components/       表示・ルーター接続
   src/features/editor/  編集操作のフック・管理API通信
   src/lib/              公開記事のSSR取得・共有型
+  public/               題字・ロゴ・ファビコン・共通OGPの配信アセット
+  assets/fonts/         記事OGPのサーバー描画用フォントと許諾
 backend/         Go API・認証・DBアクセス・SQL移行・対応テスト
 infra/           基盤設定・Nginx転送・DB初期化・監視とそのテスト
 scripts/         再利用可能な開発・検証・配備補助

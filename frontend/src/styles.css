@@ -151,8 +151,14 @@ section[aria-label="記事一覧"] {
 }
 .author-copy { min-width: 0; }
 .author-profile h1 {
-  font-size: clamp(1.4rem, 3vw, 1.75rem);
-  margin-bottom: 8px;
+  line-height: 1;
+  margin-bottom: 18px;
+}
+.blog-wordmark {
+  display: block;
+  width: 430px;
+  max-width: 100%;
+  height: auto;
 }
 .author-profile p {
   color: var(--muted);

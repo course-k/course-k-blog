@@ -6,17 +6,24 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import "../styles.css";
+import { sharingMeta, siteDescription, siteName } from "../lib/branding";
 
 export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "course_kのブログ" },
+      { title: siteName },
       {
         name: "description",
-        content: "技術のこと、日々のこと。書いたものをまとめています。",
+        content: siteDescription,
       },
+      ...sharingMeta(),
+    ],
+    links: [
+      { rel: "icon", href: "/favicon.ico", sizes: "16x16 32x32 48x48" },
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml", sizes: "any" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
     ],
   }),
   component: Root,

@@ -80,6 +80,7 @@ test("reader and owner flow against real MySQL and production SSR", async ({
   );
   expect((await reading.request.get(firstImage)).status()).toBe(404);
   expect((await page.request.get(firstImage)).status()).toBe(200);
+  expect((await page.request.get(`/og/posts/${draft.id}.png`)).status()).toBe(404);
   await page.getByRole("button", { name: "公開する", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("公開しました");
   const response = await reading.goto(`/posts/${draft.id}`);
@@ -94,6 +95,17 @@ test("reader and owner flow against real MySQL and production SSR", async ({
   const firstPublic = await (
     await reading.request.get(`/api/posts/${draft.id}`)
   ).json();
+  await expect(reading.locator('meta[property="og:title"]')).toHaveAttribute('content', title);
+  await expect(reading.locator('meta[property="og:type"]')).toHaveAttribute('content', 'article');
+  const ogp = await reading.request.get(`/og/posts/${draft.id}.png`);
+  expect(ogp.status()).toBe(200);
+  expect(ogp.headers()['content-type']).toBe('image/png');
+  // The gateway and application may both add the same no-store directive.
+  expect(new Set(ogp.headers()['cache-control'].split(',').map(value => value.trim())))
+    .toEqual(new Set(['no-store']));
+  const png = await ogp.body();
+  expect(png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))).toBe(true);
+  expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1200, 630]);
   await page
     .getByLabel("Markdown", { exact: true })
     .fill("## 更新後のメモ\n\nまだ公開していない変更です。");
@@ -125,6 +137,16 @@ test("reader and owner flow against real MySQL and production SSR", async ({
   expect(updatedPublic.publishedAt).toBe(firstPublic.publishedAt);
   await reading.setViewportSize({ width: 1280, height: 900 });
   await reading.goto("/");
+  const wordmark = reading.getByRole('heading', { level: 1, name: 'course_kのブログ' }).getByRole('img');
+  await expect(wordmark).toHaveAttribute('src', '/brand/wordmark.png');
+  expect(await wordmark.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(2027);
+  await expect(reading.locator('.author-avatar')).toHaveText('k');
+  await expect(reading.locator('.author-avatar img')).toHaveCount(0);
+  for (const asset of ['/favicon.svg', '/favicon.ico', '/apple-touch-icon.png', '/brand/wordmark.png', '/brand/ogp-home.png']) {
+    const response = await reading.request.get(asset);
+    expect(response.status(), asset).toBe(200);
+    expect(response.headers()['content-type'], asset).toMatch(/^image\//);
+  }
   await expect(
     reading.getByRole("link", { name: new RegExp(title) }),
   ).toBeVisible();
@@ -179,6 +201,7 @@ test("reader and owner flow against real MySQL and production SSR", async ({
     404,
   );
   expect((await reading.request.get(secondImage)).status()).toBe(404);
+  expect((await reading.request.get(`/og/posts/${draft.id}.png`)).status()).toBe(404);
   const operations = await (
     await page.request.get("/api/admin/operations")
   ).json();

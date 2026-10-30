@@ -11,7 +11,9 @@ ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0
 COPY --from=build /web/package.json /web/package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /web/dist ./dist
-COPY server.mjs runtime.mjs healthcheck.mjs ./
+COPY server.mjs runtime.mjs ogp.mjs healthcheck.mjs ./
+COPY assets ./assets
+RUN mkdir -p /tmp/course-k-blog-fontconfig && chown node:node /tmp/course-k-blog-fontconfig
 USER node
 EXPOSE 3000
 CMD ["npm", "start"]
