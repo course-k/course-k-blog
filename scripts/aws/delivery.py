@@ -116,7 +116,8 @@ class Release:
                                  'backend/internal/mysql/migrations', 'backend/internal/mysql/migrations.go'], cwd=ROOT)
         require(result.returncode == 0, 'Database migration changes require a separate release')
         stack = self.aws.stack()
-        require(stack['StackStatus'] == 'UPDATE_COMPLETE', 'Production stack is not ready for an update')
+        require(stack['StackStatus'] in {'UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'},
+                'Production stack is not ready for an update')
         require(f':{self.account}:stack/{STACK}/' in stack['StackId'], 'Unexpected stack account')
         self.outputs = {entry['OutputKey']: entry['OutputValue'] for entry in stack['Outputs']}
         self.previous = {entry['ParameterKey']: entry['ParameterValue'] for entry in stack['Parameters']}
@@ -223,7 +224,8 @@ class Release:
 
     def change_images(self, images, suffix):
         stack = self.aws.stack()
-        require(stack['StackStatus'] == 'UPDATE_COMPLETE', 'Stack changed before release')
+        require(stack['StackStatus'] in {'UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'},
+                'Stack changed before release')
         name = f'{STACK}-release-{self.run_id}-{self.attempt}-{suffix}'
         result = self.aws.call('cloudformation', 'create-change-set', data={
             'StackName': STACK, 'ChangeSetName': name, 'ChangeSetType': 'UPDATE',

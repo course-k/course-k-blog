@@ -55,6 +55,18 @@ class DeliveryAccessTest(unittest.TestCase):
         self.assertNotIn('migration', json.dumps(run))
         self.assertIn('ecs:cluster', run['Condition']['ArnLike'])
 
+    def test_provider_cleanup_and_attribute_reads_are_forwarded_only(self):
+        cleanup = next(s for s in self.statements if s['Sid'] == 'RetireDefinitionsThroughStack')
+        self.assertEqual(cleanup['Action'], ['ecs:DeregisterTaskDefinition'])
+        self.assertEqual(cleanup['Resource'], '*')
+        discovery = next(s for s in self.statements if s['Sid'] == 'ReadApplicationDiscoveryThroughStack')
+        self.assertEqual(discovery['Action'], ['servicediscovery:GetService'])
+        self.assertIn('service/srv-4uf2ei7tn3cmfk73', json.dumps(discovery['Resource']))
+        for statement in (cleanup, discovery):
+            self.assertEqual(statement['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'],
+                             'cloudformation.amazonaws.com')
+            self.assertEqual(statement['Condition']['StringEquals']['aws:RequestedRegion'], 'us-west-2')
+
     def test_inline_policy_fits_role_limit_and_no_private_values(self):
         policy = json.dumps(self.role['Policies'][0]['PolicyDocument'], separators=(',', ':'))
         self.assertLess(len(policy), 10240)
