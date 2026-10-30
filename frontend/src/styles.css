@@ -108,17 +108,23 @@ footer {
   min-height: 112px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
+  justify-content: flex-start;
+  gap: 24px;
 }
 .brand {
-  font-size: 1rem;
-  font-weight: 500;
-  border-bottom: 3px solid var(--lime);
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  flex-shrink: 0;
+}
+.brand img {
+  display: block;
+  height: 28px;
+  width: auto;
 }
 .site-header nav {
   display: flex;
-  gap: 24px;
+  gap: 20px;
   font-size: 0.85rem;
 }
 .site-header nav a {
@@ -142,12 +148,20 @@ section[aria-label="記事一覧"] {
   width: 52px;
   height: 52px;
   flex-shrink: 0;
-  display: grid;
-  place-items: center;
+  position: relative;
+  overflow: hidden;
   border-radius: 50%;
   background: #f1f5ed;
-  color: var(--link);
-  font-size: 25px;
+}
+.author-avatar img {
+  /* Approved B: a 550px square at (130, 20) in the original 837px photo. */
+  position: absolute;
+  width: 152.181818%;
+  max-width: none;
+  height: auto;
+  left: -23.636364%;
+  top: -3.636364%;
+  display: block;
 }
 .author-copy { min-width: 0; }
 .author-profile h1 {
@@ -223,7 +237,7 @@ section[aria-label="記事一覧"] {
 .archive-empty { color: var(--muted); font-size: 0.85rem; }
 @media (max-width: 600px) {
   .author-profile { gap: 14px; padding-top: 20px; padding-bottom: 20px; margin-bottom: 16px; }
-  .author-avatar { width: 40px; height: 40px; font-size: 21px; }
+  .author-avatar { width: 40px; height: 40px; }
   .author-profile h1 { font-size: 1.3rem; }
   .author-profile p { font-size: 0.85rem; }
   .author-links a { min-height: 44px; }
@@ -650,13 +664,6 @@ footer {
   }
   .site-header {
     min-height: 90px;
-    gap: 12px;
-  }
-  .site-header nav {
-    gap: 16px;
-  }
-  .brand {
-    font-size: 0.9rem;
   }
   .post-row {
     padding: 24px;

@@ -1,7 +1,9 @@
 export function AuthorProfile() {
   return (
     <section className="author-profile" aria-label="プロフィール">
-      <span className="author-avatar" aria-hidden="true">k</span>
+      <span className="author-avatar">
+        <img src="/profile/rider.webp" width="837" height="837" alt="バイクに乗るcourse_k" />
+      </span>
       <div className="author-copy">
         <h1><img className="blog-wordmark" src="/brand/wordmark.png" width="2027" height="254" alt="course_kのブログ" /></h1>
         <p>技術のこと、日々のこと。このブログと、Qiita・note・Wantedlyに書いたものをまとめています。</p>

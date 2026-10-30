@@ -176,10 +176,10 @@ function Screen() {
   return (
     <>
       <header className="site-header">
-        <a className="brand" href="#">
-          course_kのブログ
+        <a className="brand" href="#" aria-label="course_kのブログのトップへ">
+          <img src="/brand/mark.svg" width="35" height="28" alt="" />
         </a>
-        <nav>
+        <nav aria-label="メイン">
           <a href="#">記事</a>
           <a href="#">管理</a>
         </nav>
