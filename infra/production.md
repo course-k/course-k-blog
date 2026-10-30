@@ -45,9 +45,9 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 
 ### 本番権限の分離
 
-#### GitHubからのアプリ更新用アクセス（登録前）
+#### GitHubからのアプリ更新用アクセス（登録済み・自動配備は未設定）
 
-`python3 scripts/aws/delivery_access.py`で専用のアクセス定義を生成する。これはAWSを呼び出さず、本番更新も開始しない。管理者が別スタック`course-k-blog-delivery-access`として確認・登録する。2026-10-30にコンソールで既存IDプロバイダ0件を確認したため、この定義はGitHub用OIDCプロバイダを新規作成する。既にプロバイダが存在する場合は、そのまま適用せず既存設定を参照する設計へ変更する。
+`python3 scripts/aws/delivery_access.py`で専用のアクセス定義を生成する。これはAWSを呼び出さず、本番更新も開始しない。管理者が別スタック`course-k-blog-delivery-access`として確認・登録した。2026-10-30に既存IDプロバイダ0件を確認したうえでGitHub用OIDCプロバイダと専用ロールを作成し、両資源とスタックのCREATE_COMPLETEを確認済み。後日の変更は同じスタックの更新として扱う。他のスタックを新設してこのプロバイダを重複作成しない。
 
 接続元は`course-k/course-k-blog`の`main`だけで、GitHubの通常のsubject形式と所有者・リポジトリID付き形式を完全一致で許可する。PR、別ブランチ、Environmentを使うsubjectは許可しない。GitHub Actionsで`id-token: write`を宣言し、`course-k-blog-github-deploy`を利用する。長期アクセスキーや管理者権限をGitHubへ渡さない。
 
@@ -60,7 +60,7 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 3. 既存テンプレートを維持し、NodeImage/GoImage/RouterImageだけを対象にする。変更セットでアプリ・移行タスクとアプリサービス、サービス名に追随する監視以外が変更される場合は停止する。
 4. 更新前バックアップの成功、ECSの安定化、公開ページの動作を確認し、失敗時はCIを失敗として扱う。DB移行・基盤変更は別手順とし、自動で実行しない。
 
-登録前の確認対象はOIDCプロバイダと専用ロールだけで、サイト更新の開始とは分ける。GitHubの接続確認後に自動配備を有効化し、状態は公開台帳へ集約する。公式仕様は[GitHub OIDC](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)、[ECSの権限](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecs.html)、[CloudFormationサービスロール](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html)を参照する。
+今回登録したのはOIDCプロバイダと専用ロールだけで、サイト更新の開始とは分ける。GitHubの接続確認後に自動配備を有効化し、状態は公開台帳へ集約する。公式仕様は[GitHub OIDC](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)、[ECSの権限](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecs.html)、[CloudFormationサービスロール](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html)を参照する。
 
 検証用の`course-k-validation-operator`と本番用の`course-k-production-operator`を分離する。本番用アクセス設定は管理者が適用済みで、次の範囲を対象とする。
 
