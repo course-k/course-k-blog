@@ -71,6 +71,7 @@ class DeliveryAccessTest(unittest.TestCase):
         self.assertEqual(len(roles['Resource']), 4)
         self.assertEqual(roles['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'],
                          'cloudformation.amazonaws.com')
+        self.assertNotIn('aws:RequestedRegion', json.dumps(roles['Condition']))
 
 
 if __name__ == '__main__':
