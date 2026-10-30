@@ -120,6 +120,25 @@ class DeliveryTest(unittest.TestCase):
         self.assertEqual(release.change_images.call_args_list[-1].args, (release.previous, 'restore'))
         release.verify.assert_called_with(release.previous)
 
+    def test_stack_failure_logs_only_denied_action_names(self):
+        aws = MagicMock()
+        aws.stack.side_effect = [
+            {'StackStatus': 'UPDATE_COMPLETE', 'Parameters': []},
+            {'StackStatus': 'UPDATE_ROLLBACK_IN_PROGRESS'},
+        ]
+        aws.call.side_effect = [
+            {'Id': 'change-set'},
+            {'Status': 'CREATE_COMPLETE', 'Changes': [{'ResourceChange': {
+                'LogicalResourceId': 'ApplicationTask', 'Action': 'Modify', 'Replacement': 'True'}}]},
+            {},
+            {'StackEvents': [{'ResourceStatusReason':
+                             'private-secret-value not authorized to perform: rds:DescribeDBInstances on resource: private-arn'}]},
+        ]
+        with self.assertRaises(ReleaseError) as caught:
+            Release(aws, '123456789012', 'a' * 40).change_images({}, 'update')
+        self.assertIn('denied actions: rds:DescribeDBInstances', str(caught.exception))
+        self.assertNotIn('private', str(caught.exception))
+
 
 if __name__ == '__main__':
     unittest.main()

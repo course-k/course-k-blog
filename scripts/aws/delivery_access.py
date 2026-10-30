@@ -61,6 +61,18 @@ def delivery_access_template():
         allow('ReadApplicationDiscoveryThroughStack', ['servicediscovery:GetService'],
               sub('arn:${AWS::Partition}:servicediscovery:us-west-2:${AWS::AccountId}:service/srv-4uf2ei7tn3cmfk73'),
               through_stack),
+        # Outputs are re-evaluated on an image-only update. These reads return
+        # configuration, never database records or the managed secret's value.
+        allow('ReadDatabaseOutputThroughStack', ['rds:DescribeDBInstances'],
+              sub('arn:${AWS::Partition}:rds:us-west-2:${AWS::AccountId}:db:course-k-blog-production-database-3pxvru6efueg'),
+              through_stack),
+        allow('ReadGatewayOutputsThroughStack', ['apigateway:GET'], [
+            sub('arn:${AWS::Partition}:apigateway:us-west-2::/apis/5dqxughlo6'),
+            sub('arn:${AWS::Partition}:apigateway:us-west-2::/domainnames/blog.course-k.com'),
+        ], through_stack),
+        allow('ReadBootstrapRepositoryOutputThroughStack', ['ecr:DescribeRepositories'],
+              sub('arn:${AWS::Partition}:ecr:us-west-2:${AWS::AccountId}:repository/'
+                  + f'{stack}-bootstraprepository-*'), through_stack),
         # IAM uses a global endpoint; do not impose the ECS regional condition.
         allow('ReadRuntimeRolesThroughStack', ['iam:GetRole'], runtime_roles, {
             'ForAnyValue:StringEquals': {'aws:CalledVia': 'cloudformation.amazonaws.com'},
