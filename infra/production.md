@@ -45,7 +45,7 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 
 ### 本番権限の分離
 
-#### GitHubからのアプリ更新用アクセス（登録済み・自動配備は未設定）
+#### GitHubからのアプリ更新と専用アクセス
 
 `python3 scripts/aws/delivery_access.py`で専用のアクセス定義を生成する。これはAWSを呼び出さず、本番更新も開始しない。管理者が別スタック`course-k-blog-delivery-access`として確認・登録した。2026-10-30に既存IDプロバイダ0件を確認したうえでGitHub用OIDCプロバイダと専用ロールを作成し、両資源とスタックのCREATE_COMPLETEを確認済み。後日の変更は同じスタックの更新として扱う。他のスタックを新設してこのプロバイダを重複作成しない。
 
@@ -53,14 +53,17 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 
 権限はオレゴンの本番ブログ用ECR（node/go/router）へのイメージ登録、既存本番スタックの変更セット、CloudFormation経由のアプリ・移行タスク定義更新と既存サービス更新、関連する監視の更新、更新前バックアップ用のアプリタスク起動に絞る。渡せる実行ロールは既存のアプリ・移行用4種で、自分の権限変更、IAMユーザー作成、別ロールへの切替、RDS/DNS/ネットワークの変更、S3や秘密値の直接読み取りは許可しない。ただし、配備されるアプリは実行時の権限で記事・画像・バックアップへアクセスできる。配備権限が記事データから完全に隔離される意味ではない。
 
-自動配備ワークフローはまだ追加していない。アクセス定義の単体試験・構文検査は、OIDC接続や本番更新の成功を保証しない。有効化前に次を実施する。
+[検証ワークフロー](../.github/workflows/checks.yml)の`Deploy production`が、mainへのpushまたはmainを指定した手動実行で、4つの検査ジョブがすべて成功した後に実行される。PRでは配備しない。新しいmainに置き換わった版と、文書だけのpushは配備しない。実行中の本番更新を新しいpushでキャンセルせず、配備を直列化する。GitHub環境変数のアカウント番号は接続先識別子であり、秘密鍵ではない。公式AWS認証アクションv6.3.0をコミットで固定し、OIDCで取得する一時権限を配備ジョブだけに与える。
 
-1. 本番スタックにCloudFormationサービスロールが設定されていないことを実環境で確認する。既存の強いサービスロールがある場合、この権限設計をそのまま採用しない。
-2. mainの全CI成功を条件に、対象コミットを固定してARM64イメージをビルドし、ECRのdigestで固定する。初回は手動開始で接続と変更内容を検証する。
-3. 既存テンプレートを維持し、NodeImage/GoImage/RouterImageだけを対象にする。変更セットでアプリ・移行タスクとアプリサービス、サービス名に追随する監視以外が変更される場合は停止する。
-4. 更新前バックアップの成功、ECSの安定化、公開ページの動作を確認し、失敗時はCIを失敗として扱う。DB移行・基盤変更は別手順とし、自動で実行しない。
+[`delivery.py`](../scripts/aws/delivery.py)は以下の手順を実行する。`--apply`がない場合は読み取りと前提確認までで、ビルド・バックアップ・更新は開始しない。
 
-今回登録したのはOIDCプロバイダと専用ロールだけで、サイト更新の開始とは分ける。GitHubの接続確認後に自動配備を有効化し、状態は公開台帳へ集約する。公式仕様は[GitHub OIDC](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)、[ECSの権限](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecs.html)、[CloudFormationサービスロール](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html)を参照する。
+1. AWSアカウントと専用ロール、テスト対象とcheckoutのコミット、既存本番の安定状態・ARM64・固定イメージを照合する。CloudFormationサービスロールが付いた場合は停止する。DB移行ディレクトリと移行処理が適用済み基準コミット672e66fから変わっている場合も停止する。DB移行は別途レビュー・実施後に基準を更新する。
+2. GitHubのARM64ランナーでNode/Go/Nginxをビルドし、専用ECRへ登録してdigestで固定する。Docker認証情報は一時ディレクトリに置いて終了時に削除し、保存・表示しない。
+3. 既存アプリ定義のGoコマンドを`backup`にした単発タスクでバックアップを実行する。成功した場合だけ更新を続け、その単発タスクだけを停止する。
+4. 現行CloudFormationテンプレートと他のパラメータを維持し、NodeImage/GoImage/RouterImageだけの変更セットを作る。アプリ・移行タスク、置き換えないアプリサービス、サービス名に追随する監視以外の変更は拒否してから実行する。
+5. 更新したパラメータでスタックが完了したこと、稼働タスクのdigest・全コンテナのHEALTHY、公開HTTPSの一覧・readiness・healthを確認する。起動失敗はECS/CloudFormationのロールバックに任せ、配備を失敗にする。更新完了後の確認で失敗した場合は、元の3イメージのdigestへ戻して確認し、候補の配備自体は失敗として扱う。
+
+アクセス定義の単体試験・構文検査は、OIDCの実接続や本番配備の成功を保証しない。実際の実行結果は公開台帳とGitHubジョブで区別する。作成済みOIDCプロバイダと専用ロールは維持し、基盤・認証・DB構造の変更を通常のアプリ自動更新へ混ぜない。公式仕様は[GitHub OIDC](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)、[ARM64ランナー](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)、[CloudFormationサービスロール](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html)を参照する。
 
 検証用の`course-k-validation-operator`と本番用の`course-k-production-operator`を分離する。本番用アクセス設定は管理者が適用済みで、次の範囲を対象とする。
 

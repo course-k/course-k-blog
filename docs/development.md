@@ -109,7 +109,7 @@ TEST_LIVE_EXTERNAL=1 go -C backend test -count=1 -v ./internal/external -run Tes
 
 - **Browser, SSR, Go and MySQL**：専用Compose環境を構築し、仮記事で実ブラウザ・本番SSR・実API・DBの通し確認と撤去を行う。
 
-ワークフローは読み取り権限で動き、AWS認証情報・デプロイ処理・実記事の公開処理を含めない。DockerのARM64ビルド、実AWSの配備・復元・通知・容量は別の確認範囲。GitHub上の実行結果を確認するまでは、CI成功・必須チェック設定済みとは表現しない。mainへの自動デプロイはない。
+PRの4検査ジョブは読み取り権限で動き、AWSへ接続しない。mainでは全検査成功後に`Deploy production`がOIDCの専用権限でARM64ビルド・バックアップ・本番更新・更新後検証を行う。PR、古くなったmain、文書だけのpushでは配備しない。本番更新中の自動キャンセルは行わない。DB移行・基盤変更は自動配備に含めない。[配備手順と制約](../infra/production.md#githubからのアプリ更新と専用アクセス)を参照。GitHub上の実行結果を確認するまでは、CI・配備成功や必須チェック設定済みとは表現しない。
 
 Actionsの利用方法は[checkout](https://github.com/actions/checkout)、[setup-node](https://github.com/actions/setup-node)、[setup-go](https://github.com/actions/setup-go)の公式資料を参照する。CIでの実行時間はGitHubの利用枠を使うため、反復実行は変更に必要な範囲とする。
 
