@@ -70,3 +70,14 @@ class ProductionAccessTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DirectUploadBoundaryTest(unittest.TestCase):
+    def test_boundary_covers_generated_image_bucket_staging_keys(self):
+        boundary = production_access_template()['Resources']['RuntimeBoundary']['Properties']['PolicyDocument']['Statement']
+        objects = next(s for s in boundary if s['Action'] == ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'])
+        pattern = objects['Resource']['Fn::Sub'].replace('arn:${AWS::Partition}:s3:::', '')
+        import fnmatch
+        self.assertTrue(fnmatch.fnmatch('course-k-blog-production-imagesbucket-abc123/images/staging/' + 'a' * 43, pattern))
+        self.assertTrue(fnmatch.fnmatch('course-k-blog-production-imagesbucket-abc123/images/' + 'a' * 43 + '.png', pattern))
+        self.assertFalse(fnmatch.fnmatch('other-bucket/images/staging/x', pattern))

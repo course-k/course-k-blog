@@ -129,3 +129,31 @@ class ProductionTemplateTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DirectImageUploadTest(unittest.TestCase):
+    def setUp(self):
+        self.resources = production_template()['Resources']
+
+    def test_cors_allows_only_the_blog_origin_to_post(self):
+        bucket = self.resources['ImagesBucket']['Properties']
+        self.assertTrue(all(bucket['PublicAccessBlockConfiguration'].values()))
+        rules = bucket['CorsConfiguration']['CorsRules']
+        self.assertEqual(len(rules), 1)
+        self.assertEqual(rules[0]['AllowedOrigins'], [{'Ref': 'PublicOrigin'}])
+        self.assertEqual(rules[0]['AllowedMethods'], ['POST'])
+        self.assertNotIn('*', json.dumps(rules))
+
+    def test_only_staging_objects_expire(self):
+        rules = self.resources['ImagesBucket']['Properties']['LifecycleConfiguration']['Rules']
+        self.assertEqual([rule['Prefix'] for rule in rules], ['images/staging/'])
+        self.assertEqual(rules[0]['ExpirationInDays'], 1)
+        self.assertEqual(rules[0]['NoncurrentVersionExpiration']['NoncurrentDays'], 1)
+
+    def test_task_role_covers_staging_and_official_images_only(self):
+        statement = self.resources['ApplicationTaskRole']['Properties']['Policies'][0]['PolicyDocument']['Statement'][0]
+        self.assertEqual(statement['Action'], ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'])
+        image_resources = [r for r in statement['Resource'] if 'ImagesBucket' in json.dumps(r)]
+        # images/* includes images/staging/*; nothing outside the images/ prefix.
+        self.assertEqual(image_resources, [{'Fn::Sub': '${ImagesBucket.Arn}/images/*'}])
+        self.assertNotIn('PutObjectAcl', json.dumps(statement))

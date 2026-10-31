@@ -26,14 +26,14 @@ def production_template():
     parameters['RuntimeBoundaryArn'] = {
         'Type': 'String',
         'AllowedPattern': r'arn:aws:iam::[0-9]{12}:policy/course-k-blog-production-access-RuntimeBoundary-[a-zA-Z0-9]+',
-        'Description': 'Administrator-owned boundary from course-k-blog-production-access; not editable by the operator.',
+        'Description': 'Boundary from the access stack.',
     }
-    parameters['PublicOrigin'] = {'Type': 'String', 'AllowedPattern': r'https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?', 'Description': 'Dedicated blog hostname, HTTPS, no path or trailing slash.'}
+    parameters['PublicOrigin'] = {'Type': 'String', 'AllowedPattern': r'https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?', 'Description': 'HTTPS blog origin without path.'}
     parameters.update({
-        'CertificateArn': {'Type': 'String', 'AllowedPattern': r'arn:aws:acm:us-west-2:[0-9]{12}:certificate/[a-z0-9-]+', 'Description': 'Issued regional ACM certificate covering PublicOrigin. Validate DNS before deployment.'},
-        'LoginDomainPrefix': {'Type': 'String', 'AllowedPattern': '[a-z0-9][a-z0-9-]{0,61}[a-z0-9]', 'Description': 'Available Cognito hosted-login prefix, unique in Oregon.'},
-        'AdminSubject': {'Type': 'String', 'Default': '', 'AllowedPattern': '^$|^[a-f0-9-]{36}$', 'Description': 'Exact sub of the owner in this pool; required before runtime activation.'},
-        'NotificationEmail': {'Type': 'String', 'AllowedPattern': r'[^ @]+@[^ @]+\.[^ @]+', 'Description': 'Owner address; subscription requires recipient confirmation.'},
+        'CertificateArn': {'Type': 'String', 'AllowedPattern': r'arn:aws:acm:us-west-2:[0-9]{12}:certificate/[a-z0-9-]+', 'Description': 'Issued ACM certificate for PublicOrigin.'},
+        'LoginDomainPrefix': {'Type': 'String', 'AllowedPattern': '[a-z0-9][a-z0-9-]{0,61}[a-z0-9]', 'Description': 'Cognito hosted-login prefix.'},
+        'AdminSubject': {'Type': 'String', 'Default': '', 'AllowedPattern': '^$|^[a-f0-9-]{36}$', 'Description': 'Owner sub; required before runtime.'},
+        'NotificationEmail': {'Type': 'String', 'AllowedPattern': r'[^ @]+@[^ @]+\.[^ @]+', 'Description': 'Owner alert address.'},
     })
     template.setdefault('Rules', {})['RuntimeRequiresOwner'] = {
         'RuleCondition': {'Fn::Equals': [ref('EnableRuntime'), 'true']},
@@ -66,6 +66,14 @@ def production_template():
         {'Name': 'OIDC_ADMIN_SUBJECT', 'Value': ref('AdminSubject')},
     ])
     resources['Stage']['Properties']['DefaultRouteSettings'] = {'ThrottlingBurstLimit': 20, 'ThrottlingRateLimit': 10}
+    # Browsers POST image bytes straight to images/staging/ with a 5-minute signed
+    # policy; only the blog origin may read the POST response. Unverified staging
+    # objects expire after one day. Official images/ objects have no expiry.
+    images_bucket = resources['ImagesBucket']['Properties']
+    images_bucket['CorsConfiguration'] = {'CorsRules': [{'AllowedOrigins': [ref('PublicOrigin')], 'AllowedMethods': ['POST']}]}
+    images_bucket['LifecycleConfiguration'] = {'Rules': [{
+        'Status': 'Enabled', 'Prefix': 'images/staging/', 'ExpirationInDays': 1, 'NoncurrentVersionExpiration': {'NoncurrentDays': 1},
+    }]}
     resources['BackupsBucket']['Properties']['LifecycleConfiguration'] = {'Rules': [{
         'Id': 'retired-archive-versions', 'Status': 'Enabled', 'Prefix': 'backups/',
         'NoncurrentVersionExpiration': {'NoncurrentDays': 7}, 'AbortIncompleteMultipartUpload': {'DaysAfterInitiation': 1},

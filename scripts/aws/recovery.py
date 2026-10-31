@@ -53,6 +53,9 @@ def recovery_template():
     # These are disposable copies. Unversioned objects can be removed by the
     # checker after verification, so CloudFormation can delete the empty bucket.
     bucket['Properties'].pop('VersioningConfiguration')
+    # Restored copies receive no browser uploads.
+    bucket['Properties'].pop('CorsConfiguration')
+    bucket['Properties'].pop('LifecycleConfiguration')
     resources['RestoreMediaBucket'] = bucket
     policy = renamed(resources['ImagesBucketPolicy'], {'ImagesBucket': 'RestoreMediaBucket'})
     policy['Condition'] = 'RestoreExercise'
