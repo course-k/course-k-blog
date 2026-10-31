@@ -1,13 +1,43 @@
-import type { AdminPost } from "../../lib/types";
+import type { AdminPost, SyncState } from "../../lib/types";
 
 const REQUEST_TIMEOUT_MS = 15_000;
+// Completion verifies and re-encodes up to 10MB on the server (20 s budget).
+const COMPLETE_TIMEOUT_MS = 30_000;
+
+export type UploadTarget = {
+  method: "POST" | "PUT";
+  url: string;
+  fields?: Record<string, string>;
+  expiresAt: string;
+};
+export type UploadResult = { id: string; url: string; width: number; height: number };
+export type UploadStatus = {
+  uploadId: string;
+  status: "pending" | "processing" | "completed" | "failed" | "expired";
+  upload?: UploadTarget;
+  result?: UploadResult;
+  failureCode?: string;
+  error?: string;
+};
+export type UploadRequest = {
+  clientImageId: string;
+  fileName: string;
+  contentType: string;
+  byteSize: number;
+  sha256: string;
+};
 
 export class ApiError extends Error {
   readonly status: number;
+  /** Seconds from Retry-After, when the server sent one. */
+  readonly retryAfter: number | null;
+  readonly body: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, retryAfter: number | null = null, body: unknown = null) {
     super(message);
     this.status = status;
+    this.retryAfter = retryAfter;
+    this.body = body;
   }
 }
 
@@ -34,12 +64,14 @@ export async function requestAdminJson<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   });
+  const retryHeader = Number(response.headers.get("Retry-After"));
+  const retryAfter = Number.isFinite(retryHeader) && retryHeader > 0 ? retryHeader : null;
   let data: unknown;
   try {
     data = await response.json();
   } catch {
     if (!response.ok)
-      throw new ApiError(response.status, "処理できませんでした。");
+      throw new ApiError(response.status, "処理できませんでした。", retryAfter);
     throw new ResponseFormatError("応答の形式を確認できませんでした。");
   }
   if (!response.ok) {
@@ -50,7 +82,7 @@ export async function requestAdminJson<T>(
       typeof data.error === "string"
         ? data.error
         : "処理できませんでした。";
-    throw new ApiError(response.status, message);
+    throw new ApiError(response.status, message, retryAfter, data);
   }
   return data as T;
 }
@@ -69,24 +101,38 @@ export const adminApi = {
     ),
   get: (id: string) =>
     requestAdminJson<AdminPost>(`/admin/posts/${encodeURIComponent(id)}`),
-  create: (title: string, markdown: string, creationKey: string) =>
+  create: (doc: { title: string; markdown: string }, creationKey: string) =>
     requestAdminJson<AdminPost>("/admin/posts", "POST", {
-      title,
-      markdown,
+      title: doc.title,
+      markdown: doc.markdown,
       creationKey,
     }),
-  save: (id: string, title: string, markdown: string, version: number) =>
-    requestAdminJson<AdminPost>(`/admin/posts/${id}`, "PUT", {
-      title,
-      markdown,
+  save: (id: string, doc: { title: string; markdown: string }, version: number) =>
+    requestAdminJson<AdminPost>(`/admin/posts/${encodeURIComponent(id)}`, "PUT", {
+      title: doc.title,
+      markdown: doc.markdown,
       version,
     }),
   publish: (id: string, version: number) =>
-    requestAdminJson<AdminPost>(`/admin/posts/${id}/publish`, "POST", {
+    requestAdminJson<AdminPost>(`/admin/posts/${encodeURIComponent(id)}/publish`, "POST", {
       version,
     }),
   unpublish: (id: string, version: number) =>
-    requestAdminJson<AdminPost>(`/admin/posts/${id}/unpublish`, "POST", {
+    requestAdminJson<AdminPost>(`/admin/posts/${encodeURIComponent(id)}/unpublish`, "POST", {
       version,
     }),
+  beginUpload: (request: UploadRequest) =>
+    requestAdminJson<UploadStatus>("/admin/image-uploads", "POST", request),
+  completeUpload: (uploadId: string) =>
+    requestAdminJson<UploadStatus>(
+      `/admin/image-uploads/${encodeURIComponent(uploadId)}/complete`,
+      "POST",
+      {},
+      AbortSignal.timeout(COMPLETE_TIMEOUT_MS),
+    ),
+  uploadStatus: (uploadId: string) =>
+    requestAdminJson<UploadStatus>(`/admin/image-uploads/${encodeURIComponent(uploadId)}`),
+  syncStates: () => requestAdminJson<SyncState[]>("/admin/sync"),
+  requestSync: (source: SyncState["source"]) =>
+    requestAdminJson<{ queued: boolean }>(`/admin/sync/${source}`, "POST", {}),
 };

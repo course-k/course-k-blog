@@ -1,504 +1,419 @@
-import {
-  test,
-  expect,
-  showScreen,
-  startArticle,
-  publishArticle,
-  loseNextResponse,
-} from "./helpers";
+import type { Page } from "@playwright/test";
+import { test, expect, showScreen, typeArticle, saveState, noHorizontalScroll } from "./helpers";
+import type { FixtureConfig } from "./fixtureTypes";
 
-test("saved article can be published, previewed on mobile, hidden and logged out", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin" });
-  await startArticle(page);
-  const input = await page.locator(".markdown-input").boundingBox();
-  const preview = await page.locator(".preview").boundingBox();
-  expect(preview!.x).toBeGreaterThan(input!.x);
-  await page.getByRole("button", { name: "下書きを保存", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("下書きを保存しました");
-  await publishArticle(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator(".preview")).toBeHidden();
-  await page.getByRole("button", { name: "プレビュー", exact: true }).click();
-  await expect(
-    page
-      .getByRole("region", { name: "プレビュー" })
-      .getByRole("heading", { name: "確認する見出し", exact: true }),
-  ).toBeVisible();
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "非公開に戻す", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("非公開にしました");
-  await expect(page.locator(".editor-state")).toContainText("下書き");
-  await page.getByRole("button", { name: "ログアウト", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "管理者ログイン" }),
-  ).toBeVisible();
+const admin = (page: Page, config: Partial<FixtureConfig> = {}, width = 1280, clock = true) =>
+  showScreen(page, { screen: "admin", ...config }, width, { clock });
+const writes = (page: Page) =>
+  page.evaluate(() => window.fixtureServer.calls.filter((call) => /^(POST|PUT) \/api\/admin\/posts/.test(call) && !/publish/.test(call)));
+const body = (page: Page) => page.getByLabel("本文（Markdown）", { exact: true });
+const title = (page: Page) => page.getByLabel("タイトル", { exact: true });
+const nav = (page: Page) => page.getByRole("navigation", { name: "管理メニュー" });
+const searchOf = (page: Page) =>
+  page.evaluate(() => (window as unknown as { router: { state: { location: { search: Record<string, string> } } } }).router.state.location.search);
+
+test("opens on an empty new article without creating one or showing removed controls", async ({ page }) => {
+  await admin(page);
+  await expect(page.getByRole("heading", { level: 1, name: "新規作成" })).toBeVisible();
+  await expect(title(page)).toHaveValue("");
+  await expect(body(page)).toHaveValue("");
+  await expect(body(page)).toBeEditable();
+  await page.clock.runFor(60_000);
+  expect(await writes(page)).toEqual([]);
+  for (const removed of ["下書きを保存", "画像を挿入", "＋ 新しい記事", "ログアウト", "記事一覧を表示"])
+    await expect(page.getByRole("button", { name: removed })).toHaveCount(0);
+  await expect(page.locator('input[type="file"], input[type="number"]')).toHaveCount(0);
+  for (const text of ["未入力", "書きたいことを、ここから。", "記事を選ぶか、新しい記事を作成してください。", "編集内容は自動保存されません。"])
+    await expect(page.getByText(text)).toHaveCount(0);
+  await expect(nav(page).getByRole("link", { name: "新規作成" })).toHaveAttribute("aria-current", "page");
 });
 
-for (const action of ["navigate", "new", "logout"] as const) {
-  test(`unsaved changes: cancelling ${action} preserves input`, async ({
-    page,
-  }) => {
-    await showScreen(page, { screen: "admin" });
-    await startArticle(page);
-    let confirmed = false;
-    page.once("dialog", async (dialog) => {
-      confirmed = true;
-      await dialog.dismiss();
-    });
-    if (action === "navigate")
-      await page.evaluate(() => {
-        void window.navigateAway();
-      });
-    else
-      await page
-        .getByRole("button", {
-          name: action === "new" ? "＋ 新しい記事" : "ログアウト",
-          exact: true,
-        })
-        .click();
-    await expect.poll(() => confirmed).toBe(true);
-    await expect(page.getByLabel("タイトル", { exact: true })).toHaveValue(
-      "検証用記事",
-    );
-    expect(
-      await page.evaluate(
-        () =>
-          window.calls.filter((call) => call === "DELETE /api/session").length,
-      ),
-    ).toBe(0);
+test("menu switches between new, list and settings; only settings has sync, backup and logout", async ({ page }) => {
+  await admin(page, { posts: [{ title: "既存の記事" }] });
+  const editor = page.locator(".article-editor");
+  for (const text of ["バックアップ", "外部記事の同期", "ログアウト", "既存の記事"])
+    await expect(editor.getByText(text)).toHaveCount(0);
+  await nav(page).getByRole("link", { name: "記事一覧" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "記事一覧" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "既存の記事" })).toBeVisible();
+  await nav(page).getByRole("link", { name: "設定" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "設定" })).toBeVisible();
+  const icons = page.getByRole("group", { name: "媒体ごとの同期" }).getByRole("button");
+  await expect(icons).toHaveCount(3);
+  expect(await icons.evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")))).toEqual([
+    "Qiitaを同期",
+    "Wantedlyを同期",
+    "noteを同期",
+  ]);
+  await expect(page.getByRole("heading", { name: "バックアップ" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "ログアウト" })).toBeVisible();
+  for (const removed of ["外部記事の状態を再取得", "バックアップの状態を再取得", "すべて同期"])
+    await expect(page.getByRole("button", { name: removed })).toHaveCount(0);
+  await nav(page).getByRole("link", { name: "新規作成" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "新規作成" })).toBeVisible();
+});
+
+for (const width of [1440, 1024, 768, 390, 320]) {
+  test(`editor layout ${width}: side by side on desktop, switchable when narrow, no overflow`, async ({ page }) => {
+    await admin(page, {}, width);
+    await typeArticle(page, "長いタイトル".repeat(30), "## 見出し\n\n" + "本文".repeat(400));
+    const input = (await body(page).boundingBox())!;
+    const preview = page.getByRole("region", { name: "プレビュー" });
+    if (width >= 768) {
+      const box = (await preview.boundingBox())!;
+      expect(box.x).toBeGreaterThan(input.x + input.width - 1);
+      expect(Math.abs(box.width - input.width)).toBeLessThan(24);
+      await expect(page.getByRole("group", { name: "表示の切り替え" })).toBeHidden();
+    } else {
+      await expect(preview).toBeHidden();
+      await page.getByRole("button", { name: "プレビュー", exact: true }).click();
+      await expect(preview).toBeVisible();
+      await expect(body(page)).toBeHidden();
+    }
+    await expect(page.getByRole("button", { name: "公開する" })).toBeVisible();
+    await noHorizontalScroll(page);
+    await nav(page).getByRole("link", { name: "設定" }).click();
+    await page.clock.runFor(1_000);
+    await expect(page.getByRole("button", { name: "ログアウト" })).toBeVisible();
+    await noHorizontalScroll(page);
   });
 }
 
-test("list refresh failure does not turn a successful save into a failed write", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin", scenario: "list-failure" });
-  await startArticle(page);
-  await page.getByRole("button", { name: "下書きを保存", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("下書きを保存しました");
-  await expect(page.getByRole("alert")).toContainText(
-    "記事一覧を更新できません",
-  );
-  await expect(
-    page.getByRole("button", { name: "下書きを保存", exact: true }),
-  ).toBeEnabled();
-});
-
-test("publish server error preserves saved input and requires outcome confirmation", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin", scenario: "publish-failure" });
-  await startArticle(page);
-  await page.getByRole("button", { name: "公開する", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("下書きは保存済み");
-  await expect(page.getByRole("alert")).toContainText(
-    "公開結果を確認できません",
-  );
-  await expect(
-    page.getByRole("button", { name: "公開する", exact: true }),
-  ).toBeDisabled();
-});
-
-test("lost create response is resolved by its creation key without another POST", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin", scenario: "lost-response" });
-  await startArticle(page);
-  await page.getByRole("button", { name: "下書きを保存", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "保存結果を確認", exact: true }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "保存結果を確認", exact: true })
-    .click();
-  await expect(page.getByRole("status")).toContainText("状態を確認しました");
-  await expect(
-    page.getByRole("button", { name: "公開する", exact: true }),
-  ).toBeEnabled();
-  expect(
-    await page.evaluate(
-      () =>
-        window.calls.filter((call) => call === "POST /api/admin/posts").length,
-    ),
-  ).toBe(1);
-  await expect(page.getByLabel("タイトル", { exact: true })).toHaveValue(
-    "検証用記事",
-  );
-});
-
-test("existing article PUT conflict retains unsaved input", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin", scenario: "conflict" });
-  await startArticle(page);
-  await page.getByRole("button", { name: "下書きを保存", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("下書きを保存しました");
-  await page.getByLabel("タイトル", { exact: true }).fill("競合中の入力");
-  await page.getByRole("button", { name: "下書きを保存", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("競合しました");
-  await expect(page.getByLabel("タイトル", { exact: true })).toHaveValue(
-    "競合中の入力",
-  );
-  expect(
-    await page.evaluate(() =>
-      window.calls.some((call) => call.startsWith("PUT /api/admin/posts/")),
-    ),
-  ).toBe(true);
-});
-
-for (const action of ["reselect", "new", "logout", "navigate"] as const) {
-  test(`lost unpublish response: cancelling ${action} preserves the unknown outcome`, async ({
-    page,
-  }) => {
-    await showScreen(page, { screen: "admin" });
-    await startArticle(page);
-    await publishArticle(page);
-    await loseNextResponse(page, "/unpublish");
-    page.once("dialog", (dialog) => dialog.accept());
-    await page
-      .getByRole("button", { name: "非公開に戻す", exact: true })
-      .click();
-    await expect(
-      page.getByRole("button", { name: "保存結果を確認", exact: true }),
-    ).toBeVisible();
-    let confirmed = false;
-    page.once("dialog", async (dialog) => {
-      confirmed = true;
-      await dialog.dismiss();
-    });
-    if (action === "reselect")
-      await page.locator(".draft-list button").first().click();
-    else if (action === "navigate")
-      await page.evaluate(() => {
-        void window.navigateAway();
-      });
-    else
-      await page
-        .getByRole("button", {
-          name: action === "new" ? "＋ 新しい記事" : "ログアウト",
-          exact: true,
-        })
-        .click();
-    await expect.poll(() => confirmed).toBe(true);
-    await expect(
-      page.getByRole("button", { name: "保存結果を確認", exact: true }),
-    ).toBeVisible();
-    await expect(page.getByLabel("Markdown", { exact: true })).toHaveValue(
-      "## 確認する見出し\n\n保存する本文。",
-    );
-  });
-}
-
-test("confirmed reselect fetches latest visibility instead of reopening stale list data", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin" });
-  await startArticle(page);
-  await publishArticle(page);
-  await loseNextResponse(page, "/unpublish");
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "非公開に戻す", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "保存結果を確認", exact: true }),
-  ).toBeVisible();
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.locator(".draft-list button").first().click();
-  await expect(page.locator(".editor-state")).toContainText("下書き");
-  await expect(
-    page.getByRole("button", { name: "保存結果を確認", exact: true }),
-  ).toHaveCount(0);
-});
-
-test("lost publish response: confirmation uses ID and preserves later input", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin" });
-  await startArticle(page);
-  await loseNextResponse(page, "/publish");
-  await page.getByRole("button", { name: "公開する", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "保存結果を確認", exact: true }),
-  ).toBeVisible();
-  await page
-    .getByLabel("タイトル", { exact: true })
-    .fill("確認前に追記した入力");
-  await page
-    .getByRole("button", { name: "保存結果を確認", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "更新を公開する", exact: true }),
-  ).toBeEnabled();
-  await expect(page.getByLabel("タイトル", { exact: true })).toHaveValue(
-    "確認前に追記した入力",
-  );
-});
-
-test("failed outcome check keeps the original unknown state", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin" });
-  await startArticle(page);
-  await loseNextResponse(page, "/publish");
-  await page.getByRole("button", { name: "公開する", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "保存結果を確認", exact: true }),
-  ).toBeVisible();
+test("article list shows own articles only, newest update first, with states and untitled rows", async ({ page }) => {
+  const long = "とても長いタイトル".repeat(20);
+  await admin(page, {
+    path: "/admin?view=articles",
+    posts: [
+      { title: "古い下書き", updatedAt: "2026-10-01T00:00:00Z" },
+      { title: "", updatedAt: "2026-10-03T00:00:00Z" },
+      { title: long, updatedAt: "2026-10-02T00:00:00Z", published: true, publishedAt: "2026-10-02T00:00:00Z" },
+      { id: "z".repeat(43), title: "同時刻Z", updatedAt: "2026-10-04T00:00:00Z" },
+      { id: "y".repeat(43), title: "同時刻Y", updatedAt: "2026-10-04T00:00:00Z" },
+    ],
+  }, 390);
+  const rows = page.locator(".article-table tbody tr");
+  await expect(rows).toHaveCount(5);
+  expect(await rows.locator("td:first-child").allInnerTexts()).toEqual(["同時刻Y", "同時刻Z", "無題", long, "古い下書き"]);
+  await expect(rows.nth(3)).toContainText("公開中");
+  await expect(rows.nth(0)).toContainText("下書き");
+  await expect(rows.nth(0)).toContainText("2026/10/04 09:00");
+  await noHorizontalScroll(page);
   await page.evaluate(() => {
-    const original = window.fetch;
-    window.fetch = async (...args) =>
-      args[1]?.method === "GET" &&
-      String(args[0]).startsWith("/api/admin/posts/")
-        ? new Response("upstream failed", { status: 503 })
-        : original(...args);
+    const posts = window.fixtureServer.posts;
+    const id = Object.keys(posts).find((key) => posts[key].title === "古い下書き")!;
+    posts[id] = { ...posts[id], title: "サーバーで更新済み", version: 7 };
   });
-  await page
-    .getByRole("button", { name: "保存結果を確認", exact: true })
-    .click();
-  await expect(page.getByRole("alert")).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "保存結果を確認", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "公開する", exact: true }),
-  ).toBeDisabled();
+  await page.getByRole("link", { name: "古い下書き" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "記事を編集" })).toBeVisible();
+  await expect(title(page)).toHaveValue("サーバーで更新済み");
+  await expect(nav(page).getByRole("link", { name: "記事一覧" })).toHaveAttribute("aria-current", "page");
 });
 
-test("saving unchanged published text does not mark unpublished changes", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin" });
-  await startArticle(page);
-  await publishArticle(page);
-  await page.getByRole("button", { name: "下書きを保存", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("下書きを保存しました");
-  await expect(page.locator(".editor-state")).toHaveText("公開中");
+test("empty article list", async ({ page }) => {
+  await admin(page, { path: "/admin?view=articles" });
+  await expect(page.getByText("記事はありません", { exact: true })).toBeVisible();
+});
+
+test("unknown views fall back to new; a bad article ID reports an error", async ({ page }) => {
+  await admin(page, { path: "/admin?view=nope" });
+  await expect(page.getByRole("heading", { level: 1, name: "新規作成" })).toBeVisible();
+  await page.evaluate(() => (window as unknown as { router: { navigate(o: unknown): Promise<void> } }).router.navigate({ to: "/admin", search: { view: "edit", id: "b".repeat(43) } }));
+  await expect(page.getByText("指定された記事は見つかりません。")).toBeVisible();
+  await expect(page.getByRole("link", { name: "記事一覧へ" })).toBeVisible();
+});
+
+test("autosave starts 3 seconds after the last edit, then replaces the URL with the new ID", async ({ page }) => {
+  await admin(page);
+  await body(page).fill("タイトルなしの本文");
+  await expect(saveState(page)).toHaveText("未保存");
+  await page.clock.runFor(2_900);
+  expect(await writes(page)).toEqual([]);
+  await page.clock.runFor(100);
+  await expect(saveState(page)).toHaveText("保存済み");
+  expect(await writes(page)).toEqual(["POST /api/admin/posts"]);
+  await expect(page.getByRole("heading", { level: 1, name: "記事を編集" })).toBeVisible();
+  const search = await searchOf(page);
+  expect(search.view).toBe("edit");
+  expect(search.id).toMatch(/^[0-9n]{43}$/);
+  expect(await page.evaluate(() => (window as unknown as { router: { history: { length: number } } }).router.history.length)).toBe(1);
+  await expect(body(page)).toHaveValue("タイトルなしの本文");
+  await expect(page.getByRole("button", { name: "公開する" })).toBeDisabled();
+  await expect(page.getByText("公開にはタイトルが必要です。")).toBeVisible();
+  await page.clock.runFor(60_000);
+  expect(await writes(page)).toHaveLength(1);
+});
+
+test("continuous typing is saved at 30 seconds and input stays enabled during a slow save", async ({ page }) => {
+  await admin(page);
+  await body(page).focus();
+  for (let second = 0; second < 29; second++) {
+    await page.keyboard.type("あ");
+    await page.clock.runFor(1_000);
+  }
+  await page.keyboard.type("い");
+  await page.clock.runFor(900);
+  expect(await writes(page)).toEqual([]);
+  await page.evaluate(() => window.fixtureServer.fail({ method: "POST", path: "/api/admin/posts", mode: "hold" }));
+  await page.keyboard.type("う");
+  await page.clock.runFor(100);
+  await expect(saveState(page)).toHaveText("保存中…");
+  await expect(body(page)).toBeEditable();
+  await page.keyboard.type("え");
+  await page.evaluate(() => window.fixtureServer.release());
+  await page.clock.runFor(3_000);
+  await expect(saveState(page)).toHaveText("保存済み");
+  await expect(body(page)).toHaveValue("あ".repeat(29) + "いうえ");
+  const saved = await page.evaluate(() => Object.values(window.fixtureServer.posts)[0].markdown);
+  expect(saved).toBe("あ".repeat(29) + "いうえ");
+});
+
+test("lost creation response is resolved by its key without a duplicate article", async ({ page }) => {
+  await admin(page);
+  await page.evaluate(() => window.fixtureServer.fail({ method: "POST", path: "/api/admin/posts", mode: "lost" }));
+  await typeArticle(page, "題", "本文");
+  await page.clock.runFor(3_000);
+  await expect(saveState(page)).toHaveText("保存済み");
+  expect(await page.evaluate(() => Object.keys(window.fixtureServer.posts).length)).toBe(1);
+  expect(await page.evaluate(() => window.fixtureServer.calls.some((call) => call.includes("/creation-results/")))).toBe(true);
+});
+
+test("conflict keeps local input, never overwrites automatically and offers explicit choices", async ({ page }) => {
+  await admin(page, { path: `/admin?view=edit&id=${"b".repeat(43)}`, posts: [{ title: "題", markdown: "元" }] });
+  await expect(body(page)).toHaveValue("元");
+  await page.evaluate(() => {
+    const post = Object.values(window.fixtureServer.posts)[0];
+    window.fixtureServer.posts[post.id] = { ...post, markdown: "別タブの変更", version: 5 };
+  });
+  await body(page).fill("この画面の変更");
+  await page.clock.runFor(3_000);
+  await expect(page.getByRole("heading", { name: "保存先が別の画面で更新されています" })).toBeVisible();
+  await page.clock.runFor(120_000);
+  expect(await page.evaluate(() => Object.values(window.fixtureServer.posts)[0].markdown)).toBe("別タブの変更");
+  await page.getByText("サーバー版を表示（版5）").click();
+  await expect(page.locator(".conflict-panel pre")).toHaveText("別タブの変更");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "この画面の内容で上書き保存" }).click();
+  await page.clock.runFor(100);
+  await expect(saveState(page)).toHaveText("保存済み");
+  expect(await page.evaluate(() => Object.values(window.fixtureServer.posts)[0].markdown)).toBe("この画面の変更");
+});
+
+test("expired session keeps input, stops sending and resumes after login", async ({ page }) => {
+  await admin(page, { path: `/admin?view=edit&id=${"b".repeat(43)}`, posts: [{ title: "題", markdown: "元" }] });
+  await page.evaluate(() => {
+    window.fixtureServer.signedIn = false;
+  });
+  await body(page).fill("期限切れ中の入力");
+  await page.clock.runFor(3_000);
+  await expect(page.getByRole("heading", { name: "管理者ログイン" })).toBeVisible();
+  await expect(page.getByText("再ログインが必要です。編集中の入力は保持しています。")).toBeVisible();
+  await page.getByLabel("パスワード").fill("fixture-password");
+  await page.getByRole("button", { name: "ログイン" }).click();
+  await expect(body(page)).toHaveValue("期限切れ中の入力");
+  await page.clock.runFor(100);
+  await expect(saveState(page)).toHaveText("保存済み");
+  expect(await page.evaluate(() => Object.values(window.fixtureServer.posts)[0].markdown)).toBe("期限切れ中の入力");
+});
+
+test("menu navigation saves first; failure stops and offers continue, retry or discard", async ({ page }) => {
+  await admin(page);
+  await typeArticle(page, "題", "移動前の本文");
+  await nav(page).getByRole("link", { name: "記事一覧" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "記事一覧" })).toBeVisible();
+  expect(await page.evaluate(() => Object.values(window.fixtureServer.posts)[0].markdown)).toBe("移動前の本文");
+  await page.getByRole("link", { name: "題" }).click();
+  await body(page).fill("保存できない変更");
+  await page.evaluate(() => window.fixtureServer.fail({ method: "PUT", path: "", mode: "status", status: 400, body: { error: "入力を確認してください。" } }));
+  await nav(page).getByRole("link", { name: "設定" }).click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toContainText("保存できていない変更があります");
+  await dialog.getByRole("button", { name: "編集を続ける" }).click();
+  await expect(body(page)).toHaveValue("保存できない変更");
+  await expect(page.getByRole("heading", { level: 1, name: "記事を編集" })).toBeVisible();
+  await nav(page).getByRole("link", { name: "設定" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "変更を破棄して移動" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "設定" })).toBeVisible();
+  expect(await page.evaluate(() => Object.keys(window.fixtureServer.posts).length)).toBe(1);
+});
+
+test("unknown outcome while leaving warns that the server may have saved", async ({ page }) => {
+  await admin(page);
+  await typeArticle(page, "題", "本文");
+  await page.clock.runFor(3_000);
+  await page.evaluate(() => {
+    window.fixtureServer.fail({ method: "PUT", path: "", mode: "before" });
+    window.fixtureServer.fail({ method: "GET", path: "", mode: "before", times: 5 });
+  });
+  await body(page).fill("本文の続き");
+  await nav(page).getByRole("link", { name: "設定" }).click();
+  await expect(page.getByRole("alertdialog")).toContainText("サーバーでは保存済みの可能性があります。");
+  await page.getByRole("alertdialog").getByRole("button", { name: "編集を続ける" }).click();
+  await expect(saveState(page)).toContainText("再試行します");
+});
+
+test("publish confirms the latest text first; autosave after publication leaves readers' version alone", async ({ page }) => {
+  await admin(page);
+  await typeArticle(page, "公開する記事", "初版");
+  await page.getByRole("button", { name: "公開する" }).click();
+  await expect(page.locator(".publication-state")).toHaveText("公開中");
+  const calls = await page.evaluate(() => window.fixtureServer.calls.filter((call) => /admin\/posts/.test(call)));
+  expect(calls.indexOf("POST /api/admin/posts")).toBeLessThan(calls.findIndex((call) => call.endsWith("/publish")));
+  await body(page).fill("第二版");
+  await page.clock.runFor(3_000);
+  await expect(page.locator(".publication-state")).toHaveText("公開中・未公開の変更あり");
+  await expect(page.getByRole("button", { name: "更新を公開する" })).toBeEnabled();
+  expect(await page.evaluate(() => Object.values(window.fixtureServer.posts)[0].markdown)).toBe("第二版");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "非公開に戻す" }).click();
+  await expect(page.locator(".publication-state")).toHaveText("下書き");
+});
+
+test("offline input survives reload and is restored after confirmation", async ({ page }) => {
+  await admin(page);
+  await page.evaluate(() => window.fixtureServer.fail({ method: "POST", path: "/api/admin/posts", mode: "before", times: 10 }));
+  await typeArticle(page, "オフラインの記事", "通信できない間の本文");
+  await page.clock.runFor(4_000);
+  await expect(saveState(page)).toContainText("保存できませんでした。再試行します。");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "前回の編集内容を復元しますか？" })).toBeVisible();
+  await expect(page.locator(".recovery-prompt")).toContainText("オフラインの記事");
+  await expect(body(page)).toHaveValue("");
+  await page.getByRole("button", { name: "復元" }).click();
+  await expect(title(page)).toHaveValue("オフラインの記事");
+  await expect(body(page)).toHaveValue("通信できない間の本文");
+  await page.clock.runFor(100);
+  await expect(saveState(page)).toHaveText("保存済み");
+});
+
+async function pasteImages(page: Page, names: string[]) {
+  await page.evaluate(async (names) => {
+    const source = new Blob([Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0))], { type: "image/png" });
+    const transfer = new DataTransfer();
+    for (const name of names) transfer.items.add(new File([source], name, { type: name.endsWith(".gif") ? "image/gif" : "image/png" }));
+    const area = document.getElementById("markdown") as HTMLTextAreaElement;
+    area.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
+  }, names);
+}
+
+test("pasted images replace the selection, keep order when one fails and never send pending slots", async ({ page }) => {
+  await admin(page, {}, 1280, false);
+  await page.evaluate(() => {
+    window.fixtureServer.uploadFailures["two.png"] = "pixels";
+  });
+  await typeArticle(page, "画像", "前の文 置換される語 後の文");
+  await body(page).evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(4, 10));
+  await pasteImages(page, ["one.png", "two.png", "three.png", "anim.gif"]);
+  await expect(page.locator(".error")).toContainText("SVG・GIF・HEICは対象外");
+  await expect(page.locator(".pending-image-actions")).toContainText("pixels");
+  await expect.poll(() => body(page).inputValue()).toMatch(/^前の文 \n\n!\[one\]\(\/api\/images\/\w+\)\n\n!\[two\]\(pending-image:[\w-]+\)\n\n!\[three\]\(\/api\/images\/\w+\)\n\n 後の文$/);
+  await expect(saveState(page)).toContainText("画像の送信に失敗しました。");
+  await expect(page.getByRole("button", { name: "公開する" })).toBeDisabled();
+  await expect.poll(() => page.evaluate(() => Object.values(window.fixtureServer.posts)[0]?.markdown ?? ""), { timeout: 8_000 }).toContain("![three]");
+  const saved = await page.evaluate(() => Object.values(window.fixtureServer.posts)[0].markdown);
+  expect(saved).not.toContain("pending-image:");
+  expect(await page.evaluate(() => window.fixtureServer.imagesRegistered)).toBe(2);
+  await page.getByRole("button", { name: "削除" }).click();
+  await expect.poll(() => body(page).inputValue()).not.toContain("pending-image:");
+  await expect(page.getByRole("button", { name: "公開する" })).toBeEnabled();
+  expect(await page.evaluate(() => window.fixtureServer.imagesRegistered)).toBe(2);
+});
+
+test("dropping an image inserts at the drop point in a scrolled textarea; outside drops are refused", async ({ page }) => {
+  await admin(page, {}, 1280, false);
+  const lines = Array.from({ length: 120 }, (_, i) => `line ${String(i).padStart(3, "0")}`).join("\n");
+  await typeArticle(page, "ドロップ", lines);
+  const target = await body(page).evaluate((element: HTMLTextAreaElement) => {
+    const style = getComputedStyle(element);
+    const lineHeight = parseFloat(style.lineHeight);
+    element.scrollTop = lineHeight * 60;
+    const rect = element.getBoundingClientRect();
+    element.setSelectionRange(0, 0);
+    return { x: rect.left + parseFloat(style.paddingLeft) + 200, y: rect.top + parseFloat(style.paddingTop) + lineHeight * 2.5 };
+  });
+  await page.evaluate(async ({ x, y }) => {
+    const source = new Blob([Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0))], { type: "image/png" });
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([source], "drop.png", { type: "image/png" }));
+    const area = document.getElementById("markdown")!;
+    area.dispatchEvent(new DragEvent("drop", { dataTransfer: transfer, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+    const outside = new DataTransfer();
+    outside.items.add(new File([source], "outside.png", { type: "image/png" }));
+    document.getElementById("title")!.dispatchEvent(new DragEvent("drop", { dataTransfer: outside, bubbles: true, cancelable: true }));
+  }, target);
+  await expect.poll(() => body(page).inputValue()).toMatch(/line 062\n\n!\[drop\]\(\/api\/images\/\w+\)\n\nline 063/);
+  await expect(page.getByText("画像は本文へドロップしてください。")).toBeVisible();
+  await expect(title(page)).toHaveValue("ドロップ");
+});
+
+test("preview image controls change only the selected occurrence and keep the settings", async ({ page }) => {
+  const url = `/api/images/${"i".repeat(43)}`;
+  await admin(page, { path: `/admin?view=edit&id=${"b".repeat(43)}`, posts: [{ title: "題", markdown: `![a](${url})\n\n![b](${url})` }] }, 1280, false);
+  const frames = page.locator(".preview .blog-image-frame");
+  await expect(frames).toHaveCount(2);
+  await frames.nth(1).locator("img").click();
+  const toolbar = page.getByRole("toolbar", { name: "画像の配置とサイズ" });
+  await expect(toolbar).toBeVisible();
+  await toolbar.getByRole("button", { name: "中央寄せ" }).click();
+  await expect(body(page)).toHaveValue(`![a](${url})\n\n![b](${url} "blog-image:v1;width=auto;align=center")`);
+  const handle = page.locator(".image-resize-handle");
+  const box = (await handle.boundingBox())!;
+  const prose = (await page.locator(".preview .prose").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x - prose.width * 0.5, box.y + box.height / 2, { steps: 5 });
+  await expect(page.locator(".image-size-label")).toContainText("本文幅の");
+  await page.mouse.up();
+  await expect(page.locator(".image-size-label")).toHaveCount(0);
+  await expect.poll(() => body(page).inputValue()).toMatch(/!\[b\]\(\/api\/images\/i+ "blog-image:v1;width=(4[5-9]|5[0-5]);align=center"\)$/);
+  const outer = (await page.locator(".preview .blog-image").nth(1).boundingBox())!;
+  expect(Math.abs(outer.x + outer.width / 2 - (prose.x + prose.width / 2))).toBeLessThan(3);
+  await page.locator(".preview .blog-image-frame").nth(1).locator("img").click();
+  await page.getByRole("toolbar").getByRole("button", { name: "サイズを戻す" }).click();
+  await expect(body(page)).toHaveValue(`![a](${url})\n\n![b](${url} "blog-image:v1;width=auto;align=center")`);
+  await page.getByLabel("タイトル").click();
+  await expect(toolbar).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => Object.values(window.fixtureServer.posts)[0].markdown), { timeout: 8_000 }).toContain("align=center");
+  // Re-opening shows the saved setting.
+  await nav(page).getByRole("link", { name: "記事一覧" }).click();
+  await page.getByRole("link", { name: "題" }).click();
+  await expect(page.locator(".preview .blog-image").nth(1)).toHaveAttribute("data-align", "center");
+  await expect(page.locator(".preview .blog-image").nth(0)).toHaveAttribute("data-align", "left");
+});
+
+test("one sync icon requests one source; acceptance is not shown as success", async ({ page }) => {
+  await admin(page, { path: "/admin?view=settings", sync: [{ source: "note", status: "failed", errorCode: "upstream_429" }] });
+  await expect(page.getByText("noteの同期に失敗しました：媒体側の利用制限に達しました")).toBeVisible();
+  await page.getByRole("button", { name: "Qiitaを同期" }).click();
+  await expect(page.getByText("Qiitaの同期を待っています…")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Qiitaを同期" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Wantedlyを同期" })).toBeEnabled();
+  expect(await page.evaluate(() => window.fixtureServer.calls.filter((call) => call.startsWith("POST /api/admin/sync")))).toEqual(["POST /api/admin/sync/qiita"]);
+  await page.evaluate(() => {
+    Object.assign(window.fixtureServer.sync[0], { status: "partial", coverage: "gap", count: 4, requested: false, lastSuccess: "2026-10-31T00:05:00Z" });
+  });
+  await page.clock.runFor(3_000);
+  await expect(page.getByText(/Qiitaの取得可能な範囲を同期しました.*今回の取得：4件.*取得できていない記事がある可能性があります/)).toBeVisible();
+  await page.evaluate(() =>
+    window.fixtureServer.fail({ method: "POST", path: "/api/admin/sync/qiita", mode: "status", status: 409, body: { error: "x", reason: "cooldown", retryAfterSeconds: 241 } }),
+  );
+  await page.getByRole("button", { name: "Qiitaを同期" }).click();
+  await expect(page.getByText("Qiitaは前回の同期から10分経つまで再実行できません（あと5分）。")).toBeVisible();
+  const calls = await page.evaluate(() => window.fixtureServer.calls.length);
+  await nav(page).getByRole("link", { name: "新規作成" }).click();
+  await page.clock.runFor(30_000);
+  expect(await page.evaluate(() => window.fixtureServer.calls.slice(0).filter((call) => call.includes("/sync")).length)).toBeLessThanOrEqual(calls);
+});
+
+test("logout lives in settings and clears local recovery copies", async ({ page }) => {
+  await admin(page, { path: "/admin?view=settings" });
+  await page.getByRole("button", { name: "ログアウト" }).click();
+  await expect(page.getByRole("heading", { name: "管理者ログイン" })).toBeVisible();
+  expect(await page.evaluate(() => window.fixtureServer.signedIn)).toBe(false);
 });
 
 test("signed-out owner can log in", async ({ page }) => {
-  await showScreen(page, { screen: "admin", scenario: "signed-out" });
-  await page
-    .getByLabel("パスワード", { exact: true })
-    .fill("fixture-only-password");
-  await page.getByRole("button", { name: "ログイン", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "記事を書く" })).toBeVisible();
-});
-
-test("session expiry during confirmation preserves unknown outcome through login", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin" });
-  await startArticle(page);
-  await loseNextResponse(page, "/publish");
-  await page.getByRole("button", { name: "公開する", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "保存結果を確認", exact: true }),
-  ).toBeVisible();
-  await page.evaluate(() => {
-    const original = window.fetch;
-    window.fetch = async (...args) =>
-      args[1]?.method === "GET" &&
-      String(args[0]).startsWith("/api/admin/posts/")
-        ? new Response(JSON.stringify({ error: "login required" }), {
-            status: 401,
-          })
-        : original(...args);
-  });
-  await page
-    .getByRole("button", { name: "保存結果を確認", exact: true })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "管理者ログイン" }),
-  ).toBeVisible();
-  await page.getByLabel("パスワード", { exact: true }).fill("fixture-password");
-  await page.getByRole("button", { name: "ログイン", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "保存結果を確認", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "公開する", exact: true }),
-  ).toBeDisabled();
-  await expect(page.getByLabel("タイトル", { exact: true })).toHaveValue(
-    "検証用記事",
-  );
-});
-
-test("managed re-login preserves the editor and its unknown outcome", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin", oidc: true });
-  await startArticle(page);
-  await loseNextResponse(page, "/publish");
-  await page.getByRole("button", { name: "公開する", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "保存結果を確認", exact: true }),
-  ).toBeVisible();
-  await page.evaluate(() => {
-    const original = window.fetch;
-    window.open = () => ({ close() {} }) as Window;
-    window.fetch = async (...args) =>
-      args[1]?.method === "GET" &&
-      String(args[0]).startsWith("/api/admin/posts/")
-        ? new Response(JSON.stringify({ error: "login required" }), {
-            status: 401,
-          })
-        : original(...args);
-  });
-  await page
-    .getByRole("button", { name: "保存結果を確認", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "専用画面でログイン", exact: true })
-    .click();
-  await expect(page.getByLabel("タイトル", { exact: true })).toHaveValue(
-    "検証用記事",
-  );
-  await expect(
-    page.getByRole("button", { name: "保存結果を確認", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "公開する", exact: true }),
-  ).toBeDisabled();
-});
-
-test("external corrections guard unsaved navigation and keep hidden/title changes after refresh", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin", external: true });
-  const panel = page.getByRole("region", { name: "外部の記事", exact: true });
-  await expect(panel).toContainText("最新の取得可能な範囲");
-  await panel
-    .getByLabel("補正する外部記事")
-    .selectOption("qiita:fixture-external");
-  await panel
-    .getByLabel("タイトルの補正", { exact: false })
-    .fill("自分で補正したタイトル");
-  await panel.getByLabel("一覧に表示しない", { exact: true }).check();
-  page.once("dialog", (dialog) => dialog.dismiss());
-  await page.getByRole("button", { name: "ログアウト", exact: true }).click();
-  await expect(
-    panel.getByLabel("タイトルの補正", { exact: false }),
-  ).toHaveValue("自分で補正したタイトル");
-  await panel
-    .getByRole("button", { name: "外部記事の設定を保存", exact: true })
-    .click();
-  await panel
-    .getByRole("button", { name: "外部記事の状態を再取得", exact: true })
-    .click();
-  await panel
-    .getByLabel("補正する外部記事")
-    .selectOption("qiita:fixture-external");
-  await expect(
-    panel.getByLabel("一覧に表示しない", { exact: true }),
-  ).toBeChecked();
-  await expect(
-    panel.getByLabel("タイトルの補正", { exact: false }),
-  ).toHaveValue("自分で補正したタイトル");
-  await panel.getByRole("button", { name: "Qiitaを同期", exact: true }).click();
-  expect(
-    await page.evaluate(
-      () =>
-        window.calls.filter(
-          (call) =>
-            call === "PATCH /api/admin/external-posts/qiita/fixture-external",
-        ).length,
-    ),
-  ).toBe(1);
-});
-
-test("external correction survives session expiry and re-login", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin", external: true });
-  const panel = page.getByRole("region", { name: "外部の記事", exact: true });
-  await panel
-    .getByLabel("補正する外部記事")
-    .selectOption("qiita:fixture-external");
-  await panel
-    .getByLabel("タイトルの補正", { exact: false })
-    .fill("失効しても保持する補正");
-  await page.evaluate(() => {
-    const original = window.fetch;
-    let expired = false;
-    window.fetch = async (...args) => {
-      if (
-        !expired &&
-        String(args[0]).includes("/api/admin/external-posts/") &&
-        args[1]?.method === "PATCH"
-      ) {
-        expired = true;
-        return new Response(JSON.stringify({ error: "login required" }), {
-          status: 401,
-        });
-      }
-      return original(...args);
-    };
-  });
-  await panel
-    .getByRole("button", { name: "外部記事の設定を保存", exact: true })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "管理者ログイン", exact: true }),
-  ).toBeVisible();
-  await page.getByLabel("パスワード", { exact: true }).fill("fixture-password");
-  await page.getByRole("button", { name: "ログイン", exact: true }).click();
-  await expect(
-    panel.getByLabel("タイトルの補正", { exact: false }),
-  ).toHaveValue("失効しても保持する補正");
-});
-
-test("unknown external correction remains guarded even after returning input to its original value", async ({
-  page,
-}) => {
-  await showScreen(page, { screen: "admin", external: true });
-  const panel = page.getByRole("region", { name: "外部の記事", exact: true });
-  await panel
-    .getByLabel("補正する外部記事")
-    .selectOption("qiita:fixture-external");
-  await panel
-    .getByLabel("タイトルの補正", { exact: false })
-    .fill("応答を失う補正");
-  await loseNextResponse(page, "/fixture-external");
-  await panel
-    .getByRole("button", { name: "外部記事の設定を保存", exact: true })
-    .click();
-  await expect(
-    panel.getByRole("button", {
-      name: "外部記事の保存結果を確認",
-      exact: true,
-    }),
-  ).toBeVisible();
-  await panel.getByLabel("タイトルの補正", { exact: false }).fill("");
-  page.once("dialog", (dialog) => dialog.dismiss());
-  await page.getByRole("button", { name: "ログアウト", exact: true }).click();
-  await expect(
-    panel.getByRole("button", {
-      name: "外部記事の保存結果を確認",
-      exact: true,
-    }),
-  ).toBeVisible();
-  await panel
-    .getByRole("button", { name: "外部記事の保存結果を確認", exact: true })
-    .click();
-  await expect(
-    panel.getByLabel("タイトルの補正", { exact: false }),
-  ).toHaveValue("");
-  await expect(
-    panel.getByRole("button", { name: "外部記事の設定を保存", exact: true }),
-  ).toBeEnabled();
-  expect(
-    await page.evaluate(
-      () =>
-        window.calls.filter(
-          (call) =>
-            call === "PATCH /api/admin/external-posts/qiita/fixture-external",
-        ).length,
-    ),
-  ).toBe(1);
+  await admin(page, { scenario: "signed-out" });
+  await page.getByLabel("パスワード").fill("fixture-password");
+  await page.getByRole("button", { name: "ログイン" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "新規作成" })).toBeVisible();
 });

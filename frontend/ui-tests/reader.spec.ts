@@ -82,3 +82,70 @@ for (const width of [1280, 390, 320]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 }
+
+const imageArticle = [
+  "## 画像",
+  "前置き".repeat(200),
+  `![中央の図](/api/images/${"i".repeat(43)} "blog-image:v1;width=50;align=center")`,
+  `![右の小さな印](/apple-touch-icon.png "blog-image:v1;width=100;align=right;title=%E5%8D%B0")`,
+  `![通常の説明付き](/api/images/${"i".repeat(43)} "普通の説明")`,
+  `![壊れた設定](/api/images/${"i".repeat(43)} "blog-image:v1;width=5;align=left")`,
+  "`![コード](/x.png \"blog-image:v1;width=50;align=center\")`",
+  "後書き".repeat(400),
+].join("\n\n");
+
+for (const width of [1280, 390]) {
+  test(`public images ${width}: width share, alignment, no upscaling, safe settings`, async ({ page }) => {
+    await showScreen(page, { screen: "article", articleMarkdown: imageArticle }, width);
+    const images = page.locator(".reading-content .blog-image");
+    await expect(images).toHaveCount(4);
+    const prose = (await page.locator(".reading-content .prose, .reading-content").first().boundingBox())!;
+    const content = await page.locator(".reading-content").evaluate((element) => element.getBoundingClientRect().width);
+    const center = (await images.nth(0).locator("img").boundingBox())!;
+    expect(Math.abs(center.width - content * 0.5)).toBeLessThan(2);
+    expect(Math.abs(center.x + center.width / 2 - (prose.x + content / 2))).toBeLessThan(2);
+    const mark = images.nth(1).locator("img");
+    await mark.evaluate((image: HTMLImageElement) => image.decode());
+    const markBox = (await mark.boundingBox())!;
+    expect(Math.round(markBox.width)).toBe(Math.min(180, Math.round(content)));
+    expect(Math.abs(markBox.x + markBox.width - (prose.x + content))).toBeLessThan(2);
+    await expect(mark).toHaveAttribute("title", "印");
+    await expect(images.nth(2).locator("img")).toHaveAttribute("title", "普通の説明");
+    await expect(images.nth(3)).toHaveAttribute("data-align", "left");
+    await expect(images.nth(3).locator("img")).not.toHaveAttribute("title", /.*/);
+    await expect(page.locator(".reading-content code")).toContainText("blog-image:v1");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
+
+test("public image enlarges in place and restores focus and scroll when closed", async ({ page }) => {
+  await showScreen(page, { screen: "article", articleMarkdown: imageArticle }, 1280);
+  const trigger = page.getByRole("button", { name: "画像を拡大表示：中央の図" });
+  await trigger.scrollIntoViewIfNeeded();
+  const scrolled = await page.evaluate(() => scrollY);
+  // The image is the click target; the button around it carries the name and keyboard focus.
+  await trigger.getByRole("img").click();
+  const dialog = page.getByRole("dialog", { name: "拡大表示：中央の図" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "閉じる" })).toBeFocused();
+  const enlarged = (await dialog.locator("img").boundingBox())!;
+  expect(enlarged.width).toBeLessThanOrEqual(1280);
+  expect(enlarged.width).toBeGreaterThan(600);
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+  await dialog.locator("img").click();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  expect(await page.evaluate(() => scrollY)).toBe(scrolled);
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.mouse.click(5, 5);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("img", { name: "右の小さな印" }).click();
+  const small = (await page.getByRole("dialog").locator("img").boundingBox())!;
+  expect(Math.round(small.width)).toBe(180);
+  await page.getByRole("button", { name: "閉じる" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});

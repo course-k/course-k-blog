@@ -197,3 +197,39 @@ test("article SSR overrides the home sharing card with the published article", a
   assert.equal((html.match(/property="og:image" /g) || []).length, 1);
   assert(!html.includes('content="https://blog.course-k.com/brand/ogp-home.png"'));
 });
+
+test("production SSR renders image settings without JavaScript and keeps settings out of title", async () => {
+  mode = "success";
+  const original = post.markdown;
+  post.markdown = `![図](/api/images/${id} "blog-image:v1;width=40;align=center;title=%E8%AA%AC%E6%98%8E")\n\n![旧](/api/images/${id})\n\n![危険](/x.png "blog-image:v1;width=1;align=<b>")`;
+  try {
+    const html = await (await entry.fetch(new Request(`http://ui-fixture.invalid/posts/${id}`))).text();
+    assert.match(html, /<span class="blog-image" data-align="center" style="--image-width:40%">/);
+    assert.match(html, /<img src="\/api\/images\/a{43}" alt="図" title="説明"\/>/);
+    assert.match(html, /<span class="blog-image" data-align="left"><span class="blog-image-frame"><button type="button" class="image-zoom" aria-label="画像を拡大表示：旧">/);
+    assert(!/title="blog-image/.test(html), "reserved settings never reach the title attribute");
+    assert(!html.includes("<b>"));
+  } finally {
+    post.markdown = original;
+  }
+});
+
+test("admin entry normalizes to the new-article view", async () => {
+  const response = await entry.fetch(new Request("http://ui-fixture.invalid/admin"));
+  assert.equal(response.status, 307);
+  assert.equal(response.headers.get("location"), "/admin?view=new");
+});
+
+for (const path of ["/admin?view=new", "/admin?view=edit&id=" + id, "/admin?view=settings"]) {
+  test(`admin SSR ${path} is noindex and contains no article data before sign-in`, async () => {
+    const before = lastArticleURL;
+    const response = await entry.fetch(new Request(`http://ui-fixture.invalid${path}`));
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(html, /<meta name="robots" content="noindex, nofollow"\/?>/);
+    assert(html.includes("ログイン状態を確認しています"));
+    assert(!html.includes("SSR検証の記事"));
+    assert(!html.includes("textarea"));
+    assert.equal(lastArticleURL, before);
+  });
+}

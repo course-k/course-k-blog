@@ -17,7 +17,7 @@
     "test:ogp": "node --test ogp.test.mjs",
     "check": "npm run build && npm run typecheck && npm run typecheck:tests && npm run test:runtime && npm run test:api && npm run test:ssr && npm run test:ogp",
     "typecheck:tests": "tsc --project tsconfig.tests.json",
-    "test:api": "node --experimental-strip-types --test src/features/editor/adminApi.test.ts"
+    "test:api": "node --experimental-strip-types --test src/features/editor/adminApi.test.ts src/features/editor/articleSession.test.ts src/features/editor/imageMarkdown.test.ts src/features/editor/imageUploads.test.ts src/features/editor/draftRecovery.test.ts"
   },
   "dependencies": {
     "@tanstack/react-router": "1.170.44",
