@@ -144,13 +144,16 @@ function SyncSettings({ onAuthExpired }: { onAuthExpired(): void }) {
               type="button"
               className="sync-icon"
               aria-label={`${name}を同期`}
-              title={`${name}を同期`}
               aria-busy={busy || undefined}
               disabled={busy || states === null}
               data-state={state?.status}
               onClick={() => void request(source, name)}
             >
               <img src={`/brand/sources/${source}.png`} width="20" height="20" alt="" />
+              {/* Shown on hover and keyboard focus; the name comes from aria-label. */}
+              <span className="sync-tooltip" aria-hidden="true">
+                {name}を同期
+              </span>
             </button>
           );
         })}

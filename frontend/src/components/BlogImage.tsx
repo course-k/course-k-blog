@@ -243,6 +243,7 @@ function ImageControls({
   // Controls follow the rendered image box, which may be narrower than the
   // reserved width (small originals) and moves with alignment.
   const [box, setBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [placement, setPlacement] = useState<"above" | "inside">("above");
   useLayoutEffect(() => {
     const frame = frameRef.current;
     const image = imageRef.current;
@@ -251,6 +252,11 @@ function ImageControls({
       const outer = frame.getBoundingClientRect();
       const rect = image.getBoundingClientRect();
       setBox({ left: rect.left - outer.left, top: rect.top - outer.top, width: rect.width, height: rect.height });
+      // Above the image as specified; inside its top edge only when the
+      // scrolling preview has no room above it.
+      const scroller = frame.closest(".preview") ?? document.documentElement;
+      const room = rect.top - scroller.getBoundingClientRect().top;
+      setPlacement(room >= 48 ? "above" : "inside");
     };
     update();
     const observer = new ResizeObserver(update);
@@ -260,7 +266,7 @@ function ImageControls({
   }, [frameRef, imageRef, display.align, display.width]);
   if (!box) return null;
   return (
-    <span className="image-selection" style={box}>
+    <span className="image-selection" style={box} data-placement={placement}>
       <span className="image-toolbar" role="toolbar" aria-label="画像の配置とサイズ">
         {alignLabels.map(({ align, label: text }) => (
           <button

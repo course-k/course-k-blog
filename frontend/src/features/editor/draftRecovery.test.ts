@@ -59,3 +59,21 @@ test("writer debounces to 250 ms, caps at 1 s while typing and reports unavailab
   for (let i = 0; i < 5; i++) await Promise.resolve();
   assert.equal(unavailable, 1);
 });
+
+test("a restored copy is removed only together with writing its successor", async () => {
+  const store = new MemoryRecoveryStore();
+  await store.put(record("old", "dead-tab", 1));
+  const writer = new RecoveryWriter(store, () => {});
+  store.failWrites = true;
+  writer.retire("old", () => record("new", tabSessionId, 2));
+  assert.equal(await writer.writeNow(), false);
+  assert.deepEqual([...store.records.keys()], ["old"], "a failed write keeps the old copy");
+  store.failWrites = false;
+  assert.equal(await writer.writeNow(), true);
+  assert.deepEqual([...store.records.keys()], ["new"]);
+  // Nothing left to keep (content equals the server): the old copy goes on its own.
+  await store.put(record("old2", "dead-tab", 1));
+  writer.retire("old2", () => null);
+  await writer.writeNow();
+  assert.equal(store.records.has("old2"), false);
+});

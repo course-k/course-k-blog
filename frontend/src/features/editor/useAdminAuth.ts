@@ -108,16 +108,23 @@ export function useAdminAuth() {
     }
   }
 
-  /** Explicit logout: ends the session first, then the identity provider's. */
-  async function logout(): Promise<boolean> {
+  /** Explicit logout: ends the session, completes local cleanup (device
+   * recovery copies), then leaves for the identity provider's logout. */
+  async function logout(afterSignedOut?: () => Promise<boolean>): Promise<boolean> {
     try {
       await adminApi.logout();
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) requestLogin();
       return false;
     }
+    const cleaned = afterSignedOut ? await afterSignedOut() : true;
     setSignedIn(false);
     setHasWorkspace(false);
+    if (!cleaned) {
+      // Stay here so the owner sees it; the server session is already ended.
+      setError("ログアウトしました。この端末の一時保存を削除できませんでした。ブラウザのサイトデータを削除してください。");
+      return true;
+    }
     if (authMode === "oidc") {
       leavingForLogout.current = true;
       window.location.assign("/api/auth/logout");

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import type { AdminPost } from "../lib/types";
 import { adminApi, ApiError } from "../features/editor/adminApi";
 
@@ -28,6 +28,7 @@ export function AdminArticleList({ onAuthExpired }: { onAuthExpired(): void }) {
   const [posts, setPosts] = useState<AdminPost[] | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  const navigate = useNavigate();
   useEffect(() => {
     let active = true;
     adminApi
@@ -71,7 +72,15 @@ export function AdminArticleList({ onAuthExpired }: { onAuthExpired(): void }) {
           </thead>
           <tbody>
             {posts.map((post) => (
-              <tr key={post.id}>
+              <tr
+                key={post.id}
+                className="article-row"
+                // The whole row opens the article; the title link keeps keyboard access.
+                onClick={(event) => {
+                  if (!(event.target as Element).closest("a"))
+                    void navigate({ to: "/admin", search: { view: "edit", id: post.id } });
+                }}
+              >
                 <td>
                   {/* The editor reads the latest article; this row's copy is not used. */}
                   <Link to="/admin" search={{ view: "edit", id: post.id }} className={post.title ? undefined : "untitled"}>

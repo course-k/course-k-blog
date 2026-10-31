@@ -109,6 +109,14 @@ volumes:
     if (!router.ok || (await router.json()).ok !== true) throw new Error('Task router health check failed')
     const nonApi = await fetch(`${origin}/apix`, { redirect: 'manual' })
     if (nonApi.status !== 404 || !nonApi.headers.get('content-type')?.includes('text/html')) throw new Error('API path boundary failed')
+    // Raw image bytes up to 10,000,000 pass the router; larger bodies and large
+    // JSON requests stop at the router.
+    const upload = `${origin}/api/admin/image-uploads/${'a'.repeat(43)}/content`
+    const send = (url, size, type) => fetch(url, { method: 'PUT', headers: { Origin: origin, 'Content-Type': type }, body: new Uint8Array(size) })
+    const atLimit = await send(upload, 10_000_000, 'application/octet-stream')
+    if (atLimit.status !== 401) throw new Error(`10,000,000-byte image body did not reach the API (${atLimit.status})`)
+    if ((await send(upload, 10_000_001, 'application/octet-stream')).status !== 413) throw new Error('Router accepted an image body over 10,000,000 bytes')
+    if ((await send(`${origin}/api/admin/posts/x`, 7_500_000, 'application/json')).status !== 413) throw new Error('Router accepted a JSON body over 7m')
     // A proxy's default error/access formats may expose OIDC codes or cookies.
     const sentinel = `router-credential-fixture-${randomBytes(12).toString('hex')}`
     await fetch(`${origin}/api/session?code=${sentinel}`, { headers: { Authorization: `Bearer ${sentinel}`, Cookie: `fixture=${sentinel}` } })

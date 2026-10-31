@@ -128,22 +128,6 @@ export function ArticleEditor({
     if (element) selection.current = { start: element.selectionStart, end: element.selectionEnd };
   };
 
-  // Files dropped anywhere else must not navigate the tab to the file.
-  useEffect(() => {
-    const guard = (event: globalThis.DragEvent) => {
-      if (!event.dataTransfer?.types.includes("Files")) return;
-      if (event.target instanceof Node && textarea.current?.contains(event.target)) return;
-      event.preventDefault();
-      if (event.type === "drop") setNotice("画像は本文へドロップしてください。");
-    };
-    window.addEventListener("dragover", guard);
-    window.addEventListener("drop", guard);
-    return () => {
-      window.removeEventListener("dragover", guard);
-      window.removeEventListener("drop", guard);
-    };
-  }, []);
-
   // Clicking outside the selected image deselects it.
   useEffect(() => {
     if (selectedImage === null) return;
@@ -415,9 +399,9 @@ export function ArticleEditor({
       <label htmlFor="title">タイトル</label>
       <input
         id="title"
-        maxLength={200}
         value={doc.title}
-        onChange={(event) => setDoc({ ...doc, title: event.target.value })}
+        // 200 Unicode code points, like the server (maxLength counts UTF-16 units).
+        onChange={(event) => setDoc({ ...doc, title: Array.from(event.target.value).slice(0, 200).join("") })}
         onCompositionStart={() => session.setComposing(true)}
         onCompositionEnd={() => session.setComposing(false)}
       />
@@ -510,7 +494,11 @@ function ConflictPanel({
       {server && (
         <details>
           <summary>サーバー版を表示（版{server.version}）</summary>
-          <p>タイトル：{server.title || "無題"}{server.title !== snapshot.doc.title && "（この画面と異なります）"}</p>
+          <p>
+            タイトル：{server.title === snapshot.doc.title ? "この画面と同じ" : "この画面と異なる"}・本文：
+            {server.markdown === snapshot.doc.markdown ? "この画面と同じ" : "この画面と異なる"}
+          </p>
+          <p>サーバー版のタイトル：{server.title || "無題"}</p>
           <pre>{server.markdown}</pre>
         </details>
       )}

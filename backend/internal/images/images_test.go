@@ -162,3 +162,24 @@ func TestStoredMIMEUsesBytesNotNames(t *testing.T) {
 		t.Fatal("stored MIME detection")
 	}
 }
+
+func TestNormalizedImageOverTheStoredLimitIsRejected(t *testing.T) {
+	// High-entropy pixels: PNG re-encoding cannot shrink them.
+	noise := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	for i := range noise.Pix {
+		noise.Pix[i] = byte(i*2654435761>>13) ^ byte(i>>3)
+	}
+	var input bytes.Buffer
+	if err := png.Encode(&input, noise); err != nil {
+		t.Fatal(err)
+	}
+	original := maxStoredBytes
+	defer func() { maxStoredBytes = original }()
+	maxStoredBytes = input.Len() / 2
+	if _, _, err := Sanitize(input.Bytes()); !errors.Is(err, ErrEncodedTooLarge) {
+		t.Fatalf("got %v", err)
+	}
+	if Message(ErrEncodedTooLarge.Code) == Message("unknown") {
+		t.Fatal("rejection message does not name the stored limit")
+	}
+}

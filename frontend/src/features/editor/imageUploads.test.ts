@@ -147,3 +147,64 @@ test("cancelling a deleted slot stops it and frees the slot for the next upload"
   await settle();
   assert.deepEqual(done, ["slot-b"], "a deleted slot never comes back");
 });
+
+test("dispose stops for good: queued uploads never start afterwards", async () => {
+  const fake = fakeApi();
+  const done: string[] = [];
+  const queue = new ImageUploadQueue(fake.api, { onChange() {}, onDone: (item) => done.push(item.clientImageId) });
+  queue.add(["a", "b", "c"].map((name) => ({ clientImageId: `slot-${name}`, requestId: name, name, type: "image/png", blob: new Blob(["x"]) })));
+  await settle();
+  assert.deepEqual(fake.sends, ["a", "b"]);
+  queue.dispose();
+  fake.pendingSends.get("a")!.resolve();
+  fake.pendingSends.get("b")!.resolve();
+  await settle();
+  assert.deepEqual(fake.sends, ["a", "b"], "the queued third upload is not started");
+  assert.deepEqual(done, []);
+  queue.add([{ clientImageId: "late", requestId: "d", name: "d", type: "image/png", blob: new Blob(["x"]) }]);
+  await settle();
+  assert.deepEqual(fake.sends, ["a", "b"]);
+});
+
+test("a completion stopped mid-way resumes once the server reports it as pending", async () => {
+  const statuses: string[] = ["processing", "processing", "pending"];
+  let completes = 0;
+  const api: UploadApi = {
+    digest: async () => "0".repeat(64),
+    wait: async () => {},
+    begin: async () => ({ uploadId: "u", status: "processing" }),
+    send: async () => {},
+    status: async () => ({ uploadId: "u", status: (statuses.shift() ?? "pending") as UploadStatus["status"] }),
+    complete: async () => {
+      completes++;
+      return { uploadId: "u", status: "completed", result: { id: "i", url: "/api/images/i", width: 1, height: 1 } };
+    },
+  };
+  const done: string[] = [];
+  const queue = new ImageUploadQueue(api, { onChange() {}, onDone: (_item, result) => done.push(result.url) });
+  queue.add([{ clientImageId: "slot", requestId: "r", name: "a", type: "image/png", blob: new Blob(["x"]) }]);
+  await settle();
+  await settle();
+  assert.equal(completes, 1);
+  assert.deepEqual(done, ["/api/images/i"]);
+});
+
+test("401 marks the image as waiting for login and resumes it after login", async () => {
+  let authFailures = 1;
+  let expired = 0;
+  const fake = fakeApi();
+  const begin = fake.api.begin;
+  fake.api.begin = async (request) => {
+    if (authFailures-- > 0) throw new ApiError(401, "login required");
+    return begin(request);
+  };
+  const queue = new ImageUploadQueue(fake.api, { onChange() {}, onDone() {}, onAuthExpired: () => expired++ });
+  queue.add([{ clientImageId: "slot", requestId: "r", name: "a", type: "image/png", blob: new Blob(["x"]) }]);
+  await settle();
+  assert.equal(expired, 1);
+  assert.equal(queue.get("slot")!.status, "failed");
+  assert.equal(queue.get("slot")!.authExpired, true);
+  queue.resumeAfterLogin();
+  await settle();
+  assert.deepEqual(fake.sends, ["a"]);
+});

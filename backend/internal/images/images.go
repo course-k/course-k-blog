@@ -25,6 +25,10 @@ import (
 const MaxUploadBytes = 10_000_000
 const maxPixels = 12_000_000
 
+// maxStoredBytes bounds the normalized output; tests lower it to reach the
+// rejection without a 10MB fixture.
+var maxStoredBytes = MaxUploadBytes
+
 var ErrInvalid = errors.New("invalid image")
 
 // Rejection explains which documented limit an image failed. It matches ErrInvalid.
@@ -122,7 +126,7 @@ func Sanitize(input []byte) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", ErrCorrupt
 	}
-	if output.Len() > MaxUploadBytes {
+	if output.Len() > maxStoredBytes {
 		return nil, "", ErrEncodedTooLarge
 	}
 	return output.Bytes(), mime, nil

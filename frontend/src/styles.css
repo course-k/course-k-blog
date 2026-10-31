@@ -868,10 +868,10 @@ main:has(.admin-shell),
 .image-selection > * {
   pointer-events: auto;
 }
-/* Below the image so short, wide images stay clickable while selected. */
+/* Above the selected image; inside its top edge when the preview has no room. */
 .image-toolbar {
   position: absolute;
-  top: calc(100% + 6px);
+  bottom: calc(100% + 6px);
   left: 0;
   z-index: 3;
   display: flex;
@@ -884,6 +884,11 @@ main:has(.admin-shell),
   border: 1px solid var(--line);
   border-radius: 8px;
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", sans-serif;
+}
+.image-selection[data-placement="inside"] .image-toolbar {
+  top: 6px;
+  bottom: auto;
+  left: 6px;
 }
 .image-toolbar button {
   min-height: 30px;
@@ -1133,4 +1138,30 @@ main:has(.admin-shell),
   .article-table td:nth-child(2)::after {
     content: "・";
   }
+}
+
+.article-row {
+  cursor: pointer;
+}
+.article-row:hover {
+  background: #f6f7f6;
+}
+.sync-tooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  z-index: 5;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+}
+.sync-icon:hover .sync-tooltip,
+.sync-icon:focus-visible .sync-tooltip {
+  opacity: 1;
 }

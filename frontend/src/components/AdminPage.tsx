@@ -118,7 +118,7 @@ function AdminShell({
   search: AdminSearch;
   loginCount: number;
   onAuthExpired(): void;
-  logout(): Promise<boolean>;
+  logout(afterSignedOut?: () => Promise<boolean>): Promise<boolean>;
   leavingForLogout: React.RefObject<boolean>;
 }) {
   const navigate = useNavigate();
@@ -128,9 +128,30 @@ function AdminShell({
   const editor = useRef<EditorHandle | null>(null);
   const counter = useRef(0);
   const sessionRef = useRef<EditorSession | null>(null);
+  // A copy chosen for restoring waits here until its editor is created, so a
+  // render of another screen in between cannot drop it.
+  const pendingRestore = useRef<RecoveryRecord | null>(null);
   const allowNext = useRef(false);
   const pendingLeave = useRef<Promise<boolean> | null>(null);
   const [, rerender] = useReducer((n: number) => n + 1, 0);
+  const [dropNotice, setDropNotice] = useState("");
+
+  // On every admin screen, files dropped outside the article body must not
+  // make the browser open them. The body textarea handles its own drops.
+  useEffect(() => {
+    const guard = (event: DragEvent) => {
+      if (!event.dataTransfer?.types.includes("Files")) return;
+      if (event.target instanceof Element && event.target.closest("#markdown")) return;
+      event.preventDefault();
+      if (event.type === "drop") setDropNotice("画像は本文へドロップしてください。");
+    };
+    window.addEventListener("dragover", guard);
+    window.addEventListener("drop", guard);
+    return () => {
+      window.removeEventListener("dragover", guard);
+      window.removeEventListener("drop", guard);
+    };
+  }, []);
 
   useEffect(() => {
     holdTabLock();
@@ -160,8 +181,12 @@ function AdminShell({
   if (search.view === "new") session = current && current.articleId === null ? current : null;
   else if (search.view === "edit" && validArticleId(search.id))
     session = current && current.articleId === search.id ? current : null;
-  if ((search.view === "new" || (search.view === "edit" && validArticleId(search.id))) && !session)
-    session = { key: ++counter.current, articleId: search.view === "edit" ? search.id! : null };
+  if ((search.view === "new" || (search.view === "edit" && validArticleId(search.id))) && !session) {
+    const articleId = search.view === "edit" ? search.id! : null;
+    const restoring = pendingRestore.current?.articleId === articleId ? pendingRestore.current : null;
+    if (restoring) pendingRestore.current = null;
+    session = { key: ++counter.current, articleId, restore: restoring ?? undefined };
+  }
   sessionRef.current = session;
 
   const onCreated = useCallback(
@@ -205,7 +230,9 @@ function AdminShell({
   async function restore(record: RecoveryRecord) {
     if (!(await leaveEditor())) return;
     setRecoverable((records) => records.filter((item) => item.key !== record.key));
-    sessionRef.current = { key: ++counter.current, articleId: record.articleId, restore: record };
+    pendingRestore.current = record;
+    // Never reuse the current editor (e.g. an empty new article) for a restore.
+    sessionRef.current = null;
     allowNext.current = true;
     await navigate({
       to: "/admin",
@@ -225,12 +252,17 @@ function AdminShell({
   }
 
   async function onLogout() {
-    const ok = await logout();
-    if (ok) {
-      // One owner: a successful explicit logout removes this app's local copies.
-      await store?.clear().catch(() => {});
-    }
-    return ok;
+    // One owner: a successful explicit logout removes this app's local copies,
+    // and the provider logout starts only after that deletion completed.
+    return logout(async () => {
+      if (!store) return true;
+      try {
+        await store.clear();
+        return true;
+      } catch {
+        return false;
+      }
+    });
   }
 
   const menu: { view: AdminSearch["view"]; label: string }[] = [
@@ -258,6 +290,11 @@ function AdminShell({
         </ul>
       </nav>
       <div className="admin-main">
+        {dropNotice && (
+          <p className="error" role="alert">
+            {dropNotice}
+          </p>
+        )}
         {storageUnavailable && (
           <p className="warning" role="status">
             この端末への一時保存ができません。通信切断後の復元はできません。

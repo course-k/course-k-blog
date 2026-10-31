@@ -30,6 +30,8 @@ export type RecoveryRecord = {
 
 export interface RecoveryStore {
   put(record: RecoveryRecord): Promise<void>;
+  /** Writes the new copy (if any) and removes the old one in one transaction. */
+  replace(record: RecoveryRecord | null, removeKey: string): Promise<void>;
   delete(key: string): Promise<void>;
   list(): Promise<RecoveryRecord[]>;
   clear(): Promise<void>;
@@ -41,6 +43,11 @@ export class MemoryRecoveryStore implements RecoveryStore {
   async put(record: RecoveryRecord) {
     if (this.failWrites) throw new DOMException("quota", "QuotaExceededError");
     this.records.set(record.key, structuredClone(record));
+  }
+  async replace(record: RecoveryRecord | null, removeKey: string) {
+    if (this.failWrites) throw new DOMException("quota", "QuotaExceededError");
+    this.records.delete(removeKey);
+    if (record) this.records.set(record.key, structuredClone(record));
   }
   async delete(key: string) {
     this.records.delete(key);
@@ -95,6 +102,14 @@ export class IndexedDbRecoveryStore implements RecoveryStore {
   async put(record: RecoveryRecord) {
     // One transaction replaces the record, including the local → DB ID mapping.
     await this.transaction("readwrite", (store) => store.put(record));
+  }
+  async replace(record: RecoveryRecord | null, removeKey: string) {
+    // Put and delete share one transaction: both commit or neither does.
+    await this.transaction("readwrite", (store) => {
+      if (record) store.put(record);
+      if (record?.key !== removeKey) store.delete(removeKey);
+      return store.count();
+    });
   }
   async delete(key: string) {
     await this.transaction("readwrite", (store) => store.delete(key));
@@ -173,6 +188,8 @@ export class RecoveryWriter {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private firstPendingAt: number | null = null;
   private pending: (() => RecoveryRecord | null) | null = null;
+  /** A restored copy that is removed only together with writing its successor. */
+  private retiring: string | null = null;
   private store: RecoveryStore;
   private onUnavailable: () => void;
 
@@ -189,22 +206,41 @@ export class RecoveryWriter {
     this.timer = setTimeout(() => void this.writeNow(), wait);
   }
 
-  async writeNow() {
+  /** The old copy is deleted by the next successful write, never before it. */
+  retire(key: string, build: () => RecoveryRecord | null) {
+    this.retiring = key;
+    this.pending = build;
+  }
+
+  async writeNow(): Promise<boolean> {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.firstPendingAt = null;
     const build = this.pending;
     this.pending = null;
-    const record = build?.();
-    if (!record) return;
+    const retiring = this.retiring;
+    if (!build && !retiring) return true;
+    const record = build?.() ?? null;
     try {
-      await this.store.put(record);
+      if (retiring) {
+        await this.store.replace(record, retiring);
+        if (this.retiring === retiring) this.retiring = null;
+      } else if (record) await this.store.put(record);
+      return true;
     } catch {
+      // Keep the old copy (and retry its replacement with the next write).
+      if (retiring) this.pending ??= build;
       this.onUnavailable();
+      return false;
     }
   }
 
   async remove(key: string) {
+    if (this.retiring) {
+      // Clean now: nothing to keep, and the old copy goes with this write.
+      this.pending = () => null;
+      await this.writeNow();
+    }
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.pending = null;

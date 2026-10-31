@@ -117,23 +117,18 @@ export function useArticleEditor(options: Options) {
       }
       sessionRef.current = created;
       setSession(created);
-      if (restore) {
-        // The restored copy now belongs to this tab under a new key.
-        void store?.delete(restore.key).catch(() => {});
-        const images = restore.pendingImages.filter((image) =>
-          pendingIds(created.getSnapshot().doc.markdown).includes(image.clientImageId),
-        );
-        for (const image of images) previews.current.set(image.clientImageId, URL.createObjectURL(image.blob));
-        queue.add(images);
-      }
+      if (restore && !conflicted) adoptRestore(restore, created.getSnapshot().doc.markdown);
       setLoad({ status: "ready" });
     };
+    let conflicted = false;
     if (articleId) {
       adminApi
         .get(articleId)
         .then((post) => {
           if (!active) return;
           if (restore && restore.base && restore.base.version !== post.version) {
+            // The device copy stays untouched until the owner decides.
+            conflicted = true;
             setRestoreConflict({ local: restore.doc, basedOn: restore.base.version, server: post });
             start(new ArticleSession(sessionApi, { post }, hooks));
             return;
@@ -168,6 +163,19 @@ export function useArticleEditor(options: Options) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** The restored copy becomes this tab's copy: the old record is removed in
+   * the same transaction that writes the new one. */
+  function adoptRestore(restore: RecoveryRecord, markdown: string) {
+    const queue = queueRef.current;
+    const images = restore.pendingImages.filter((image) => pendingIds(markdown).includes(image.clientImageId));
+    for (const image of images) previews.current.set(image.clientImageId, URL.createObjectURL(image.blob));
+    queue?.add(images);
+    if (writer.current) {
+      writer.current.retire(restore.key, buildRecord);
+      void writer.current.writeNow();
+    }
+  }
 
   function revoke(clientImageId: string) {
     const url = previews.current.get(clientImageId);
@@ -331,7 +339,9 @@ export function useArticleEditor(options: Options) {
     rejections,
     restoreConflict,
     resolveRestoreConflict: (useLocal: boolean) => {
+      const restore = optionsRef.current.restore;
       if (useLocal && restoreConflict) sessionRef.current?.setDocument(restoreConflict.local);
+      if (restore) adoptRestore(restore, useLocal && restoreConflict ? restoreConflict.local.markdown : "");
       setRestoreConflict(null);
     },
     setDocument,
