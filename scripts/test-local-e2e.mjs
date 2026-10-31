@@ -118,8 +118,8 @@ volumes:
   // Fixed metadata isolates acceptance tests from upstream availability and article changes.
   // Supply credentials through the container environment, never CLI arguments.
   await run('docker', [...compose, 'exec', '-T', 'db', 'sh', '-c',
-    'export MYSQL_PWD="$(cat /run/secrets/db_password)"; exec mysql -u blog blog_test -e "$1"', 'seed',
-    "INSERT INTO external_posts(source,source_id,title,url,published_at) VALUES('qiita','e2e-external','外部の記事の元タイトル','https://qiita.com/course_k/items/e2e-external','2020-01-01 00:00:00')"])
+    'export MYSQL_PWD="$(cat /run/secrets/db_password)"; exec mysql --default-character-set=utf8mb4 -u blog blog_test -e "$1"', 'seed',
+    "INSERT INTO external_posts(source,source_id,title,url,published_at,title_override,hidden) VALUES('qiita','e2e-external','外部の記事の元タイトル','https://qiita.com/course_k/items/e2e-external','2020-01-01 00:00:00','旧補正タイトル',true)"])
   await run('npm', ['run', 'test:e2e'], {
     cwd: `${root}frontend`, env: { ...process.env, RUN_LOCAL_E2E: '1',
       BLOG_E2E_ORIGIN: origin, BLOG_E2E_LOGIN_FILE: join(directory, 'local-login.txt') },
