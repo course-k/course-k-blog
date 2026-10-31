@@ -33,9 +33,24 @@ type Server struct {
 type Features struct {
 	External  *external.Service
 	Images    *images.Service
+	Uploads   *images.UploadService
 	Backups   *backup.Service
 	Identity  *oidclogin.Service
 	Creations blog.CreationStore
+	// LocalUploads registers the binary PUT that replaces S3 outside production.
+	LocalUploads bool
+}
+
+// Image completion verifies and re-encodes up to 10MB within 20 seconds; every
+// other request keeps the shorter default.
+const (
+	defaultRequestTimeout = 8 * time.Second
+	uploadRequestTimeout  = 25 * time.Second
+)
+
+func uploadPath(path, suffix string) bool {
+	rest, ok := strings.CutPrefix(path, "/api/admin/image-uploads/")
+	return ok && strings.Count(rest, "/") == 1 && strings.HasSuffix(rest, suffix)
 }
 
 func New(store blog.Store, origin, hash string) (http.Handler, error) {
@@ -104,12 +119,18 @@ func NewWithFeatures(store blog.Store, origin, hash string, features Features) (
 				write(w, 403, map[string]string{"error": "origin rejected"})
 				return
 			}
-			if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+			binaryUpload := s.features.LocalUploads && r.Method == "PUT" && uploadPath(r.URL.Path, "/content") &&
+				r.Header.Get("Content-Type") == "application/octet-stream"
+			if !binaryUpload && !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 				write(w, 415, map[string]string{"error": "JSON required"})
 				return
 			}
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+		timeout := defaultRequestTimeout
+		if uploadPath(r.URL.Path, "/complete") || uploadPath(r.URL.Path, "/content") {
+			timeout = uploadRequestTimeout
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
 		m.ServeHTTP(w, r.WithContext(ctx))
 	}), nil
@@ -127,11 +148,19 @@ func failure(w http.ResponseWriter, err error) {
 	case errors.Is(err, blog.ErrConflict):
 		status, msg = 409, "別の変更が保存されています。再読み込みして確認してください。"
 	case errors.Is(err, external.ErrInvalid):
-		status, msg = 400, "補正するタイトルは1〜500文字、公開日時は有効な日時を指定してください。"
+		status, msg = 400, "指定を確認してください。"
+	case errors.As(err, new(images.Rejection)):
+		var rejection images.Rejection
+		errors.As(err, &rejection)
+		status, msg = 400, images.Message(rejection.Code)
 	case errors.Is(err, images.ErrInvalid):
-		status, msg = 400, "画像と参照を確認してください。5MiB・1200万画素以内のPNG/JPEGを利用できます。"
+		status, msg = 400, "本文の画像参照を確認してください。登録済みの画像だけを参照できます。"
+	case errors.Is(err, blog.ErrUntitled):
+		status, msg = 400, "公開するにはタイトルを入力してください。"
+	case errors.Is(err, blog.ErrImageDisplay):
+		status, msg = 400, "画像の表示設定（blog-image:v1）の形式が正しくありません。幅はautoまたは10〜100、配置はleft・center・rightです。"
 	case errors.Is(err, blog.ErrInvalid):
-		status, msg = 400, "タイトルは1〜200文字、本文は256KiB以内で入力してください。"
+		status, msg = 400, "タイトルは200文字以内、本文は256KiB以内で入力してください。"
 	default:
 		slog.Error("request failed", "error", err)
 	}
@@ -353,6 +382,20 @@ func (s *Server) change(w http.ResponseWriter, r *http.Request, publish bool) {
 	var p blog.Post
 	var err error
 	if publish {
+		// The optimistic version binds this check to the working copy that is published.
+		current, readError := s.store.GetAdmin(r.Context(), r.PathValue("id"))
+		if readError != nil {
+			failure(w, readError)
+			return
+		}
+		if current.Version != in.Version {
+			failure(w, blog.ErrConflict)
+			return
+		}
+		if err = blog.ValidatePublication(current.Title); err != nil {
+			failure(w, err)
+			return
+		}
 		p, err = s.store.Publish(r.Context(), r.PathValue("id"), in.Version, s.now().UTC())
 	} else {
 		if s.features.Backups != nil {

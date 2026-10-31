@@ -13,7 +13,11 @@ import (
 
 var ErrNotFound = errors.New("object not found")
 
-var validKey = regexp.MustCompile(`^(images|backups)/[A-Za-z0-9_-]{43}\.(png|jpg|dump|json|json\.gz)$`)
+// ErrExists reports that an immutable object key is already taken.
+var ErrExists = errors.New("object already exists")
+
+// Official images, backups and unverified staged uploads (no extension) only.
+var validKey = regexp.MustCompile(`^((images|backups)/[A-Za-z0-9_-]{43}\.(png|jpg|dump|json|json\.gz)|images/staging/[A-Za-z0-9_-]{43})$`)
 
 type Files struct{ Directory string }
 
@@ -35,6 +39,9 @@ func (f Files) Put(ctx context.Context, key string, body []byte, _ string) error
 		return err
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if os.IsExist(err) {
+		return ErrExists
+	}
 	if err != nil {
 		return err
 	}

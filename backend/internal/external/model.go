@@ -11,8 +11,16 @@ import (
 	"unicode/utf8"
 )
 
-var ErrInvalid = errors.New("invalid external article correction")
+var ErrInvalid = errors.New("invalid external article request")
 var ErrBusy = errors.New("sync lease is no longer owned")
+
+// ErrRunning means the source already has a queued or running request.
+var ErrRunning = errors.New("sync already requested or running")
+
+// CooldownError reports the remaining part of the 10-minute limit between attempts.
+type CooldownError struct{ RetryAfter time.Duration }
+
+func (e CooldownError) Error() string { return "sync attempted within 10 minutes" }
 
 func ValidSource(source string) bool {
 	return source == "qiita" || source == "note" || source == "wantedly"
@@ -28,12 +36,6 @@ type Post struct {
 	DateOverride  *time.Time `json:"dateOverride"`
 	Hidden        bool       `json:"hidden"`
 	Version       int64      `json:"version"`
-}
-type Correction struct {
-	Title       *string    `json:"titleOverride"`
-	PublishedAt *time.Time `json:"dateOverride"`
-	Hidden      bool       `json:"hidden"`
-	Version     int64      `json:"version"`
 }
 type Article struct {
 	Kind        string    `json:"kind"`
@@ -58,15 +60,19 @@ type Page struct {
 	Articles []Article      `json:"articles"`
 	HasNext  bool           `json:"hasNext"`
 }
+
+// SyncState status is idle, waiting, running, success, partial or failed.
+// Count is the size of the latest fetched batch, not the total article count.
 type SyncState struct {
-	Source      string     `json:"source"`
-	Status      string     `json:"status"`
-	Coverage    string     `json:"coverage"`
-	Count       int        `json:"count"`
-	ErrorCode   string     `json:"errorCode"`
-	LastAttempt *time.Time `json:"lastAttempt"`
-	LastSuccess *time.Time `json:"lastSuccess"`
-	NextRun     time.Time  `json:"nextRun"`
+	Source        string     `json:"source"`
+	Status        string     `json:"status"`
+	Requested     bool       `json:"requested"`
+	Coverage      string     `json:"coverage"`
+	Count         int        `json:"count"`
+	ErrorCode     string     `json:"errorCode"`
+	LastAttempt   *time.Time `json:"lastAttempt"`
+	LastSuccess   *time.Time `json:"lastSuccess"`
+	NextAllowedAt *time.Time `json:"nextAllowedAt"`
 }
 type Batch struct {
 	Posts    []Post
@@ -76,7 +82,6 @@ type Repository interface {
 	ListArticles(context.Context, int, int, string) ([]Article, error)
 	ArticleMonths(context.Context) ([]ArchiveMonth, error)
 	ListExternal(context.Context) ([]Post, error)
-	CorrectExternal(context.Context, string, string, Correction) error
 	SyncStates(context.Context) ([]SyncState, error)
 	RequestSync(context.Context, string) error
 	ClaimSync(context.Context, string) (string, error)

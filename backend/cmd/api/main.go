@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"coursek/blog/backend/internal/backup"
+	"coursek/blog/backend/internal/blob"
 	"coursek/blog/backend/internal/external"
 	"coursek/blog/backend/internal/httpapi"
 	"coursek/blog/backend/internal/images"
@@ -123,12 +124,22 @@ func run() error {
 	}
 	externalService := &external.Service{Repository: store, Client: external.NewClient()}
 	imageService := &images.Service{Repository: store, Blobs: objects}
+	uploadService := &images.UploadService{Repository: store, Images: store, Blobs: objects, Staging: images.LocalStaging{}}
+	_, localUploads := objects.(blob.Files)
+	if signer, ok := objects.(*blob.S3); ok {
+		uploadService.Staging = images.SignedStaging{Signer: signer}
+	} else if !localUploads {
+		return errors.New("image upload staging unavailable")
+	}
 	workerCtx, stopWorkers := context.WithCancel(context.Background())
 	var workers sync.WaitGroup
 	defer func() { stopWorkers(); workers.Wait() }()
+	// The sync worker only processes explicit owner requests (and resumes an
+	// interrupted one); there is no scheduled sync. Disable it only for offline tests.
 	if os.Getenv("EXTERNAL_SYNC_ENABLED") == "true" {
 		workers.Go(func() { externalService.Run(workerCtx) })
 	}
+	workers.Go(func() { uploadService.RunSweeper(workerCtx) })
 	if os.Getenv("BACKUP_ENABLED") == "true" {
 		workers.Go(func() { backupService.Run(workerCtx) })
 	}
@@ -141,7 +152,7 @@ func run() error {
 	} else if u.Scheme == "https" {
 		return errors.New("OIDC configuration is required for public administration")
 	}
-	handler, err := httpapi.NewWithFeatures(store, origin, hash, httpapi.Features{External: externalService, Images: imageService, Backups: backupService, Identity: identity, Creations: store})
+	handler, err := httpapi.NewWithFeatures(store, origin, hash, httpapi.Features{External: externalService, Images: imageService, Uploads: uploadService, LocalUploads: localUploads, Backups: backupService, Identity: identity, Creations: store})
 	if err != nil {
 		return err
 	}
@@ -149,7 +160,7 @@ func run() error {
 	if addr == "" {
 		addr = "127.0.0.1:8081"
 	}
-	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
+	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
 	stopped := make(chan os.Signal, 1)
 	signal.Notify(stopped, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(stopped)

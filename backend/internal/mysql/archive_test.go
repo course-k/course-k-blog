@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestMonthlyArchiveUsesVisibleCorrectedDatesInTokyoAndPaginates(t *testing.T) {
+func TestMonthlyArchiveUsesOriginalExternalMetadataInTokyoAndPaginates(t *testing.T) {
 	s := isolatedStore(t)
 	ctx := context.Background()
 	// January UTC becomes February in Tokyo. One earlier timestamp stays January.
@@ -21,12 +21,13 @@ func TestMonthlyArchiveUsesVisibleCorrectedDatesInTokyoAndPaginates(t *testing.T
 		t.Fatal(err)
 	}
 	for i := 0; i < 22; i++ {
-		if _, err := s.db.ExecContext(ctx, `INSERT INTO external_posts(source,source_id,title,url,published_at,date_override,hidden) VALUES('qiita',?,'external','https://qiita.com/course_k/items/test','2025-12-01',?,?)`, fmt.Sprint(i), "2026-02-01 00:00:00", i == 21); err != nil {
+		// Legacy corrections and hidden flags stay in the table but are not applied.
+		if _, err := s.db.ExecContext(ctx, `INSERT INTO external_posts(source,source_id,title,url,published_at,title_override,date_override,hidden) VALUES('qiita',?,'external','https://qiita.com/course_k/items/test','2026-02-01 00:00:00','override','2025-12-01',?)`, fmt.Sprint(i), i == 21); err != nil {
 			t.Fatal(err)
 		}
 	}
 	months, err := s.ArticleMonths(ctx)
-	if err != nil || len(months) != 3 || months[0].Month != "2026-03" || months[0].Count != 1 || months[1].Month != "2026-02" || months[1].Count != 23 || months[2].Count != 1 {
+	if err != nil || len(months) != 3 || months[0].Month != "2026-03" || months[0].Count != 1 || months[1].Month != "2026-02" || months[1].Count != 24 || months[2].Count != 1 {
 		t.Fatalf("archive: %+v %v", months, err)
 	}
 	first, err := s.ListArticles(ctx, 21, 0, "2026-02")
@@ -34,17 +35,27 @@ func TestMonthlyArchiveUsesVisibleCorrectedDatesInTokyoAndPaginates(t *testing.T
 		t.Fatalf("first page: %d %v", len(first), err)
 	}
 	second, err := s.ListArticles(ctx, 21, 20, "2026-02")
-	if err != nil || len(second) != 3 {
+	if err != nil || len(second) != 4 {
 		t.Fatalf("second page: %d %v", len(second), err)
 	}
 	jst := time.FixedZone("Asia/Tokyo", 9*3600)
 	for _, a := range append(first, second...) {
-		if a.PublishedAt.In(jst).Format("2006-01") != "2026-02" || a.ID == "qiita:21" {
-			t.Fatalf("wrong month or hidden record: %+v", a)
+		if a.PublishedAt.In(jst).Format("2006-01") != "2026-02" {
+			t.Fatalf("wrong month: %+v", a)
+		}
+		if a.Kind == "external" && a.Title != "external" {
+			t.Fatal("legacy title override applied", a.Title)
 		}
 		if a.Kind == "own" && a.Title != "public title" {
 			t.Fatal("draft title leaked")
 		}
+	}
+	hidden := false
+	for _, a := range append(first, second...) {
+		hidden = hidden || a.ID == "qiita:21"
+	}
+	if !hidden {
+		t.Fatal("legacy hidden flag removed a fetched article")
 	}
 	empty, err := s.ListArticles(ctx, 21, 0, "2024-01")
 	if err != nil || len(empty) != 0 {
