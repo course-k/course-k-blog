@@ -96,7 +96,11 @@ export function useArticleEditor(options: Options) {
         setUploads(queue.list().map((item) => ({ ...item })));
         persist();
       },
+      onAuthExpired: () => {
+        if (active) optionsRef.current.onAuthExpired();
+      },
       onDone: (item, result) => {
+        if (!active) return;
         const current = sessionRef.current;
         if (current) {
           const doc = current.getSnapshot().doc;
@@ -334,6 +338,8 @@ export function useArticleEditor(options: Options) {
     insertFiles,
     removeImage,
     retryImage: (id: string) => queueRef.current?.retry(id),
+    retryFailedImages: () => queueRef.current?.retryFailed(),
+    resumeUploadsAfterLogin: () => queueRef.current?.resumeAfterLogin(),
     prepareLeave,
     discardFailedImages,
     discardLocal,

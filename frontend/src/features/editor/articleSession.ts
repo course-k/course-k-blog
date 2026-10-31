@@ -94,6 +94,9 @@ export type SessionHooks = {
 
 export class UnknownOutcomeError extends Error {}
 
+/** Version of an article immediately after creation (posts.version default). */
+const CREATED_VERSION = 1;
+
 const sameDoc = (a: Doc | null, b: Doc | null) =>
   !!a && !!b && a.title === b.title && a.markdown === b.markdown;
 
@@ -468,6 +471,19 @@ export class ArticleSession {
   }
 
   private acknowledge(post: AdminPost, snapshot: Doc, created: boolean) {
+    if (created && (post.version !== CREATED_VERSION || !sameDoc({ title: post.title, markdown: post.markdown }, snapshot))) {
+      // The key resolved to an article that changed after it was created (e.g.
+      // edited in another tab before this copy was restored). Its current
+      // version is not permission to overwrite: stop as a conflict.
+      this.applyServer(post, true);
+      this.attempt = 0;
+      this.unknownFlight = null;
+      this.phase = "conflict";
+      this.message = "保存先が別の画面で更新されています。";
+      this.conflictServer = post;
+      this.hooks.onCreated?.(post);
+      return;
+    }
     this.applyServer(post, false);
     this.ack = snapshot;
     this.attempt = 0;
@@ -505,7 +521,12 @@ export class ArticleSession {
       this.retryAt = this.clock.now() + seconds * 1000;
     } else if (status === 403) this.phase = "forbidden";
     else if (status === 404) this.phase = "missing";
-    else this.phase = "invalid";
+    else {
+      this.phase = "invalid";
+      // Rejected before anything was stored: the fixed first payload no longer
+      // binds the key, so the corrected text is sent on the next attempt.
+      if (flight.kind === "create" && status === 400) this.initialPayload = null;
+    }
   }
 
   private async loadConflict() {
@@ -522,11 +543,11 @@ export class ArticleSession {
   }
 
   /** Waits 5 s, 10 s, 30 s, then every 60 s across consecutive failures. */
-  private scheduleRetry(action: "send" | "verify") {
+  private scheduleRetry(action: "send" | "verify", delay?: number) {
     this.attempt++;
     this.phase = "retry";
     this.retryAction = action;
-    this.retryAt = this.clock.now() + retryDelay(this.attempt);
+    this.retryAt = this.clock.now() + (delay ?? retryDelay(this.attempt));
     this.message = "保存できませんでした。再試行します。";
   }
 
@@ -545,7 +566,7 @@ export class ArticleSession {
         try {
           const post = await this.api.findCreation(this.creationKey);
           if (this.disposed) return;
-          this.acknowledge(post, { title: post.title, markdown: post.markdown }, true);
+          this.acknowledge(post, flight.snapshot, true);
         } catch (error) {
           if (!(error instanceof ApiError && error.status === 404)) throw error;
           // Not created: resend the same key with the same first payload.
@@ -589,13 +610,20 @@ export class ArticleSession {
     } catch (error) {
       if (this.disposed) return;
       const status = error instanceof ApiError ? error.status : 0;
+      // The outcome stays unknown (unknownFlight is kept) whatever the reason.
       if (status === 401) {
         this.phase = "auth";
         this.message = "再ログインが必要です。入力は保持しています。";
         this.hooks.onAuthExpired?.();
+      } else if (status === 403) {
+        this.phase = "forbidden";
+        this.message = "保存結果を確認できません。権限を確認してください。";
       } else if (status === 404) {
         this.phase = "missing";
         this.message = "記事が見つかりません。";
+      } else if (status === 429) {
+        const seconds = error instanceof ApiError && error.retryAfter ? error.retryAfter : 60;
+        this.scheduleRetry("verify", seconds * 1000);
       } else {
         this.scheduleRetry("verify");
       }

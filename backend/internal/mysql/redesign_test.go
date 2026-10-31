@@ -368,8 +368,18 @@ func TestImageUploadCompletesOnceAcrossRetriesAndRestarts(t *testing.T) {
 	if _, err := service.Complete(ctx, first.ID); !errors.Is(err, images.ErrUploadProcessing) {
 		t.Fatal("live lease must not be completed twice", err)
 	}
+	if status, err := service.Status(ctx, first.ID); err != nil || status.Status != images.UploadProcessing {
+		t.Fatal("live lease must be reported as processing", status.Status, err)
+	}
 	if _, err := store.db.ExecContext(ctx, "UPDATE image_uploads SET lease_until=NOW(6)-INTERVAL 1 SECOND WHERE upload_id=?", first.ID); err != nil {
 		t.Fatal(err)
+	}
+	// The browser only sees status/begin: a stopped completion must look resumable.
+	if status, err := service.Status(ctx, first.ID); err != nil || status.Status != images.UploadPending {
+		t.Fatal("expired lease not reported as resumable", status.Status, err)
+	}
+	if again, target, err := service.Begin(ctx, request); err != nil || again.ID != first.ID || target == nil {
+		t.Fatal("begin must offer a target to resume a stopped completion", again.Status, target, err)
 	}
 	// Concurrent completion after restart: exactly one registration.
 	var wait sync.WaitGroup

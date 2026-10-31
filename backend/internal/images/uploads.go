@@ -76,6 +76,14 @@ type Upload struct {
 	Width, Height int
 	CreatedAt     time.Time
 	ExpiresAt     time.Time
+	// LeaseUntil is set while a completion holds the upload.
+	LeaseUntil *time.Time
+}
+
+// resumable reports processing whose completion stopped (lease expired): the
+// browser may send the bytes again and complete, which re-leases it.
+func (u Upload) resumable(now time.Time) bool {
+	return u.Status == UploadProcessing && (u.LeaseUntil == nil || !now.Before(*u.LeaseUntil))
 }
 
 // Result is the registered image returned by complete and status.
@@ -181,6 +189,9 @@ func (s *UploadService) Begin(ctx context.Context, in UploadRequest) (Upload, *T
 	if err != nil {
 		return Upload{}, nil, err
 	}
+	if upload.resumable(now) {
+		upload.Status = UploadPending
+	}
 	switch {
 	case upload.Status == UploadCompleted || upload.Status == UploadFailed || upload.Status == UploadProcessing:
 		return upload, nil, nil
@@ -199,7 +210,12 @@ func (s *UploadService) Status(ctx context.Context, id string) (Upload, error) {
 		return Upload{}, ErrUploadNotFound
 	}
 	upload, err := s.Repository.GetUpload(ctx, id)
-	if err == nil && upload.Status == UploadPending && !s.now().Before(upload.ExpiresAt) {
+	now := s.now()
+	if err == nil && upload.resumable(now) {
+		// Reported as pending so the browser calls complete again.
+		upload.Status = UploadPending
+	}
+	if err == nil && upload.Status == UploadPending && !now.Before(upload.ExpiresAt) {
 		upload.Status = UploadExpired
 	}
 	return upload, err
@@ -397,7 +413,7 @@ func (s *UploadService) Receive(ctx context.Context, id string, body []byte) err
 		return err
 	}
 	switch upload.Status {
-	case UploadPending:
+	case UploadPending: // includes a stopped completion
 	case UploadExpired:
 		return ErrUploadExpired
 	default:

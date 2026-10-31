@@ -92,7 +92,10 @@ export function ArticleEditor({
   // Resume sending after the owner signs in again.
   const firstLogin = useRef(loginCount);
   useEffect(() => {
-    if (loginCount !== firstLogin.current) session?.resumeAfterLogin();
+    if (loginCount === firstLogin.current) return;
+    session?.resumeAfterLogin();
+    editor.resumeUploadsAfterLogin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loginCount, session]);
 
   // Keep the caret where the owner left it when an upload rewrites the text.
@@ -169,8 +172,8 @@ export function ArticleEditor({
           if (choice === "stay") return false;
           if (choice === "retry") {
             if (result === "images-failed") {
-              for (const item of editor.uploads)
-                if (item.status === "failed") editor.retryImage(item.clientImageId);
+              // The live queue, not the uploads captured when leaving began.
+              editor.retryFailedImages();
             } else {
               session?.retryNow();
             }

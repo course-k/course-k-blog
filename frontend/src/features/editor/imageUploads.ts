@@ -34,6 +34,8 @@ export type UploadItem = {
   blob: Blob;
   status: "queued" | "uploading" | "done" | "failed";
   expired?: boolean;
+  /** Failed because the session expired; resumed after login. */
+  authExpired?: boolean;
   error?: string;
   result?: UploadResult;
 };
@@ -41,6 +43,7 @@ export type UploadItem = {
 export type UploadHooks = {
   onChange(): void;
   onDone(item: UploadItem, result: UploadResult): void;
+  onAuthExpired?(): void;
 };
 
 export class TransferError extends Error {
@@ -60,6 +63,7 @@ export class ImageUploadQueue {
   private api: UploadApi;
   private hooks: UploadHooks;
   private concurrency: number;
+  private disposed = false;
 
   constructor(api: UploadApi, hooks: UploadHooks, concurrency = 2) {
     this.api = api;
@@ -81,6 +85,7 @@ export class ImageUploadQueue {
   }
 
   add(entries: { clientImageId: string; requestId?: string; name: string; type: string; blob: Blob }[]) {
+    if (this.disposed) return;
     for (const entry of entries) {
       if (this.items.has(entry.clientImageId)) continue;
       this.items.set(entry.clientImageId, {
@@ -96,13 +101,24 @@ export class ImageUploadQueue {
 
   retry(clientImageId: string) {
     const item = this.items.get(clientImageId);
-    if (!item || item.status !== "failed") return;
+    if (this.disposed || !item || item.status !== "failed") return;
     if (item.expired) item.requestId = crypto.randomUUID();
     item.status = "queued";
     item.error = undefined;
     item.expired = undefined;
+    item.authExpired = undefined;
     this.hooks.onChange();
     this.next();
+  }
+
+  /** Retries every failed item, read from the live queue (not a render copy). */
+  retryFailed() {
+    for (const item of this.list()) if (item.status === "failed") this.retry(item.clientImageId);
+  }
+
+  /** After signing in again, resume the images stopped by the expired session. */
+  resumeAfterLogin() {
+    for (const item of this.list()) if (item.status === "failed" && item.authExpired) this.retry(item.clientImageId);
   }
 
   /** The slot was deleted from the text: stop and forget it. */
@@ -115,12 +131,15 @@ export class ImageUploadQueue {
     this.next();
   }
 
+  /** Irreversible: stops running transfers and never starts queued ones. */
   dispose() {
+    this.disposed = true;
     for (const controller of this.active.values()) controller.abort();
     this.active.clear();
   }
 
   private next() {
+    if (this.disposed) return;
     for (const id of this.order) {
       if (this.active.size >= this.concurrency) return;
       const item = this.items.get(id);
@@ -137,7 +156,7 @@ export class ImageUploadQueue {
   }
 
   private finish(item: UploadItem, signal: AbortSignal, update: Partial<UploadItem>) {
-    if (signal.aborted || this.items.get(item.clientImageId) !== item) return;
+    if (this.disposed || signal.aborted || this.items.get(item.clientImageId) !== item) return;
     Object.assign(item, update);
     this.hooks.onChange();
     if (update.status === "done" && update.result) this.hooks.onDone(item, update.result);
@@ -148,7 +167,16 @@ export class ImageUploadQueue {
       const result = await this.upload(item, signal);
       this.finish(item, signal, { status: "done", result });
     } catch (error) {
-      if (signal.aborted) return;
+      if (signal.aborted || this.disposed) return;
+      if (error instanceof ApiError && error.status === 401) {
+        this.finish(item, signal, {
+          status: "failed",
+          authExpired: true,
+          error: "再ログインが必要です。画像は保持しており、ログイン後に送り直します。",
+        });
+        this.hooks.onAuthExpired?.();
+        return;
+      }
       const expired =
         (error instanceof ApiError && error.status === 410) ||
         (error instanceof Error && error.message === "expired");
@@ -220,7 +248,7 @@ export class ImageUploadQueue {
   }
 
   private async poll(uploadId: string, signal: AbortSignal): Promise<UploadResult> {
-    let completedAgain = false;
+    let completions = 0;
     for (let attempt = 0; attempt < 40; attempt++) {
       await this.api.wait(attempt === 0 ? 500 : 1500);
       if (signal.aborted) throw new Error("cancelled");
@@ -233,15 +261,18 @@ export class ImageUploadQueue {
       }
       const settled = this.settled(status);
       if (settled) return settled;
-      if (status.status === "pending" && !completedAgain) {
-        // The previous completion did not start (e.g. lease released); ask once more.
-        completedAgain = true;
+      if (status.status === "pending" && completions < 3) {
+        // Not completing (released, or a stopped completion whose lease
+        // expired): ask the server to complete it again.
+        completions++;
         try {
           const done = await this.api.complete(uploadId);
           const again = this.settled(done);
           if (again) return again;
         } catch (error) {
-          if (error instanceof ApiError && error.status === 400) throw new Error(error.message);
+          if (error instanceof ApiError && (error.status === 400 || error.status === 401 || error.status === 410)) {
+            throw error.status === 400 ? new Error(error.message) : error;
+          }
         }
       }
     }

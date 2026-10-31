@@ -11,11 +11,11 @@ import (
 	"coursek/blog/backend/internal/images"
 )
 
-const uploadColumns = "upload_id,client_image_id,file_name,declared_mime,declared_size,declared_sha256,staging_key,status,image_id,COALESCE(image_key,''),failure_code,COALESCE(result_width,0),COALESCE(result_height,0),created_at,expires_at"
+const uploadColumns = "upload_id,client_image_id,file_name,declared_mime,declared_size,declared_sha256,staging_key,status,image_id,COALESCE(image_key,''),failure_code,COALESCE(result_width,0),COALESCE(result_height,0),created_at,expires_at,lease_until"
 
 func scanUpload(row scanner) (images.Upload, error) {
 	var u images.Upload
-	err := row.Scan(&u.ID, &u.ClientImageID, &u.FileName, &u.MIME, &u.Size, &u.SHA256, &u.StagingKey, &u.Status, &u.ImageID, &u.ImageKey, &u.FailureCode, &u.Width, &u.Height, &u.CreatedAt, &u.ExpiresAt)
+	err := row.Scan(&u.ID, &u.ClientImageID, &u.FileName, &u.MIME, &u.Size, &u.SHA256, &u.StagingKey, &u.Status, &u.ImageID, &u.ImageKey, &u.FailureCode, &u.Width, &u.Height, &u.CreatedAt, &u.ExpiresAt, &u.LeaseUntil)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = images.ErrUploadNotFound
 	}

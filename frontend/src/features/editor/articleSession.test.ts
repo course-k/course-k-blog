@@ -410,3 +410,78 @@ test("pending image slots are never sent and do not by themselves create an arti
   assert.deepEqual(server.writes()[0].args[0], { title: "", markdown: "前\n\n後" });
   assert.equal(session.getSnapshot().doc.markdown, "前\n\n![a.png](pending-image:abc)\n\n後");
 });
+
+test("a restored first payload never overwrites an article changed after creation (resend and lookup)", async () => {
+  for (const path of ["resend", "lookup"] as const) {
+    const clock = new FakeClock();
+    const server = new FakeServer();
+    const key = "restored-key";
+    server.creations.set(key, "post-1");
+    server.post = { id: "post-1", title: "initial", markdown: "first", version: 7, published: false, publishedAt: null, updatedAt: "", hasUnpublishedChanges: true };
+    if (path === "lookup") server.responders.push(() => { throw new TypeError("response lost"); });
+    else server.responders.push(() => ({ ...server.post! }));
+    const created: string[] = [];
+    const session = new ArticleSession(
+      server,
+      { creationKey: key, initialPayload: { title: "initial", markdown: "first" }, doc: { title: "initial", markdown: "restored local edits" } },
+      { onCreated: (post) => created.push(post.id) },
+      clock,
+    );
+    await clock.advance(3_000);
+    assert.equal(session.getSnapshot().save, "conflict", path);
+    assert.equal(session.getSnapshot().conflictServer?.version, 7);
+    assert.deepEqual(created, ["post-1"], "the URL still learns the article ID");
+    await clock.advance(120_000);
+    assert.equal(server.calls.filter((c) => c.method === "save").length, 0, `${path}: no silent PUT`);
+    assert.equal(server.post!.markdown, "first");
+    assert.equal(session.getSnapshot().doc.markdown, "restored local edits");
+    session.overwriteWithLocal();
+    await clock.advance(0);
+    assert.deepEqual(server.calls.at(-1)!.args, ["post-1", { title: "initial", markdown: "restored local edits" }, 7]);
+  }
+});
+
+test("a first save rejected with 400 sends the corrected text after editing", async () => {
+  const { clock, server, session } = setup();
+  server.responders.push(() => {
+    throw new ApiError(400, "本文が長すぎます");
+  });
+  session.setDocument({ title: "", markdown: "invalid" });
+  await clock.advance(3_000);
+  assert.equal(session.getSnapshot().save, "invalid");
+  session.setDocument({ title: "", markdown: "corrected" });
+  await clock.advance(3_000);
+  const creates = server.calls.filter((c) => c.method === "create");
+  assert.deepEqual(creates.map((c) => (c.args[0] as Doc).markdown), ["invalid", "corrected"]);
+  assert.equal(session.getSnapshot().save, "saved");
+});
+
+test("verification errors: 403 stops, 429 waits for Retry-After, outcome stays unknown", async () => {
+  const base: AdminPost = { id: "post-1", title: "t", markdown: "a", version: 1, published: false, publishedAt: null, updatedAt: "", hasUnpublishedChanges: true };
+  {
+    const { clock, server, session } = setup({ post: base });
+    server.post = { ...base };
+    server.responders.push(() => { throw new TypeError("lost"); });
+    server.responders.push(() => { throw new ApiError(429, "slow down", 40); });
+    session.setDocument({ title: "t", markdown: "ab" });
+    await clock.advance(3_000);
+    const gets = () => server.calls.filter((c) => c.method === "get").length;
+    assert.equal(gets(), 1);
+    await clock.advance(39_000);
+    assert.equal(gets(), 1, "Retry-After respected");
+    await clock.advance(1_000);
+    assert.equal(gets(), 2);
+    assert.equal(server.writes().length, 1);
+  }
+  {
+    const { clock, server, session } = setup({ post: base });
+    server.post = { ...base };
+    server.responders.push(() => { throw new TypeError("lost"); });
+    server.responders.push(() => { throw new ApiError(403, "forbidden"); });
+    session.setDocument({ title: "t", markdown: "ab" });
+    await clock.advance(3_000);
+    assert.equal(session.getSnapshot().save, "forbidden");
+    await clock.advance(300_000);
+    assert.equal(server.calls.filter((c) => c.method === "get").length, 1, "403 is not retried");
+  }
+});
