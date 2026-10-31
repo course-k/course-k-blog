@@ -331,7 +331,7 @@ func TestImageUploadCompletesOnceAcrossRetriesAndRestarts(t *testing.T) {
 	ctx := context.Background()
 	media := blob.Files{Directory: t.TempDir()}
 	crash := &crashAfterPut{Blobs: media}
-	service := &images.UploadService{Repository: store, Images: store, Blobs: crash, Staging: images.LocalStaging{}}
+	service := &images.UploadService{Repository: store, Blobs: crash, Staging: images.LocalStaging{}}
 	body := pngBytes(t, 40, 30)
 	sum := sha256.Sum256(body)
 	request := images.UploadRequest{ClientImageID: "client-image-0001", FileName: "図.png", ContentType: "image/png", ByteSize: int64(len(body)), SHA256: hex.EncodeToString(sum[:])}
@@ -425,7 +425,7 @@ func TestImageUploadRejectionsAndExpiry(t *testing.T) {
 	media := blob.Files{Directory: t.TempDir()}
 	now := time.Now().UTC()
 	clock := func() time.Time { return now }
-	service := &images.UploadService{Repository: store, Images: store, Blobs: media, Staging: images.LocalStaging{}, Now: clock}
+	service := &images.UploadService{Repository: store, Blobs: media, Staging: images.LocalStaging{}, Now: clock}
 	disguised := []byte("GIF89a-not-a-png")
 	sum := sha256.Sum256(disguised)
 	upload, _, err := service.Begin(ctx, images.UploadRequest{ClientImageID: "client-image-0002", FileName: "fake.png", ContentType: "image/png", ByteSize: int64(len(disguised)), SHA256: hex.EncodeToString(sum[:])})

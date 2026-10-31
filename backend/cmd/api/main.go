@@ -124,7 +124,7 @@ func run() error {
 	}
 	externalService := &external.Service{Repository: store, Client: external.NewClient()}
 	imageService := &images.Service{Repository: store, Blobs: objects}
-	uploadService := &images.UploadService{Repository: store, Images: store, Blobs: objects, Staging: images.LocalStaging{}}
+	uploadService := &images.UploadService{Repository: store, Blobs: objects, Staging: images.LocalStaging{}}
 	_, localUploads := objects.(blob.Files)
 	if signer, ok := objects.(*blob.S3); ok {
 		uploadService.Staging = images.SignedStaging{Signer: signer}

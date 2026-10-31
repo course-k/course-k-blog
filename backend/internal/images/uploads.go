@@ -124,7 +124,6 @@ type UploadRepository interface {
 
 type UploadService struct {
 	Repository UploadRepository
-	Images     Repository
 	Blobs      Blobs
 	Staging    Staging
 	Now        func() time.Time
