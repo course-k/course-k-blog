@@ -868,10 +868,11 @@ main:has(.admin-shell),
 .image-selection > * {
   pointer-events: auto;
 }
-/* Above the selected image; inside its top edge when the preview has no room. */
+/* Below the selected image, outside it, so it never covers the image or the
+   handle and stays reachable inside the scrolling preview. */
 .image-toolbar {
   position: absolute;
-  bottom: calc(100% + 6px);
+  top: calc(100% + 6px);
   left: 0;
   z-index: 3;
   display: flex;
@@ -884,11 +885,6 @@ main:has(.admin-shell),
   border: 1px solid var(--line);
   border-radius: 8px;
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", sans-serif;
-}
-.image-selection[data-placement="inside"] .image-toolbar {
-  top: 6px;
-  bottom: auto;
-  left: 6px;
 }
 .image-toolbar button {
   min-height: 30px;
@@ -1140,12 +1136,6 @@ main:has(.admin-shell),
   }
 }
 
-.article-row {
-  cursor: pointer;
-}
-.article-row:hover {
-  background: #f6f7f6;
-}
 .sync-tooltip {
   position: absolute;
   top: calc(100% + 6px);

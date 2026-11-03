@@ -11,6 +11,8 @@ export type FixtureConfig = {
   /** Replaces the article body on the article screen. */
   articleMarkdown?: string;
   sync?: Partial<SyncState>[];
+  /** Creation keys that already created an article: key → article ID and first payload. */
+  creations?: Record<string, { postId: string; title: string; markdown: string }>;
 };
 
 /** A rule applied to the next matching request in the fixed API. */

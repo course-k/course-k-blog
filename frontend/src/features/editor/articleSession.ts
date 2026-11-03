@@ -127,6 +127,8 @@ export class ArticleSession {
   private lastEditAt = 0;
   private composing = false;
   private inFlight: Flight | null = null;
+  /** The first payload is being written to the device; nothing else is sent meanwhile. */
+  private preparing = false;
   private phase: "idle" | "retry" | "unknown" | SaveState = "idle";
   private unknownFlight: Flight | null = null;
   private retrySnapshot: Doc | null = null;
@@ -192,7 +194,7 @@ export class ArticleSession {
     if (this.phase === "unknown") save = "verifying";
     else if (this.phase === "retry") save = "retrying";
     else if (this.phase !== "idle") save = this.phase;
-    else if (this.inFlight?.kind === "create" || this.inFlight?.kind === "save")
+    else if (this.preparing || this.inFlight?.kind === "create" || this.inFlight?.kind === "save")
       save = "saving";
     else if (this.inFlight?.kind === "verify") save = "verifying";
     else if (dirty) save = "dirty";
@@ -230,6 +232,7 @@ export class ArticleSession {
   hasUnsavedWork() {
     return (
       this.needsSave() ||
+      this.preparing ||
       this.inFlight !== null ||
       this.phase !== "idle" ||
       this.operation !== null
@@ -257,7 +260,8 @@ export class ArticleSession {
     this.pump();
   }
 
-  /** While an IME composes, nothing is sent; the deadline is re-evaluated after. */
+  /** While an IME composes, nothing is sent, including explicit flushes and
+   * publication; they continue with the confirmed text after composition ends. */
   setComposing(composing: boolean) {
     this.composing = composing;
     if (!composing) this.pump();
@@ -389,7 +393,7 @@ export class ArticleSession {
   }
 
   private pump() {
-    if (this.disposed || this.inFlight) return;
+    if (this.disposed || this.inFlight || this.preparing) return;
     this.clearTimer();
     if (this.phase === "retry") {
       if (this.flushWaiters.length || this.operation)
@@ -405,13 +409,15 @@ export class ArticleSession {
       this.failPending(new Error(this.message || "保存できませんでした。"));
       return;
     }
+    // Unconfirmed IME text is never sent; waiting flushes and operations resume
+    // from setComposing(false) with the confirmed text.
+    if (this.composing) return;
     if (this.needsSave()) {
       const urgent = this.flushRequested || this.operation !== null || this.retrySnapshot !== null;
       if (urgent) {
         void this.send();
         return;
       }
-      if (this.composing) return;
       const due = Math.min(
         this.lastEditAt + IDLE_DELAY_MS,
         (this.dirtySince ?? this.lastEditAt) + MAX_UNSAVED_MS,
@@ -429,12 +435,18 @@ export class ArticleSession {
     if (!this.id) {
       if (!this.initialPayload) {
         this.initialPayload = this.payload();
+        // Reserved like a request: edits and flushes during the device write
+        // cannot start a second send that skips it.
+        this.preparing = true;
+        this.emit();
         try {
           await this.hooks.beforeCreate?.(this.creationKey, this.initialPayload);
         } catch {
           /* recovery storage is best effort; DB autosave continues */
+        } finally {
+          this.preparing = false;
         }
-        if (this.disposed || this.inFlight) return;
+        if (this.disposed) return;
       }
       flight = { kind: "create", snapshot: this.initialPayload, dirtySince: this.dirtySince };
     } else {
@@ -474,8 +486,12 @@ export class ArticleSession {
     if (created && (post.version !== CREATED_VERSION || !sameDoc({ title: post.title, markdown: post.markdown }, snapshot))) {
       // The key resolved to an article that changed after it was created (e.g.
       // edited in another tab before this copy was restored). Its current
-      // version is not permission to overwrite: stop as a conflict.
-      this.applyServer(post, true);
+      // version is not permission to overwrite: stop as a conflict. The base
+      // stays at what this key created (version 1 = the first payload), so a
+      // device copy saved now is still a conflict when restored after reload.
+      this.applyServer(post, false);
+      this.version = CREATED_VERSION;
+      this.ack = snapshot;
       this.attempt = 0;
       this.unknownFlight = null;
       this.phase = "conflict";

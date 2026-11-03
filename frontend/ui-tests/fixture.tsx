@@ -51,6 +51,8 @@ for (const [index, partial] of (cfg.posts ?? []).entries()) {
   if (posts[postId].published) published[postId] = { title: posts[postId].title, markdown: posts[postId].markdown };
 }
 const creations: Record<string, { postId: string; payload: string }> = {};
+for (const [key, { postId, title, markdown }] of Object.entries(cfg.creations ?? {}))
+  creations[key] = { postId, payload: JSON.stringify([title, markdown]) };
 type Upload = { id: string; request: { clientImageId: string; fileName: string; contentType: string; byteSize: number }; status: string; received: boolean; result?: unknown; failure?: string };
 const uploads: Record<string, Upload> = {};
 const rules: FailureRule[] = [];

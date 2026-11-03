@@ -355,7 +355,7 @@ test("preview image controls change only the selected occurrence and keep the se
   await expect(toolbar).toBeVisible();
   const imageBox = (await frames.nth(1).locator("img").boundingBox())!;
   const toolbarBox = (await toolbar.boundingBox())!;
-  expect(toolbarBox.y + toolbarBox.height, "toolbar sits above the image").toBeLessThanOrEqual(imageBox.y);
+  expect(toolbarBox.y, "toolbar sits outside the image").toBeGreaterThanOrEqual(imageBox.y + imageBox.height);
   await toolbar.getByRole("button", { name: "中央寄せ" }).click();
   await expect(body(page)).toHaveValue(`![a](${url})\n\n![b](${url} "blog-image:v1;width=auto;align=center")`);
   const handle = page.locator(".image-resize-handle");
@@ -426,7 +426,7 @@ test("signed-out owner can log in", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1, name: "新規作成" })).toBeVisible();
 });
 
-test("article list shows unpublished changes and opens from anywhere on the row", async ({ page }) => {
+test("article list shows unpublished changes and opens the latest copy from the title link", async ({ page }) => {
   await admin(page, { posts: [{ title: "公開済みの記事", markdown: "公開版", published: true, publishedAt: "2026-10-01T00:00:00Z" }] });
   await page.evaluate(() => {
     const post = Object.values(window.fixtureServer.posts)[0];
@@ -435,7 +435,7 @@ test("article list shows unpublished changes and opens from anywhere on the row"
   await nav(page).getByRole("link", { name: "記事一覧" }).click();
   const row = page.locator(".article-table tbody tr").first();
   await expect(row).toContainText("公開中・未公開の変更あり");
-  await row.locator("td").nth(2).click();
+  await row.getByRole("link", { name: "公開済みの記事" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "記事を編集" })).toBeVisible();
   await expect(body(page)).toHaveValue("作業版の変更");
 });
@@ -578,4 +578,98 @@ test("an image that fails while leaving can be retried from the dialog", async (
   const before = await page.evaluate(() => window.fixtureServer.calls.filter((call) => call.startsWith("POST /api/admin/image-uploads")).length);
   await dialog.getByRole("button", { name: "再試行" }).click();
   await expect.poll(() => page.evaluate(() => window.fixtureServer.calls.filter((call) => call.startsWith("POST /api/admin/image-uploads")).length)).toBeGreaterThan(before);
+});
+
+test("a right-aligned image can be shrunk and grown back with the right-edge handle", async ({ page }) => {
+  const url = `/api/images/${"i".repeat(43)}`;
+  await admin(page, { path: `/admin?view=edit&id=${"b".repeat(43)}`, posts: [{ title: "題", markdown: `![a](${url} "blog-image:v1;width=60;align=right")` }] }, 1280, false);
+  const image = page.locator(".preview .blog-image-frame img");
+  await image.click();
+  const prose = (await page.locator(".preview .prose").boundingBox())!;
+  const width = async () => Number((await body(page).inputValue()).match(/width=(\d+)/)?.[1]);
+  const drag = async (toX: (handleX: number) => number) => {
+    const box = (await page.locator(".image-resize-handle").boundingBox())!;
+    const x = box.x + box.width / 2;
+    await page.mouse.move(x, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(toX(x), box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+  };
+  await drag((x) => x - prose.width * 0.3);
+  await expect.poll(width).toBeLessThanOrEqual(33);
+  // Growing back moves the handle past the content edge, within the window.
+  // Each drag re-applies right alignment, so repeating it grows the image further.
+  for (let i = 0; i < 3; i++) {
+    const before = await width();
+    await image.click();
+    await drag(() => 1278);
+    await expect.poll(width).toBeGreaterThan(before);
+  }
+  expect(await width()).toBeGreaterThanOrEqual(55);
+  await expect(body(page)).toHaveValue(/align=right/);
+  const outer = (await page.locator(".preview .blog-image").boundingBox())!;
+  expect(Math.abs(outer.x + outer.width - (prose.x + prose.width)), "right alignment is re-applied").toBeLessThan(3);
+});
+
+test("a first-save conflict found after restoring still protects the article after another reload", async ({ page }) => {
+  const id = "b".repeat(43);
+  const key = "k".repeat(43);
+  await admin(
+    page,
+    {
+      path: "/admin?view=articles",
+      posts: [{ id, title: "題", markdown: "別画面の更新", version: 7 }],
+      creations: { [key]: { postId: id, title: "題", markdown: "元" } },
+    },
+    1280,
+    false,
+  );
+  await writeRecovery(page, { ...recovery(null, null, "端末内の編集"), initialPayload: { title: "題", markdown: "元" } });
+  await page.reload();
+  await page.getByRole("button", { name: "復元" }).click();
+  await expect(saveState(page)).toContainText("別の画面で更新されています", { timeout: 8_000 });
+  // The conflict reaches the device copy (with the article ID) before reloading.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          new Promise<unknown>((resolve) => {
+            const open = indexedDB.open("course-k-blog-admin", 1);
+            open.onsuccess = () => {
+              const request = open.result.transaction("drafts").objectStore("drafts").getAll();
+              request.onsuccess = () => {
+                open.result.close();
+                resolve((request.result as { articleId: string | null; base: { version: number } | null }[]).map((r) => [r.articleId, r.base?.version ?? null]));
+              };
+            };
+          }),
+      ),
+    )
+    .toEqual([[id, 1]]);
+  await page.reload();
+  await page.getByRole("button", { name: "復元" }).click();
+  await expect(page.getByRole("heading", { name: "端末内の編集内容はサーバーより古い版が基になっています" })).toBeVisible();
+  await expect(body(page)).toHaveValue("別画面の更新");
+  await page.waitForTimeout(4_000);
+  expect(await page.evaluate(() => window.fixtureServer.calls.filter((call) => call.startsWith("PUT /api/admin/posts")))).toEqual([]);
+  expect(await page.evaluate(() => Object.values(window.fixtureServer.posts)[0].markdown)).toBe("別画面の更新");
+});
+
+test("choosing new again keeps the input; leaving during IME composition waits for the confirmed text", async ({ page }) => {
+  await admin(page, {}, 1280, false);
+  await title(page).fill("変換");
+  await nav(page).getByRole("link", { name: "新規作成" }).click();
+  await expect(title(page)).toHaveValue("変換");
+  const compose = (type: "compositionstart" | "compositionend") =>
+    page.evaluate((type) => document.getElementById("markdown")!.dispatchEvent(new CompositionEvent(type, { bubbles: true, data: "" })), type);
+  await compose("compositionstart");
+  await body(page).fill("にほんご");
+  await nav(page).getByRole("link", { name: "設定" }).click();
+  await page.waitForTimeout(4_000);
+  expect(await writes(page), "unconfirmed text is not sent").toEqual([]);
+  await expect(page.getByRole("heading", { level: 1, name: "新規作成" })).toBeVisible();
+  await body(page).fill("日本語");
+  await compose("compositionend");
+  await expect(page.getByRole("heading", { level: 1, name: "設定" })).toBeVisible();
+  expect(await page.evaluate(() => Object.values(window.fixtureServer.posts).map((post) => post.markdown))).toEqual(["日本語"]);
 });

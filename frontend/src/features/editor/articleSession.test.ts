@@ -485,3 +485,94 @@ test("verification errors: 403 stops, 429 waits for Retry-After, outcome stays u
     assert.equal(server.calls.filter((c) => c.method === "get").length, 1, "403 is not retried");
   }
 });
+
+test("a first-payload conflict stays a conflict in the device copy, so a later restore cannot overwrite", async () => {
+  for (const path of ["resend", "lookup"] as const) {
+    const clock = new FakeClock();
+    const server = new FakeServer();
+    const key = "restored-key";
+    server.creations.set(key, "post-1");
+    server.post = { id: "post-1", title: "initial", markdown: "edited elsewhere", version: 7, published: false, publishedAt: null, updatedAt: "", hasUnpublishedChanges: true };
+    if (path === "lookup") server.responders.push(() => { throw new TypeError("response lost"); });
+    else server.responders.push(() => ({ ...server.post! }));
+    const session = new ArticleSession(
+      server,
+      { creationKey: key, initialPayload: { title: "initial", markdown: "first" }, doc: { title: "initial", markdown: "restored local edits" } },
+      {},
+      clock,
+    );
+    await clock.advance(3_000);
+    assert.equal(session.getSnapshot().save, "conflict", path);
+    // What the device keeps: the article ID, and as base what this key created.
+    const saved = session.recoveryState();
+    assert.equal(saved.articleId, "post-1");
+    assert.deepEqual(saved.base, { version: 1, doc: { title: "initial", markdown: "first" } }, path);
+    assert.equal(saved.doc.markdown, "restored local edits");
+    // After reload the editor compares this base with the server (7): conflict, not a plain restore.
+    assert.notEqual(saved.base!.version, server.post!.version);
+    session.dispose();
+    assert.equal(server.calls.filter((c) => c.method === "save").length, 0, `${path}: no silent PUT`);
+  }
+});
+
+test("typing while the first payload is written to the device never sends before that write completes", async () => {
+  const clock = new FakeClock();
+  const server = new FakeServer();
+  let finishWrite!: () => void;
+  const written: string[] = [];
+  const session = new ArticleSession(
+    server,
+    {},
+    {
+      beforeCreate: (_key, payload) =>
+        new Promise<void>((resolve) => {
+          finishWrite = () => {
+            written.push(payload.markdown);
+            resolve();
+          };
+        }),
+    },
+    clock,
+  );
+  session.setDocument({ title: "t", markdown: "first" });
+  const flushed = session.flush();
+  await clock.advance(0);
+  assert.equal(session.getSnapshot().save, "saving");
+  session.setDocument({ title: "t", markdown: "first and more" });
+  void session.flush();
+  session.setComposing(false);
+  await clock.advance(10_000);
+  assert.equal(server.writes().length, 0, "nothing is sent while the device write is pending");
+  finishWrite();
+  await clock.advance(0);
+  assert.deepEqual(written, ["first"]);
+  const writes = server.writes();
+  assert.equal(writes.filter((c) => c.method === "create").length, 1);
+  assert.deepEqual(writes[0].args[0], { title: "t", markdown: "first" });
+  assert.deepEqual(writes.at(-1)!.args[1], { title: "t", markdown: "first and more" }, "the later edit follows as an update");
+  assert.equal(await flushed, true);
+});
+
+test("flush and publish wait for IME composition to end and send the confirmed text", async () => {
+  const { clock, server, session } = setup();
+  session.setDocument({ title: "IME", markdown: "確定済み" });
+  await clock.advance(3_000);
+  assert.equal(server.writes().length, 1);
+  session.setComposing(true);
+  session.setDocument({ title: "IME", markdown: "確定済みにほ" });
+  let flushed: boolean | null = null;
+  void session.flush().then((saved) => (flushed = saved));
+  const published = session.publish();
+  await clock.advance(60_000);
+  assert.equal(server.writes().length, 1, "unconfirmed text is not sent");
+  assert.equal(server.calls.filter((c) => c.method === "publish").length, 0);
+  assert.equal(flushed, null);
+  session.setDocument({ title: "IME", markdown: "確定済み日本" });
+  session.setComposing(false);
+  await clock.advance(0);
+  await published;
+  assert.deepEqual(server.writes().at(-1)!.args[1], { title: "IME", markdown: "確定済み日本" });
+  assert.equal(flushed, true);
+  const calls = server.calls.map((c) => c.method);
+  assert.ok(calls.lastIndexOf("save") < calls.indexOf("publish"), "publication follows the confirmed save");
+});

@@ -202,9 +202,11 @@ function ImageControls({
     const content = proseRect.width;
     const left = imageRect.left - proseRect.left;
     const natural = image.naturalWidth || imageRect.width;
-    // The left edge stays put while dragging; the right-edge handle follows the
-    // pointer. Width never exceeds the original size or the content width.
-    const max = Math.max(1, Math.min(natural, content - left, content));
+    // The left edge stays put while dragging and the right-edge handle follows
+    // the pointer, even past the content edge; the alignment is re-applied on
+    // release. The limit is the original size and the content width only, so a
+    // right-aligned or centred image can grow back after being shrunk.
+    const max = Math.max(1, Math.min(natural, content));
     const min = Math.min(natural, content * 0.1);
     drag.current = {
       pointerId: event.pointerId,
@@ -243,7 +245,6 @@ function ImageControls({
   // Controls follow the rendered image box, which may be narrower than the
   // reserved width (small originals) and moves with alignment.
   const [box, setBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
-  const [placement, setPlacement] = useState<"above" | "inside">("above");
   useLayoutEffect(() => {
     const frame = frameRef.current;
     const image = imageRef.current;
@@ -252,11 +253,6 @@ function ImageControls({
       const outer = frame.getBoundingClientRect();
       const rect = image.getBoundingClientRect();
       setBox({ left: rect.left - outer.left, top: rect.top - outer.top, width: rect.width, height: rect.height });
-      // Above the image as specified; inside its top edge only when the
-      // scrolling preview has no room above it.
-      const scroller = frame.closest(".preview") ?? document.documentElement;
-      const room = rect.top - scroller.getBoundingClientRect().top;
-      setPlacement(room >= 48 ? "above" : "inside");
     };
     update();
     const observer = new ResizeObserver(update);
@@ -266,7 +262,7 @@ function ImageControls({
   }, [frameRef, imageRef, display.align, display.width]);
   if (!box) return null;
   return (
-    <span className="image-selection" style={box} data-placement={placement}>
+    <span className="image-selection" style={box}>
       <span className="image-toolbar" role="toolbar" aria-label="画像の配置とサイズ">
         {alignLabels.map(({ align, label: text }) => (
           <button
