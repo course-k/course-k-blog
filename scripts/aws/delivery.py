@@ -248,6 +248,10 @@ class Release:
         stack = self.aws.stack()
         require(stack['StackStatus'] in {'UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'},
                 'Stack changed before release')
+        current = {p['ParameterKey']: p['ParameterValue'] for p in stack['Parameters']}
+        if images and all(current.get(key) == image for key, image in images.items()):
+            print('Requested images already deployed; skipping empty change set', flush=True)
+            return
         name = f'{STACK}-release-{self.run_id}-{self.attempt}-{suffix}'
         result = self.aws.call('cloudformation', 'create-change-set', data={
             'StackName': STACK, 'ChangeSetName': name, 'ChangeSetType': 'UPDATE',

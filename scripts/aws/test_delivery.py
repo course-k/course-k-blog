@@ -120,6 +120,25 @@ class DeliveryTest(unittest.TestCase):
         self.assertEqual(release.change_images.call_args_list[-1].args, (release.previous, 'restore'))
         release.verify.assert_called_with(release.previous)
 
+    def test_same_images_skip_empty_change_set_but_still_verify_production(self):
+        aws = MagicMock()
+        images = {k: 'current-' + k for k in ('NodeImage', 'GoImage', 'RouterImage')}
+        aws.stack.return_value = {'StackStatus': 'UPDATE_COMPLETE', 'Parameters': [
+            {'ParameterKey': k, 'ParameterValue': v} for k, v in images.items()]}
+        release = Release(aws, '123456789012', 'a' * 40)
+        release.previous, release.old_task = dict(images), 'current-task'
+        release.preflight, release.backup = MagicMock(), MagicMock()
+        release.images = MagicMock(return_value=images)
+        release.service = MagicMock(return_value={
+            'desiredCount': 1, 'runningCount': 1, 'taskDefinition': 'current-task',
+            'deployments': [{'rolloutState': 'COMPLETED'}]})
+        release.verify, release.production_check = MagicMock(), MagicMock()
+        release.apply()
+        aws.call.assert_not_called()
+        release.backup.assert_called_once()
+        release.verify.assert_called_once_with(images)
+        release.production_check.assert_called_once()
+
     def test_stack_failure_logs_only_denied_action_names(self):
         aws = MagicMock()
         aws.stack.side_effect = [
