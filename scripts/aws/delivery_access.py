@@ -49,8 +49,7 @@ def delivery_access_template():
         allow('RunMigration', ['ecs:RunTask'], definitions[1], {
             **regional, 'ArnLike': {'ecs:cluster': cluster},
         }),
-        allow('ImageSettingsThroughStack', ['s3:GetBucketCORS', 's3:GetLifecycleConfiguration',
-              's3:PutBucketCORS', 's3:PutLifecycleConfiguration'],
+        allow('ImageSettingsThroughStack', ['s3:GetAccelerateConfiguration', 's3:GetLifecycleConfiguration', 's3:GetBucketPublicAccessBlock', 's3:GetAnalyticsConfiguration', 's3:GetBucketCORS', 's3:GetEncryptionConfiguration', 's3:GetInventoryConfiguration', 's3:GetBucketLogging', 's3:GetMetricsConfiguration', 's3:GetBucketNotification', 's3:GetBucketVersioning', 's3:GetReplicationConfiguration', 's3:GetBucketWebsite', 's3:GetBucketObjectLockConfiguration', 's3:GetBucketTagging', 's3:ListTagsForResource', 's3:GetBucketAbac', 's3:GetBucketOwnershipControls', 's3:GetIntelligentTieringConfiguration', 's3:GetBucketMetadataTableConfiguration', 's3:ListBucket', 's3:GetBucketPolicy', 's3:GetBucketPolicyStatus', 's3:PutBucketCORS', 's3:PutLifecycleConfiguration'],
               sub('arn:${AWS::Partition}:s3:::course-k-blog-production-imagesbucket-*'), through_stack),
         allow('EcrAuthentication', ['ecr:GetAuthorizationToken'], '*'),
         allow('ReleaseImages', [

@@ -80,6 +80,17 @@ class DeliveryAccessTest(unittest.TestCase):
                              'cloudformation.amazonaws.com')
             self.assertEqual(statement['Condition']['StringEquals']['aws:RequestedRegion'], 'us-west-2')
 
+    def test_special_release_permissions_are_bounded(self):
+        image = next(s for s in self.statements if s['Sid'] == 'ImageSettingsThroughStack')
+        self.assertNotIn('s3:GetObject', image['Action'])
+        self.assertEqual({a for a in image['Action'] if a.startswith('s3:Put')}, {'s3:PutBucketCORS', 's3:PutLifecycleConfiguration'})
+        self.assertEqual(image['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'], 'cloudformation.amazonaws.com')
+        state = next(s for s in self.statements if s['Sid'] == 'AppliedSchemaState')
+        self.assertTrue(json.dumps(state['Resource']).endswith('applied-schema-digest"}'))
+        self.assertNotIn('*', json.dumps(state['Resource']))
+        extra = self.template['Resources']['ReleasePolicy']['Properties']['PolicyDocument']
+        self.assertLessEqual(len(json.dumps(extra,separators=(',',':'))),6144)
+
     def test_inline_policy_fits_role_limit_and_no_private_values(self):
         policy = json.dumps(self.role['Policies'][0]['PolicyDocument'], separators=(',', ':'))
         self.assertLess(len(policy), 10240)
