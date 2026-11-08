@@ -117,6 +117,12 @@ def production_template():
         'RuntimeBoundaryArn': {'Value': ref('RuntimeBoundaryArn')},
     })
     consolidate_runtime(template)
+    # A separately reviewed release may prepare migration code while the old
+    # application keeps running. Normal delivery always clears this override.
+    parameters['MigrationImage'] = {'Type': 'String', 'Default': '',
+        'AllowedPattern': '^$|^[0-9]{12}\\.dkr\\.ecr\\.us-west-2\\.amazonaws\\.com/course-k-blog-production-gorepository-[a-z0-9]+@sha256:[a-f0-9]{64}$'}
+    template['Conditions']['MigrationOverride'] = {'Fn::Not': [{'Fn::Equals': [ref('MigrationImage'), '']}]}
+    template['Resources']['MigrationTask']['Properties']['ContainerDefinitions'][0]['Image'] = {'Fn::If': ['MigrationOverride', ref('MigrationImage'), ref('GoImage')]}
     return template
 
 

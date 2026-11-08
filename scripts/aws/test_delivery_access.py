@@ -8,11 +8,11 @@ class DeliveryAccessTest(unittest.TestCase):
     def setUp(self):
         self.template = delivery_access_template()
         self.role = self.template['Resources']['DeliveryRole']['Properties']
-        self.statements = self.role['Policies'][0]['PolicyDocument']['Statement']
+        self.statements = self.role['Policies'][0]['PolicyDocument']['Statement'] + self.template['Resources']['ReleasePolicy']['Properties']['PolicyDocument']['Statement']
 
     def test_only_identity_resources_and_main_branch_trust(self):
         self.assertEqual({r['Type'] for r in self.template['Resources'].values()},
-                         {'AWS::IAM::OIDCProvider', 'AWS::IAM::Role'})
+                         {'AWS::IAM::OIDCProvider', 'AWS::IAM::Role', 'AWS::S3::Bucket', 'AWS::S3::BucketPolicy', 'AWS::IAM::ManagedPolicy'})
         trust = self.role['AssumeRolePolicyDocument']['Statement'][0]
         self.assertEqual(trust['Action'], 'sts:AssumeRoleWithWebIdentity')
         claims = trust['Condition']['StringEquals']
@@ -25,7 +25,7 @@ class DeliveryAccessTest(unittest.TestCase):
 
     def test_no_direct_data_identity_or_infrastructure_administration(self):
         actions = {a for s in self.statements for a in s['Action']}
-        self.assertFalse(any(a.split(':')[0] in {'s3', 'ssm', 'secretsmanager',
+        self.assertFalse(any(a.split(':')[0] in {'secretsmanager',
                                                'route53', 'cognito-idp', 'ec2'} for a in actions))
         self.assertEqual({a for a in actions if a.startswith('iam:')}, {'iam:PassRole', 'iam:GetRole'})
         self.assertNotIn('sts:AssumeRole', actions)

@@ -88,6 +88,7 @@ def recovery_template():
     resources['RestoreBootstrapTask'] = bootstrap
     migration = renamed(resources['MigrationTask'], task_names)
     migration['Condition'] = 'RestoreTools'
+    migration['Properties']['ContainerDefinitions'][0]['Image'] = ref('GoImage')
     migration['Properties']['Family'] = sub('${AWS::StackName}-restore-migration')
     resources['RestoreMigrationTask'] = migration
 

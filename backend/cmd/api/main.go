@@ -20,6 +20,7 @@ import (
 	"coursek/blog/backend/internal/images"
 	"coursek/blog/backend/internal/mysql"
 	"coursek/blog/backend/internal/oidclogin"
+	"coursek/blog/backend/internal/releasecheck"
 )
 
 // Health checks must not initialize a DB connection or require credentials.
@@ -46,7 +47,7 @@ func run() error {
 		command = os.Args[1]
 	}
 	switch command {
-	case "serve", "migrate", "backup", "restore", "revoke-sessions":
+	case "serve", "migrate", "backup", "restore", "revoke-sessions", "release-check", "schema-version", "verify-schema":
 	default:
 		return errors.New("unknown application command")
 	}
@@ -89,6 +90,27 @@ func run() error {
 		return errors.New("cannot connect to MySQL")
 	}
 	defer store.Close()
+	if command == "verify-schema" {
+		if len(os.Args) != 2 {
+			return errors.New("unexpected schema arguments")
+		}
+		if err := store.VerifySchema(ctx); err != nil {
+			return errors.New("schema verification failed")
+		}
+		slog.Info("schema_verified", "version", mysql.LatestSchemaVersion())
+		return nil
+	}
+	if command == "schema-version" {
+		if len(os.Args) != 2 {
+			return errors.New("unexpected schema arguments")
+		}
+		version, err := store.SchemaVersion(ctx)
+		if err != nil {
+			return errors.New("schema query failed")
+		}
+		slog.Info("schema_version", "version", version)
+		return nil
+	}
 	if len(os.Args) == 2 && os.Args[1] == "migrate" {
 		return store.Migrate(ctx)
 	}
@@ -110,6 +132,39 @@ func run() error {
 		work, done := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer done()
 		return runDataCommand(work, command, os.Args[2:], dsn, store, backupService)
+	}
+	if command == "release-check" {
+		if len(os.Args) != 3 || os.Args[2] != "--confirm-production" || origin != releasecheck.Origin || os.Getenv("ECS_CONTAINER_METADATA_URI_V4") == "" {
+			return errors.New("explicit production ECS check required")
+		}
+		work, done := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer done()
+		check := releasecheck.Check{Store: store, Bucket: os.Getenv("MEDIA_BUCKET"), Schema: mysql.LatestSchemaVersion(), DeleteBlob: objects.Delete, Sync: os.Getenv("RELEASE_CHECK_SYNC") == "true", Backup: func(c context.Context) error {
+			for attempt := 0; attempt < 12; attempt++ {
+				err := backupService.Take(c, true)
+				if err != nil && !errors.Is(err, backup.ErrBusy) {
+					return err
+				}
+				state, e := store.BackupState(c)
+				if e != nil {
+					return e
+				}
+				if state.Generation == state.BackedUpGeneration && state.LastError == "" {
+					return nil
+				}
+				select {
+				case <-c.Done():
+					return c.Err()
+				case <-time.After(3 * time.Second):
+				}
+			}
+			return errors.New("backup did not finish")
+		}}
+		if err := check.Run(work); err != nil {
+			return err
+		}
+		slog.Info("production_checks_passed", "schema", mysql.LatestSchemaVersion(), "pngBytes", 10000000, "sync", check.Sync)
+		return nil
 	}
 	hash := ""
 	if os.Getenv("OIDC_ISSUER") == "" {
