@@ -59,11 +59,27 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 
 [`delivery.py`](../scripts/aws/delivery.py)は以下の手順を実行する。`--apply`がない場合は読み取りと前提確認までで、ビルド・バックアップ・更新は開始しない。
 
-1. AWSアカウントと専用ロール、テスト対象とcheckoutのコミット、既存本番の安定状態・ARM64・固定イメージを照合する。CloudFormationサービスロールが付いた場合は停止する。DB移行ディレクトリと移行処理が適用済み基準コミット672e66fから変わっている場合も停止する。DB移行は別途レビュー・実施後に基準を更新する。
+1. AWSアカウントと専用ロール、テスト対象とcheckoutのコミット、既存本番の安定状態・ARM64・固定イメージを照合する。CloudFormationサービスロールが付いた場合は停止する。DB移行SQLと移行処理のハッシュをSSMの`/course-k/blog-production/applied-schema-digest`と照合し、未登録・不一致なら停止する。通常配備からDDLは実行しない。
 2. GitHubのARM64ランナーでNode/Go/Nginxをビルドし、専用ECRへ登録してdigestで固定する。Docker認証情報は一時ディレクトリに置いて終了時に削除し、保存・表示しない。
 3. 既存アプリ定義のGoコマンドを`backup`にした単発タスクでバックアップを実行する。成功した場合だけ更新を続け、その単発タスクだけを停止する。
 4. 現行CloudFormationテンプレートと他のパラメータを維持し、NodeImage/GoImage/RouterImageだけの変更セットを作る。アプリ・移行タスク、置き換えないアプリサービス、サービス名に追随する監視以外の変更は拒否してから実行する。
-5. 更新したパラメータでスタックが完了したこと、稼働タスクのdigest・全コンテナのHEALTHY、公開HTTPSの一覧・readiness・healthを確認する。起動失敗はECS/CloudFormationのロールバックに任せ、配備を失敗にする。更新完了後の確認で失敗した場合は、元の3イメージのdigestへ戻して確認し、候補の配備自体は失敗として扱う。
+5. 更新したパラメータでスタックが完了したこと、稼働タスクのdigest・全コンテナのHEALTHY、公開HTTPSの一覧・readiness・healthを確認する。さらに単発タスクの`release-check --confirm-production`で本番APIとS3への直接送信を確認する。試験用記事・画像・短時間セッションを作り、10,000,000バイトのPNGとWebP、保存・公開・非公開時の画像アクセスを照合し、専用データを削除してバックアップする。本人の記事は変更しない。起動失敗はECS/CloudFormationのロールバックに任せ、配備を失敗にする。更新完了後の確認で失敗した場合は、元の3イメージのdigestへ戻して確認し、候補の配備自体は失敗として扱う。
+
+#### DB・画像バケットの変更を伴う配備
+
+[`special-release.yml`](../.github/workflows/special-release.yml)はmainの同じコミットに対する4検査の成功を確認し、通常配備と同じ排他制御で動く。まず`mode=plan`で読み取り確認し、出力された`schemaDigest`と`expectedSchema`を実行入力に指定する。
+
+- `apply`：現在のアプリとのSQL互換性を確認した場合だけ選ぶ。バックアップ、移行用イメージの設定、SQL移行、実DBの版・SQLチェックサム照合、画像設定、適用済みハッシュの記録、アプリ配備、本番確認の順で進める。SQLは自動で巻き戻さない。
+- `record-existing`：今回の002のようにSQLを適用済みの場合に選ぶ。DDLを実行せず、実DBのSQLチェックサムと版を確認して記録する。その後の配備・確認は同じ。
+- `check_sync=true`：今回の初回確認など、実際にQiitaの手動同期を1回要求するときだけ指定する。通常配備は同期を要求せず状態照会だけにする。
+
+自動適用を許す定義の差分は、移行タスクのイメージと、画像バケットの公開Origin限定POST CORS・stagingだけの1日期限に限定する。DB本体・公開設定・資源の追加削除などは拒否する。任意の基盤変更をこのワークフローに渡さない。51,200バイトを超える定義は、非公開の配備用S3へ置いてTemplateURLで送る（上限1MiB）。テンプレートは30日で削除する。
+
+初回のみ、管理者が`delivery_access.py`の出力を既存`course-k-blog-delivery-access`へ更新する。追加するのは配備用非公開S3と限定した管理ポリシーで、既存OIDCプロバイダ・接続条件・従来のインラインポリシーは維持する。Mac用ロールは自分やGitHubロールの権限を変更できないため、この初回更新には使えない。`production-access`スタックとは別物であり、同時更新しない。
+
+初回のmain取り込み直後は、適用済みハッシュが未登録のため通常配備が止まる。4検査成功後に専用ワークフローの`plan`→`record-existing`（今回の版は2）を実行する。これが成功した後に、必要なら通常ワークフローの失敗した配備ジョブだけを再実行する。ハッシュを手動で書いて移行確認を迂回しない。
+
+`release-check`はAPIと実AWS経路の試験であり、マウスでの画像操作・ブラウザの貼り付け・OIDCの本人ログインを再現する試験ではない。ブラウザ操作の回帰は既存のUI試験で確認する。本番確認の途中で失敗した場合はジョブを失敗として扱い、削除に失敗した試験データはログの失敗を解消してから確認する。
 
 更新失敗時はCloudFormationイベントから拒否されたIAMアクション名だけをGitHubログへ出す。イベント本文・秘密値・認証情報は出さない。アクセス定義の単体試験・構文検査は、OIDCの実接続や本番配備の成功を保証しない。実際の実行結果は公開台帳とGitHubジョブで区別する。作成済みOIDCプロバイダと専用ロールは維持し、基盤・認証・DB構造の変更を通常のアプリ自動更新へ混ぜない。公式仕様は[GitHub OIDC](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)、[ARM64ランナー](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)、[CloudFormationサービスロール](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html)を参照する。
 
