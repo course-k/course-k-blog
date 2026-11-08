@@ -6,11 +6,19 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"coursek/blog/backend/internal/imagemeta"
 )
 
 var ErrNotFound = errors.New("not found")
 var ErrConflict = errors.New("version conflict")
 var ErrInvalid = errors.New("invalid article")
+
+// ErrUntitled rejects publication of a working copy whose title is blank.
+var ErrUntitled = errors.New("publication requires a title")
+
+// ErrImageDisplay rejects a reserved image display setting that does not follow the grammar.
+var ErrImageDisplay = errors.New("invalid image display setting")
 
 // Working text and the published snapshot are deliberately separate: saving a
 // draft must never overwrite what readers currently see.
@@ -69,15 +77,28 @@ const (
 	maxMarkdownBytes   = 256 * 1024
 )
 
+// Validate checks a working copy. Autosave stores untitled drafts, so an empty
+// title is valid here; publication applies ValidatePublication separately.
 func Validate(title, markdown string) error {
 	if !utf8.ValidString(title) || !utf8.ValidString(markdown) {
 		return ErrInvalid
 	}
-	if strings.TrimSpace(title) == "" || utf8.RuneCountInString(title) > maxTitleCodePoints {
+	if utf8.RuneCountInString(title) > maxTitleCodePoints {
 		return ErrInvalid
 	}
 	if len(markdown) > maxMarkdownBytes {
 		return ErrInvalid
+	}
+	if imagemeta.Validate(markdown) != nil {
+		return ErrImageDisplay
+	}
+	return nil
+}
+
+// ValidatePublication is the server-side guard for the title readers will see.
+func ValidatePublication(title string) error {
+	if strings.TrimSpace(title) == "" {
+		return ErrUntitled
 	}
 	return nil
 }

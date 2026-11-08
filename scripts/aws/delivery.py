@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Release tested application images through the existing production stack."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,8 +15,16 @@ REGION = 'us-west-2'
 STACK = 'course-k-blog-production'
 ORIGIN = 'https://blog.course-k.com'
 ROOT = Path(__file__).resolve().parents[2]
-# Applied schema baseline. Changes require a separately reviewed migration first.
-SCHEMA_BASELINE = '672e66ff91ede2cebb45c1869b199a3ecc27f22b'
+# Only the special release records this after verifying the actual database.
+SCHEMA_STATE = '/course-k/blog-production/applied-schema-digest'
+
+def schema_digest(root=ROOT):
+    folder = root / 'backend/internal/mysql'
+    files = [folder / 'migrations.go', *sorted((folder / 'migrations').glob('*.sql'))]
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(str(path.relative_to(root)).encode() + b'\0' + path.read_bytes() + b'\0')
+    return digest.hexdigest()
 
 
 class ReleaseError(RuntimeError):
@@ -75,11 +84,13 @@ def wait_for(check, timeout=600, interval=10):
 
 
 class AWS:
-    def call(self, service, action, *, data=None, raw=False):
+    def call(self, service, action, *, data=None, raw=False, file_body=None):
         command = ['aws', service, action, '--region', REGION, '--no-cli-pager',
                    '--cli-connect-timeout', '10', '--cli-read-timeout', '45']
         if not raw:
             command += ['--output', 'json']
+        if file_body is not None:
+            command += ['--body', str(file_body)]
         # Input can contain environment parameter references; never echo it or raw AWS errors.
         if data is not None:
             command += ['--cli-input-json', json.dumps(data)]
@@ -105,16 +116,17 @@ class Release:
         require(re.fullmatch(r'[0-9]{12}', account), 'Expected AWS account ID')
         require(re.fullmatch(r'[a-z0-9-]+', self.run_id + '-' + self.attempt), 'Invalid run identity')
 
-    def preflight(self):
+    def preflight(self, *, special=False):
         identity = self.aws.call('sts', 'get-caller-identity')
         require(identity['Account'] == self.account and identity['Arn'].startswith(
             f'arn:aws:sts::{self.account}:assumed-role/course-k-blog-github-deploy/'),
             'Wrong AWS deployment identity')
         actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
         require(actual == self.commit, 'Checkout differs from tested commit')
-        result = subprocess.run(['git', 'diff', '--quiet', SCHEMA_BASELINE, self.commit, '--',
-                                 'backend/internal/mysql/migrations', 'backend/internal/mysql/migrations.go'], cwd=ROOT)
-        require(result.returncode == 0, 'Database migration changes require a separate release')
+        if not special:
+            state = self.aws.call('ssm', 'get-parameter', data={'Name': SCHEMA_STATE})
+            require(state['Parameter']['Type'] == 'String' and state['Parameter']['Value'] == schema_digest(),
+                    'Schema state differs; use the reviewed special release workflow')
         stack = self.aws.stack()
         require(stack['StackStatus'] in {'UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'},
                 'Production stack is not ready for an update')
@@ -179,8 +191,18 @@ class Release:
                 repository = self.outputs[output]
                 image_reference(repository, 'sha256:' + '0' * 64)
                 require(repository.startswith(registry + '/'), 'Repository belongs to another account')
-                tag = f'gh-{self.commit}-{self.run_id}-{self.attempt}'
+                tag = f'commit-{self.commit}'
                 target = repository + ':' + tag
+                try:
+                    existing = self.aws.call('ecr', 'describe-images', data={
+                        'repositoryName': repository.split('/', 1)[1], 'imageIds': [{'imageTag': tag}]})['imageDetails'][0]
+                except ReleaseError as error:
+                    if 'ImageNotFoundException' not in str(error):
+                        raise
+                else:
+                    images[parameter] = image_reference(repository, existing['imageDigest'])
+                    print(f'{name}: reusing pinned image for tested commit', flush=True)
+                    continue
                 subprocess.run(['docker', 'build', '--platform', 'linux/arm64',
                                 '--label', f'org.opencontainers.image.revision={self.commit}',
                                 '-t', target, folder], cwd=ROOT, env=env, check=True)
@@ -288,14 +310,50 @@ class Release:
                     require('course_k' in response.read(2_000_000).decode('utf-8'), 'Unexpected homepage')
         print('Pinned images, healthy containers and public HTTPS verified', flush=True)
 
+    def run_command(self, command, *, migration=False, sync=False):
+        stack = self.aws.stack()
+        outputs = {o['OutputKey']: o['OutputValue'] for o in stack['Outputs']}
+        definition = outputs['MigrationTaskDefinition' if migration else 'ApplicationTaskDefinition']
+        result = self.aws.call('ecs', 'run-task', data={
+            'cluster': self.cluster, 'taskDefinition': definition, 'launchType': 'FARGATE', 'count': 1,
+            'networkConfiguration': self.service()['networkConfiguration'],
+            'startedBy': 'gh-check-' + self.run_id,
+            'overrides': {'containerOverrides': [{'name': 'go', 'command': command,
+                'environment': [{'name': 'RELEASE_CHECK_SYNC', 'value': 'true' if sync else 'false'}]}]},
+        })
+        require(not result.get('failures') and len(result.get('tasks', [])) == 1, 'Release task did not start')
+        arn = result['tasks'][0]['taskArn']
+        def check():
+            tasks = self.aws.call('ecs', 'describe-tasks', data={'cluster': self.cluster, 'tasks': [arn]})
+            require(not tasks.get('failures') and len(tasks.get('tasks', [])) == 1, 'Release task unavailable')
+            task = tasks['tasks'][0]
+            go = next(c for c in task['containers'] if c['name'] == 'go')
+            if go.get('lastStatus') == 'STOPPED':
+                require(go.get('exitCode') == 0, 'Release command failed; inspect ECS logs')
+                return True
+            require(task['lastStatus'] != 'STOPPED', 'Release task stopped before command success')
+            return None
+        try:
+            wait_for(check, timeout=420)
+        finally:
+            self.aws.call('ecs', 'stop-task', data={'cluster': self.cluster, 'task': arn, 'reason': 'Release command finished'})
+
+    def production_check(self, *, sync=False):
+        self.run_command(['release-check', '--confirm-production'], sync=sync)
+        print('Real S3 upload (10MB PNG and WebP), save, publication visibility, cleanup and backup passed', flush=True)
+
     def apply(self):
         self.preflight()
         images = self.images()
         self.backup()
         validate_service(self.service(), self.old_task)
-        self.change_images(images, 'update')
+        candidate = dict(images)
+        if 'MigrationImage' in self.previous:
+            candidate['MigrationImage'] = ''
+        self.change_images(candidate, 'update')
         try:
             self.verify(images)
+            self.production_check()
         except Exception as error:
             print('Post-release verification failed; restoring previous image digests', flush=True)
             previous = {key: self.previous[key] for key in ('NodeImage', 'GoImage', 'RouterImage')}

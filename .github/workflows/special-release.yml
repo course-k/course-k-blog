@@ -1,0 +1,74 @@
+name: Reviewed production release
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'plan: inspect only / record-existing: verify applied SQL without DDL / apply: migrate compatible SQL'
+        type: choice
+        options: [plan, record-existing, apply]
+        default: plan
+      schema_digest:
+        description: 'Exact schemaDigest printed by plan (required for execution)'
+        type: string
+        default: ''
+      expected_schema:
+        description: 'Expected schema version printed by plan'
+        type: number
+        default: 0
+      backward_compatible:
+        description: 'I reviewed the SQL and confirmed compatibility with the currently running app'
+        type: boolean
+        default: false
+      check_sync:
+        description: 'Explicitly request one real Qiita sync as part of acceptance'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: course-k-blog-production-delivery
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Require current main and successful tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/aws/check_release_revision.py --commit "$GITHUB_SHA"
+      - name: Prepare AWS CLI
+        run: |
+          if ! command -v aws >/dev/null; then
+            curl --fail --silent --show-error --location https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip --output "$RUNNER_TEMP/awscliv2.zip"
+            unzip -q "$RUNNER_TEMP/awscliv2.zip" -d "$RUNNER_TEMP/aws-install"
+            "$RUNNER_TEMP/aws-install/aws/install" --install-dir "$RUNNER_TEMP/aws-cli" --bin-dir "$RUNNER_TEMP/bin"
+            echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          fi
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::757412973334:role/course-k-blog-github-deploy
+          allowed-account-ids: '757412973334'
+          role-session-name: github-blog-${{ github.run_id }}
+          role-duration-seconds: 3600
+          unset-current-credentials: true
+      - name: Plan or execute the reviewed release
+        env:
+          RELEASE_MODE: ${{ inputs.mode }}
+          RELEASE_DIGEST: ${{ inputs.schema_digest }}
+          RELEASE_SCHEMA: ${{ inputs.expected_schema }}
+          RELEASE_COMPATIBLE: ${{ inputs.backward_compatible }}
+          RELEASE_SYNC: ${{ inputs.check_sync }}
+        run: |
+          python3 scripts/aws/run_special_release.py

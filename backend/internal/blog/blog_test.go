@@ -11,8 +11,10 @@ func TestValidateBoundaries(t *testing.T) {
 		name, title, markdown string
 		valid                 bool
 	}{
-		{"empty title", "", "body", false},
-		{"blank title", " \n\t", "body", false},
+		{"empty title saved as draft", "", "body", true},
+		{"blank title saved as draft", " \n\t", "body", true},
+		{"reserved image setting", "", "![a](/api/images/x \"blog-image:v1;width=50;align=center\")", true},
+		{"invalid reserved image setting", "", "![a](/api/images/x \"blog-image:v1;width=5;align=left\")", false},
 		{"200 ASCII code points", strings.Repeat("a", 200), "", true},
 		{"201 ASCII code points", strings.Repeat("a", 201), "", false},
 		{"200 Unicode code points", strings.Repeat("猫", 200), "", true},
@@ -31,9 +33,20 @@ func TestValidateBoundaries(t *testing.T) {
 			if tc.valid && err != nil {
 				t.Fatal(err)
 			}
-			if !tc.valid && !errors.Is(err, ErrInvalid) {
+			if !tc.valid && !errors.Is(err, ErrInvalid) && !errors.Is(err, ErrImageDisplay) {
 				t.Fatalf("got %v, want ErrInvalid", err)
 			}
 		})
+	}
+}
+
+func TestValidatePublicationRequiresVisibleTitle(t *testing.T) {
+	for _, title := range []string{"", " ", "\u3000\n\t"} {
+		if !errors.Is(ValidatePublication(title), ErrUntitled) {
+			t.Fatalf("%q accepted for publication", title)
+		}
+	}
+	if ValidatePublication(" 題 ") != nil {
+		t.Fatal("visible title rejected")
 	}
 }

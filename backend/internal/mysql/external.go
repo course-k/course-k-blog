@@ -4,19 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"strings"
-	"unicode/utf8"
+	"time"
 
 	"coursek/blog/backend/internal/blog"
 	"coursek/blog/backend/internal/external"
 )
 
-// Shared visibility and date corrections keep the archive and list consistent.
+// The list, monthly archive and counts share one definition. External articles
+// use the fetched title and date for every row; legacy title_override,
+// date_override and hidden columns are kept in the database but not applied.
 const publicArticles = `SELECT 'own' AS kind,id,published_title AS title,published_at,public_updated_at AS updated_at,'' AS source,'' AS url
    FROM posts WHERE published
    UNION ALL
-   SELECT 'external',CONCAT(source,':',source_id),COALESCE(title_override,title),COALESCE(date_override,published_at),fetched_at,source,url
-   FROM external_posts WHERE NOT hidden`
+   SELECT 'external',CONCAT(source,':',source_id),title,published_at,fetched_at,source,url
+   FROM external_posts`
+
+// Manual sync waits 10 minutes after the previous attempt for each source.
+const syncCooldown = 10 * time.Minute
 
 func (s *Store) ListArticles(ctx context.Context, limit, offset int, month string) ([]external.Article, error) {
 	query := `SELECT kind,id,title,published_at,updated_at,source,url FROM (` + publicArticles + `) AS articles`
@@ -76,25 +80,15 @@ func (s *Store) ListExternal(ctx context.Context) ([]external.Post, error) {
 	}
 	return posts, rows.Err()
 }
-func (s *Store) CorrectExternal(ctx context.Context, source, id string, in external.Correction) error {
-	if !external.ValidSource(source) || in.Version < 1 || (in.Title != nil && (!utf8.ValidString(*in.Title) || strings.TrimSpace(*in.Title) == "" || utf8.RuneCountInString(*in.Title) > 500)) || (in.PublishedAt != nil && in.PublishedAt.IsZero()) {
-		return external.ErrInvalid
-	}
-	result, err := s.db.ExecContext(ctx, `UPDATE external_posts SET title_override=?,date_override=?,hidden=?,version=version+1 WHERE source=? AND source_id=? AND version=?`, in.Title, in.PublishedAt, in.Hidden, source, id, in.Version)
-	if err != nil {
-		return err
-	}
-	count, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if count == 0 {
-		return blog.ErrConflict
-	}
-	return nil
-}
 func (s *Store) SyncStates(ctx context.Context) ([]external.SyncState, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT source,status,coverage,imported_count,error_code,last_attempt,last_success,next_run FROM sync_sources ORDER BY source`)
+	// A legacy scheduled run whose lease expired is shown as idle: only explicit
+	// requests are resumed after a process stops.
+	rows, err := s.db.QueryContext(ctx, `SELECT source,
+ CASE WHEN status='running' AND NOT requested AND (lease_until IS NULL OR lease_until<NOW(6)) THEN 'idle'
+      WHEN status='waiting' AND NOT requested THEN 'idle' ELSE status END,
+ requested,coverage,imported_count,error_code,last_attempt,last_success,
+ IF(last_attempt>NOW(6)-INTERVAL 10 MINUTE,last_attempt+INTERVAL 10 MINUTE,NULL)
+ FROM sync_sources ORDER BY FIELD(source,'qiita','wantedly','note')`)
 	if err != nil {
 		return nil, err
 	}
@@ -102,19 +96,24 @@ func (s *Store) SyncStates(ctx context.Context) ([]external.SyncState, error) {
 	states := []external.SyncState{}
 	for rows.Next() {
 		var state external.SyncState
-		if err := rows.Scan(&state.Source, &state.Status, &state.Coverage, &state.Count, &state.ErrorCode, &state.LastAttempt, &state.LastSuccess, &state.NextRun); err != nil {
+		if err := rows.Scan(&state.Source, &state.Status, &state.Requested, &state.Coverage, &state.Count, &state.ErrorCode, &state.LastAttempt, &state.LastSuccess, &state.NextAllowedAt); err != nil {
 			return nil, err
 		}
 		states = append(states, state)
 	}
 	return states, rows.Err()
 }
+
+// RequestSync is the only way a sync starts. It returns ErrRunning while a
+// request is queued or running and CooldownError during the 10-minute limit.
 func (s *Store) RequestSync(ctx context.Context, source string) error {
 	if !external.ValidSource(source) {
 		return blog.ErrInvalid
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE sync_sources SET next_run=NOW(6),status='waiting'
- WHERE source=? AND (lease_until IS NULL OR lease_until<NOW(6)) AND (last_attempt IS NULL OR last_attempt<NOW(6)-INTERVAL 10 MINUTE)`, source)
+	result, err := s.db.ExecContext(ctx, `UPDATE sync_sources SET requested=true,status='waiting'
+ WHERE source=? AND NOT (requested AND status IN ('waiting','running'))
+ AND (lease_until IS NULL OR lease_until<NOW(6))
+ AND (last_attempt IS NULL OR last_attempt<NOW(6)-INTERVAL 10 MINUTE)`, source)
 	if err != nil {
 		return err
 	}
@@ -122,11 +121,25 @@ func (s *Store) RequestSync(ctx context.Context, source string) error {
 	if err != nil {
 		return err
 	}
-	if count == 0 {
-		return external.ErrBusy
+	if count == 1 {
+		return nil
 	}
-	return nil
+	var busy bool
+	var remaining sql.NullInt64
+	err = s.db.QueryRowContext(ctx, `SELECT (requested AND status IN ('waiting','running')) OR COALESCE(lease_until>=NOW(6),false),
+ IF(last_attempt>=NOW(6)-INTERVAL 10 MINUTE,TIMESTAMPDIFF(MICROSECOND,NOW(6),last_attempt+INTERVAL 10 MINUTE),NULL)
+ FROM sync_sources WHERE source=?`, source).Scan(&busy, &remaining)
+	if err != nil {
+		return err
+	}
+	if !busy && remaining.Valid {
+		return external.CooldownError{RetryAfter: max(time.Duration(remaining.Int64)*time.Microsecond, time.Second)}
+	}
+	return external.ErrRunning
 }
+
+// ClaimSync takes an explicitly requested source, or resumes an explicit
+// request whose lease expired. Reaching next_run alone never starts a sync.
 func (s *Store) ClaimSync(ctx context.Context, runID string) (string, error) {
 	var source string
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -134,7 +147,7 @@ func (s *Store) ClaimSync(ctx context.Context, runID string) (string, error) {
 		return "", err
 	}
 	defer tx.Rollback()
-	err = tx.QueryRowContext(ctx, `SELECT source FROM sync_sources WHERE next_run<=NOW(6) AND (lease_until IS NULL OR lease_until<NOW(6)) ORDER BY next_run,source LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&source)
+	err = tx.QueryRowContext(ctx, `SELECT source FROM sync_sources WHERE requested AND status IN ('waiting','running') AND (lease_until IS NULL OR lease_until<NOW(6)) ORDER BY source LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&source)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -162,7 +175,7 @@ func (s *Store) FinishSync(ctx context.Context, source, runID string, batch exte
 		return err
 	}
 	if errorCode != "" {
-		if _, err = tx.ExecContext(ctx, `UPDATE sync_sources SET status='failed',error_code=?,lease_until=NULL,run_id=NULL,next_run=NOW(6)+INTERVAL 1 HOUR WHERE source=?`, errorCode, source); err != nil {
+		if _, err = tx.ExecContext(ctx, `UPDATE sync_sources SET status='failed',requested=false,error_code=?,lease_until=NULL,run_id=NULL WHERE source=?`, errorCode, source); err != nil {
 			return err
 		}
 		return tx.Commit()
@@ -198,7 +211,7 @@ func (s *Store) FinishSync(ctx context.Context, source, runID string, batch exte
 	if batch.Coverage != "all" {
 		status = "partial"
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE sync_sources SET status=?,coverage=?,imported_count=?,error_code='',last_success=NOW(6),next_run=NOW(6)+INTERVAL 1 DAY,lease_until=NULL,run_id=NULL WHERE source=?`, status, batch.Coverage, len(batch.Posts), source)
+	_, err = tx.ExecContext(ctx, `UPDATE sync_sources SET status=?,requested=false,coverage=?,imported_count=?,error_code='',last_success=NOW(6),lease_until=NULL,run_id=NULL WHERE source=?`, status, batch.Coverage, len(batch.Posts), source)
 	if err != nil {
 		return err
 	}

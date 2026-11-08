@@ -62,7 +62,7 @@ function Root() {
             <Link to="/" search={{ page: 1 }}>
               記事
             </Link>
-            <Link to="/admin">管理</Link>
+            <Link to="/admin" search={{ view: "new" }}>管理</Link>
           </nav>
         </header>
         <main id="main">

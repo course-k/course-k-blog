@@ -224,7 +224,8 @@ func TestInputAndSessionBoundaries(t *testing.T) {
 		name, method, path, body, origin string
 		status                           int
 	}{
-		{"empty title", "POST", "/api/admin/posts", `{"title":"","markdown":"x"}`, "http://localhost:8080", 400},
+		{"untitled draft", "POST", "/api/admin/posts", `{"title":"","markdown":"x"}`, "http://localhost:8080", 201},
+		{"invalid title UTF-8", "POST", "/api/admin/posts", `{"title":"\xff","markdown":"x"}`, "http://localhost:8080", 400},
 		{"unknown field", "POST", "/api/admin/posts", `{"title":"x","markdown":"x","published":true}`, "http://localhost:8080", 400},
 		{"trailing JSON", "POST", "/api/admin/posts", `{"title":"x","markdown":"x"} {}`, "http://localhost:8080", 400},
 		{"missing origin", "POST", "/api/admin/posts", `{"title":"x","markdown":"x"}`, "", 403},

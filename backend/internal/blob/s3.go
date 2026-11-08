@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"regexp"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -31,9 +33,51 @@ func (s *S3) Put(ctx context.Context, key string, body []byte, mime string) erro
 	}
 	_, err := s.Client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(s.Bucket), Key: aws.String(key), Body: bytes.NewReader(body), ContentType: aws.String(mime), ServerSideEncryption: types.ServerSideEncryptionAes256, IfNoneMatch: aws.String("*")})
 	if err != nil {
+		var apiError smithy.APIError
+		if errors.As(err, &apiError) && (apiError.ErrorCode() == "PreconditionFailed" || apiError.ErrorCode() == "ConditionalRequestConflict") {
+			return ErrExists
+		}
 		return errors.New("private object write failed")
 	}
 	return nil
+}
+
+var stagingKey = regexp.MustCompile(`^images/staging/[A-Za-z0-9_-]{43}$`)
+
+// MaxStagedBytes bounds a browser upload accepted by a signed POST policy.
+const MaxStagedBytes = 10_000_000
+
+// PresignStagingPost signs a browser POST that can only create the fixed
+// staging key with the declared type and exact size, encrypted with AES256.
+// The bucket stays private: no ACL field is signed or accepted.
+func (s *S3) PresignStagingPost(ctx context.Context, key, mime string, size int64, lifetime time.Duration) (string, map[string]string, error) {
+	if !stagingKey.MatchString(key) || size < 1 || size > MaxStagedBytes || lifetime <= 0 || lifetime > 5*time.Minute {
+		return "", nil, errors.New("invalid staging upload")
+	}
+	presigner := s3.NewPresignClient(s.Client)
+	request, err := presigner.PresignPostObject(ctx, &s3.PutObjectInput{Bucket: aws.String(s.Bucket), Key: aws.String(key)}, func(options *s3.PresignPostOptions) {
+		options.Expires = lifetime
+		options.Conditions = StagingConditions(key, mime, size)
+	})
+	if err != nil {
+		return "", nil, errors.New("staging signature failed")
+	}
+	fields := map[string]string{"Content-Type": mime, "x-amz-server-side-encryption": "AES256"}
+	for name, value := range request.Values {
+		fields[name] = value
+	}
+	return request.URL, fields, nil
+}
+
+// StagingConditions is the POST policy beyond the bucket, credential and key
+// conditions that the SDK always adds.
+func StagingConditions(key, mime string, size int64) []any {
+	return []any{
+		map[string]string{"key": key},
+		map[string]string{"Content-Type": mime},
+		map[string]string{"x-amz-server-side-encryption": "AES256"},
+		[]any{"content-length-range", size, size},
+	}
 }
 func (s *S3) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	if !validKey.MatchString(key) {

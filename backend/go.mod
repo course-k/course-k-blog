@@ -32,4 +32,5 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
+	golang.org/x/image v0.47.0 // indirect
 )

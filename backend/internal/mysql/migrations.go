@@ -21,7 +21,27 @@ var migrationFiles embed.FS
 const migrationLockName = "coursek-schema"
 
 // Migrations are an explicit command, never a side effect of starting a task.
-func (s *Store) Migrate(ctx context.Context) error {
+func (s *Store) Migrate(ctx context.Context) error { return s.migrateTo(ctx, 0) }
+
+// LatestSchemaVersion is the highest embedded migration.
+func LatestSchemaVersion() int {
+	files, _ := fs.Glob(migrationFiles, "migrations/*.sql")
+	latest := 0
+	for _, name := range files {
+		if version, err := migrationVersion(name); err == nil && version > latest {
+			latest = version
+		}
+	}
+	return latest
+}
+
+func migrationVersion(name string) (int, error) {
+	return strconv.Atoi(strings.Split(strings.TrimPrefix(name, "migrations/"), "_")[0])
+}
+
+// migrateTo applies migrations up to limit (0 applies all). Tests use a limit
+// to reproduce databases that predate a migration.
+func (s *Store) migrateTo(ctx context.Context, limit int) error {
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return err
@@ -44,9 +64,12 @@ func (s *Store) Migrate(ctx context.Context) error {
 	}
 	sort.Strings(files)
 	for _, name := range files {
-		version, err := strconv.Atoi(strings.Split(strings.TrimPrefix(name, "migrations/"), "_")[0])
+		version, err := migrationVersion(name)
 		if err != nil {
 			return err
+		}
+		if limit > 0 && version > limit {
+			break
 		}
 		script, err := migrationFiles.ReadFile(name)
 		if err != nil {

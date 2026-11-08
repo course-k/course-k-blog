@@ -20,53 +20,53 @@ test("reader and owner flow against real MySQL and production SSR", async ({
   const password = login.match(/^Password: (.+)$/m)?.[1];
   if (!password) throw new Error("Local fixture credentials are missing");
   const title = `動作確認用の記事 ${Date.now()}`;
+  const saved = page.locator(".save-state");
+  const markdownInput = page.getByLabel("本文（Markdown）", { exact: true });
   await page.goto("/admin");
   await page.getByLabel("パスワード", { exact: true }).fill(password);
   await page.getByRole("button", { name: "ログイン", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "記事を書く" })).toBeVisible();
-  const external = page.getByRole("region", {
-    name: "外部の記事",
-    exact: true,
-  });
-  await external
-    .getByLabel("補正する外部記事")
-    .selectOption("qiita:e2e-external");
-  await external
-    .getByLabel("タイトルの補正", { exact: false })
-    .fill("外部記事の表示確認");
-  await external
-    .getByRole("button", { name: "外部記事の設定を保存", exact: true })
-    .click();
-  await expect(external.getByLabel("補正する外部記事")).toHaveValue("");
-  await page.getByRole("button", { name: "＋ 新しい記事" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "新規作成" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "下書きを保存" })).toHaveCount(0);
   await page.getByLabel("タイトル", { exact: true }).fill(title);
-  await page
-    .getByLabel("Markdown", { exact: true })
-    .fill("## 公開前のメモ\n\n下書きの内容です。");
+  await markdownInput.fill("## 公開前のメモ\n\n下書きの内容です。");
   await expect(
     page
       .getByRole("region", { name: "プレビュー" })
       .getByRole("heading", { name: "公開前のメモ" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "下書きを保存", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("下書きを保存しました");
+  // Autosave: no button; the URL switches to the created article.
+  await expect(saved).toHaveText("保存済み", { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/admin\?view=edit&id=[A-Za-z0-9_-]{43}$/);
   const pixel = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
     "base64",
   );
-  const upload = async (name: string) => {
-    await page
-      .getByLabel("画像を挿入（PNG/JPEG、5MiB以内）", { exact: true })
-      .setInputFiles({ name, mimeType: "image/png", buffer: pixel });
-    await expect(page.getByRole("status")).toContainText("画像を挿入しました");
-    const markdown = await page
-      .getByLabel("Markdown", { exact: true })
-      .inputValue();
-    const path = markdown.match(/\/api\/images\/[A-Za-z0-9_-]{43}/)?.[0];
-    expect(path).toBeTruthy();
-    return path!;
+  const webp = Buffer.from("UklGRiIAAABXRUJQVlA4TBYAAAAvAkAAEA8Q8x+DHAwFaRuwsN2J6H88", "base64");
+  const upload = async (name: string, bytes: Buffer, type = "image/png") => {
+    await markdownInput.evaluate((element: HTMLTextAreaElement) => {
+      element.focus();
+      element.setSelectionRange(element.value.length, element.value.length);
+    });
+    await page.evaluate(
+      ({ name, data, type }) => {
+        const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([bytes], name, { type }));
+        document.getElementById("markdown")!.dispatchEvent(
+          new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }),
+        );
+      },
+      { name, data: bytes.toString("base64"), type },
+    );
+    await expect(markdownInput).not.toHaveValue(/pending-image:/, { timeout: 20_000 });
+    const paths = (await markdownInput.inputValue()).match(/\/api\/images\/[A-Za-z0-9_-]{43}/g) ?? [];
+    expect(paths.length).toBeGreaterThan(0);
+    await expect(saved).toHaveText("保存済み", { timeout: 15_000 });
+    return paths.at(-1)!;
   };
-  const firstImage = await upload("first.png");
+  const firstImage = await upload("first.png", pixel);
+  const webpImage = await upload("transparent.webp", webp, "image/webp");
+  expect((await page.request.get(webpImage)).headers()["content-type"]).toBe("image/png");
   const adminResponse = await page.request.get("/api/admin/posts");
   expect(adminResponse.status()).toBe(200);
   const draft = (await adminResponse.json()).find(
@@ -81,8 +81,13 @@ test("reader and owner flow against real MySQL and production SSR", async ({
   expect((await reading.request.get(firstImage)).status()).toBe(404);
   expect((await page.request.get(firstImage)).status()).toBe(200);
   expect((await page.request.get(`/og/posts/${draft.id}.png`)).status()).toBe(404);
+  // Lay out the first image in the preview; the setting is autosaved with the text.
+  await page.locator(".preview .blog-image img").first().click();
+  await page.getByRole("toolbar", { name: "画像の配置とサイズ" }).getByRole("button", { name: "中央寄せ" }).click();
+  await expect(markdownInput).toHaveValue(/blog-image:v1;width=auto;align=center/);
+  await expect(saved).toHaveText("保存済み", { timeout: 15_000 });
   await page.getByRole("button", { name: "公開する", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("公開しました");
+  await expect(page.getByText("公開しました。")).toBeVisible();
   const response = await reading.goto(`/posts/${draft.id}`);
   expect(response?.status()).toBe(200);
   await expect(
@@ -92,6 +97,15 @@ test("reader and owner flow against real MySQL and production SSR", async ({
     reading.getByText("下書きの内容です。", { exact: true }),
   ).toBeVisible();
   expect((await reading.request.get(firstImage)).status()).toBe(200);
+  await expect(reading.locator(".reading-content .blog-image").first()).toHaveAttribute("data-align", "center");
+  const viewer = await browser.newContext();
+  const viewing = await viewer.newPage();
+  await viewing.goto(`/posts/${draft.id}`);
+  await viewing.locator(".reading-content .blog-image img").first().click();
+  await expect(viewing.getByRole("dialog")).toBeVisible();
+  await viewing.keyboard.press("Escape");
+  await expect(viewing.getByRole("dialog")).toHaveCount(0);
+  await viewer.close();
   const firstPublic = await (
     await reading.request.get(`/api/posts/${draft.id}`)
   ).json();
@@ -106,12 +120,9 @@ test("reader and owner flow against real MySQL and production SSR", async ({
   const png = await ogp.body();
   expect(png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))).toBe(true);
   expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1200, 630]);
-  await page
-    .getByLabel("Markdown", { exact: true })
-    .fill("## 更新後のメモ\n\nまだ公開していない変更です。");
-  const secondImage = await upload("second.png");
-  await page.getByRole("button", { name: "下書きを保存", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("下書きを保存しました");
+  await markdownInput.fill("## 更新後のメモ\n\nまだ公開していない変更です。");
+  const secondImage = await upload("second.png", pixel);
+  await expect(page.locator(".publication-state")).toHaveText("公開中・未公開の変更あり");
   expect((await reading.request.get(firstImage)).status()).toBe(200);
   expect((await reading.request.get(secondImage)).status()).toBe(404);
   await reading.reload();
@@ -124,7 +135,7 @@ test("reader and owner flow against real MySQL and production SSR", async ({
   await page
     .getByRole("button", { name: "更新を公開する", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText("公開しました");
+  await expect(page.getByText("公開しました。")).toBeVisible();
   await reading.reload();
   await expect(
     reading.getByText("まだ公開していない変更です。", { exact: true }),
@@ -150,9 +161,10 @@ test("reader and owner flow against real MySQL and production SSR", async ({
   await expect(
     reading.getByRole("link", { name: new RegExp(title) }),
   ).toBeVisible();
+  // Legacy corrections and hidden flags are no longer applied to fetched articles.
   await expect(
     reading.getByRole("link", {
-      name: "外部記事の表示確認 — Qiita、新しいタブで開く",
+      name: "外部の記事の元タイトル — Qiita、新しいタブで開く",
       exact: true,
     }),
   ).toHaveAttribute("href", "https://qiita.com/course_k/items/e2e-external");
@@ -196,7 +208,7 @@ test("reader and owner flow against real MySQL and production SSR", async ({
   });
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "非公開に戻す", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("非公開にしました");
+  await expect(page.getByText("非公開にしました。")).toBeVisible();
   expect((await reading.request.get(`/api/posts/${draft.id}`)).status()).toBe(
     404,
   );
@@ -213,6 +225,11 @@ test("reader and owner flow against real MySQL and production SSR", async ({
   await expect(
     reading.getByRole("heading", { name: "記事が見つかりません" }),
   ).toBeVisible();
+  await page.getByRole("navigation", { name: "管理メニュー" }).getByRole("link", { name: "記事一覧" }).click();
+  await expect(page.getByRole("link", { name: title })).toBeVisible();
+  await page.getByRole("navigation", { name: "管理メニュー" }).getByRole("link", { name: "設定" }).click();
+  await page.getByRole("button", { name: "Qiitaを同期", exact: true }).click();
+  await expect(page.getByText("Qiitaの同期を待っています…")).toBeVisible();
   await page.getByRole("button", { name: "ログアウト", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "管理者ログイン" }),

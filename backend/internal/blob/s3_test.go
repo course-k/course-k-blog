@@ -2,6 +2,8 @@ package blob
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -9,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -107,5 +110,55 @@ func TestS3UsesPrivateImmutableWritesAndDistinguishesMissingFromDenied(t *testin
 	}
 	if _, err := storage.Get(ctx, key); !errors.Is(err, ErrNotFound) {
 		t.Fatal("deleted object still present", err)
+	}
+}
+
+func TestStagingPostPolicyBindsKeyTypeSizeAndEncryption(t *testing.T) {
+	storage := S3{Bucket: "private-bucket", Client: s3.New(s3.Options{Region: "us-west-2", Credentials: aws.CredentialsProviderFunc(func(context.Context) (aws.Credentials, error) {
+		return aws.Credentials{AccessKeyID: "AKIDEXAMPLE", SecretAccessKey: "secret", SessionToken: "session"}, nil
+	})})}
+	ctx := context.Background()
+	key := "images/staging/" + strings.Repeat("s", 43)
+	url, fields, err := storage.PresignStagingPost(ctx, key, "image/webp", 1234, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(url, "https://private-bucket.s3.us-west-2.amazonaws.com") || fields["key"] != key || fields["Content-Type"] != "image/webp" || fields["x-amz-server-side-encryption"] != "AES256" || fields["acl"] != "" {
+		t.Fatal("form fields", url, fields)
+	}
+	raw, err := base64.StdEncoding.DecodeString(fields["policy"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var policy struct {
+		Expiration time.Time `json:"expiration"`
+		Conditions []any     `json:"conditions"`
+	}
+	if err := json.Unmarshal(raw, &policy); err != nil {
+		t.Fatal(err)
+	}
+	if time.Until(policy.Expiration) > 5*time.Minute+time.Second {
+		t.Fatal("signature lives longer than five minutes", policy.Expiration)
+	}
+	encoded, _ := json.Marshal(policy.Conditions)
+	for _, want := range []string{`{"key":"` + key + `"}`, `{"Content-Type":"image/webp"}`, `{"x-amz-server-side-encryption":"AES256"}`, `["content-length-range",1234,1234]`, `{"bucket":"private-bucket"}`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("policy lacks %s: %s", want, encoded)
+		}
+	}
+	for _, bad := range []struct {
+		key      string
+		size     int64
+		lifetime time.Duration
+	}{
+		{"images/" + strings.Repeat("s", 43) + ".png", 10, time.Minute},
+		{"backups/" + strings.Repeat("s", 43) + ".json", 10, time.Minute},
+		{key, 0, time.Minute},
+		{key, 10_000_001, time.Minute},
+		{key, 10, 6 * time.Minute},
+	} {
+		if _, _, err := storage.PresignStagingPost(ctx, bad.key, "image/png", bad.size, bad.lifetime); err == nil {
+			t.Fatal("unsafe staging signature", bad)
+		}
 	}
 }

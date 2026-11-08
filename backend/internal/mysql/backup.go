@@ -164,6 +164,14 @@ func (s *Store) ForgetBackup(ctx context.Context, id string) error {
 	return err
 }
 
+// Snapshot tables and columns are unchanged since schema 1: migration 2 only
+// relaxed checks (empty working title, 10,000,000-byte images) and added
+// tables or columns outside the snapshot. Older archives therefore restore into
+// the current schema; an archive from a newer schema never does.
+func restorableSchema(snapshot, current int) bool {
+	return snapshot >= 1 && snapshot <= current && current <= 2
+}
+
 type restoreQuery interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
@@ -176,7 +184,7 @@ func validateRestore(ctx context.Context, query restoreQuery, snapshot backup.Sn
 	if err := query.QueryRowContext(ctx, "SELECT max(version) FROM schema_migrations").Scan(&version); err != nil {
 		return err
 	}
-	if version != snapshot.SchemaVersion {
+	if !restorableSchema(snapshot.SchemaVersion, version) {
 		return backup.ErrInvalid
 	}
 	for _, table := range snapshotTables {

@@ -41,24 +41,15 @@ export type ArticleSummary =
     };
 export type ArchiveMonth = { month: string; count: number };
 export type ArticlePage = { articles: ArticleSummary[]; hasNext: boolean; months: ArchiveMonth[] };
-export type ExternalPost = {
-  source: "qiita" | "note" | "wantedly";
-  id: string;
-  title: string;
-  url: string;
-  publishedAt: string;
-  titleOverride: string | null;
-  dateOverride: string | null;
-  hidden: boolean;
-  version: number;
-};
 export type SyncState = {
-  source: ExternalPost["source"];
-  status: string;
+  source: "qiita" | "note" | "wantedly";
+  status: "idle" | "waiting" | "running" | "success" | "partial" | "failed";
+  requested: boolean;
   coverage: string;
+  /** Size of the latest fetched batch, not the total article count. */
   count: number;
   errorCode: string;
   lastAttempt: string | null;
   lastSuccess: string | null;
-  nextRun: string;
+  nextAllowedAt: string | null;
 };

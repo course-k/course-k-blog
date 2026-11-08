@@ -31,6 +31,7 @@ def delivery_access_template():
         return {'Sid': sid, 'Effect': 'Allow', 'Action': actions,
                 'Resource': resources, 'Condition': condition}
 
+    artifacts = sub('arn:${AWS::Partition}:s3:::course-k-blog-release-${AWS::AccountId}-${AWS::Region}')
     statements = [
         allow('ReadProductionStack', [
             'cloudformation:DescribeStacks', 'cloudformation:DescribeStackEvents',
@@ -41,6 +42,15 @@ def delivery_access_template():
             'cloudformation:ExecuteChangeSet', 'cloudformation:DeleteChangeSet',
         ], [sub(cfn + f'stack/{stack}/*'),
             sub(cfn + f'changeSet/{stack}-release-*/*')]),
+        allow('ReleaseTemplates', ['s3:GetObject', 's3:PutObject'],
+              sub('arn:${AWS::Partition}:s3:::course-k-blog-release-${AWS::AccountId}-${AWS::Region}/templates/*')),
+        allow('AppliedSchemaState', ['ssm:GetParameter', 'ssm:PutParameter'],
+              sub('arn:${AWS::Partition}:ssm:us-west-2:${AWS::AccountId}:parameter/course-k/blog-production/applied-schema-digest')),
+        allow('RunMigration', ['ecs:RunTask'], definitions[1], {
+            **regional, 'ArnLike': {'ecs:cluster': cluster},
+        }),
+        allow('ImageSettingsThroughStack', ['s3:GetAccelerateConfiguration', 's3:GetLifecycleConfiguration', 's3:GetBucketPublicAccessBlock', 's3:GetAnalyticsConfiguration', 's3:GetBucketCORS', 's3:GetEncryptionConfiguration', 's3:GetInventoryConfiguration', 's3:GetBucketLogging', 's3:GetMetricsConfiguration', 's3:GetBucketNotification', 's3:GetBucketVersioning', 's3:GetReplicationConfiguration', 's3:GetBucketWebsite', 's3:GetBucketObjectLockConfiguration', 's3:GetBucketTagging', 's3:ListTagsForResource', 's3:GetBucketAbac', 's3:GetBucketOwnershipControls', 's3:GetIntelligentTieringConfiguration', 's3:GetBucketMetadataTableConfiguration', 's3:ListBucket', 's3:GetBucketPolicy', 's3:GetBucketPolicyStatus', 's3:PutBucketCORS', 's3:PutLifecycleConfiguration'],
+              sub('arn:${AWS::Partition}:s3:::course-k-blog-production-imagesbucket-*'), through_stack),
         allow('EcrAuthentication', ['ecr:GetAuthorizationToken'], '*'),
         allow('ReleaseImages', [
             'ecr:BatchCheckLayerAvailability', 'ecr:InitiateLayerUpload',
@@ -103,10 +113,23 @@ def delivery_access_template():
                 + f'{stack}-Application{name}Alarm-*')
             for name in ('CPUUtilization', 'MemoryUtilization')], through_stack),
     ]
+    extra_sids = {'ReleaseTemplates', 'AppliedSchemaState', 'RunMigration', 'ImageSettingsThroughStack'}
+    release_statements = [s for s in statements if s['Sid'] in extra_sids]
+    statements = [s for s in statements if s['Sid'] not in extra_sids]
     return {
         'AWSTemplateFormatVersion': '2010-09-09',
         'Description': 'GitHub main branch application delivery access only. No runtime resources.',
         'Resources': {
+            'ReleasePolicy': {'Type': 'AWS::IAM::ManagedPolicy', 'Properties': {'PolicyDocument': {'Version': '2012-10-17', 'Statement': release_statements}}},
+            'ReleaseArtifacts': {'Type': 'AWS::S3::Bucket', 'DeletionPolicy': 'Retain', 'UpdateReplacePolicy': 'Retain',
+                'Properties': {'BucketName': sub('course-k-blog-release-${AWS::AccountId}-${AWS::Region}'),
+                    'PublicAccessBlockConfiguration': {'BlockPublicAcls': True, 'IgnorePublicAcls': True, 'BlockPublicPolicy': True, 'RestrictPublicBuckets': True},
+                    'BucketEncryption': {'ServerSideEncryptionConfiguration': [{'ServerSideEncryptionByDefault': {'SSEAlgorithm': 'AES256'}}]},
+                    'LifecycleConfiguration': {'Rules': [{'Id': 'release-templates', 'Status': 'Enabled', 'Prefix': 'templates/', 'ExpirationInDays': 30}]}}},
+            'ReleaseArtifactsPolicy': {'Type': 'AWS::S3::BucketPolicy', 'Properties': {'Bucket': {'Ref': 'ReleaseArtifacts'},
+                'PolicyDocument': {'Version': '2012-10-17', 'Statement': [{'Effect': 'Deny', 'Principal': '*', 'Action': 's3:*',
+                    'Resource': [artifacts, sub('arn:${AWS::Partition}:s3:::course-k-blog-release-${AWS::AccountId}-${AWS::Region}/*')],
+                    'Condition': {'Bool': {'aws:SecureTransport': 'false'}}}]}}},
             'GitHubProvider': {
                 'Type': 'AWS::IAM::OIDCProvider',
                 'Properties': {'Url': 'https://token.actions.githubusercontent.com',
@@ -134,6 +157,7 @@ def delivery_access_template():
                             }},
                         }],
                     },
+                    'ManagedPolicyArns': [{'Ref': 'ReleasePolicy'}],
                     'Policies': [{'PolicyName': 'blog-application-delivery',
                                   'PolicyDocument': {'Version': '2012-10-17', 'Statement': statements}}],
                     'Tags': [{'Key': 'Project', 'Value': stack}],

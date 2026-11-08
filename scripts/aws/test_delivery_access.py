@@ -8,11 +8,11 @@ class DeliveryAccessTest(unittest.TestCase):
     def setUp(self):
         self.template = delivery_access_template()
         self.role = self.template['Resources']['DeliveryRole']['Properties']
-        self.statements = self.role['Policies'][0]['PolicyDocument']['Statement']
+        self.statements = self.role['Policies'][0]['PolicyDocument']['Statement'] + self.template['Resources']['ReleasePolicy']['Properties']['PolicyDocument']['Statement']
 
     def test_only_identity_resources_and_main_branch_trust(self):
         self.assertEqual({r['Type'] for r in self.template['Resources'].values()},
-                         {'AWS::IAM::OIDCProvider', 'AWS::IAM::Role'})
+                         {'AWS::IAM::OIDCProvider', 'AWS::IAM::Role', 'AWS::S3::Bucket', 'AWS::S3::BucketPolicy', 'AWS::IAM::ManagedPolicy'})
         trust = self.role['AssumeRolePolicyDocument']['Statement'][0]
         self.assertEqual(trust['Action'], 'sts:AssumeRoleWithWebIdentity')
         claims = trust['Condition']['StringEquals']
@@ -25,7 +25,7 @@ class DeliveryAccessTest(unittest.TestCase):
 
     def test_no_direct_data_identity_or_infrastructure_administration(self):
         actions = {a for s in self.statements for a in s['Action']}
-        self.assertFalse(any(a.split(':')[0] in {'s3', 'ssm', 'secretsmanager',
+        self.assertFalse(any(a.split(':')[0] in {'secretsmanager',
                                                'route53', 'cognito-idp', 'ec2'} for a in actions))
         self.assertEqual({a for a in actions if a.startswith('iam:')}, {'iam:PassRole', 'iam:GetRole'})
         self.assertNotIn('sts:AssumeRole', actions)
@@ -79,6 +79,17 @@ class DeliveryAccessTest(unittest.TestCase):
             self.assertEqual(statement['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'],
                              'cloudformation.amazonaws.com')
             self.assertEqual(statement['Condition']['StringEquals']['aws:RequestedRegion'], 'us-west-2')
+
+    def test_special_release_permissions_are_bounded(self):
+        image = next(s for s in self.statements if s['Sid'] == 'ImageSettingsThroughStack')
+        self.assertNotIn('s3:GetObject', image['Action'])
+        self.assertEqual({a for a in image['Action'] if a.startswith('s3:Put')}, {'s3:PutBucketCORS', 's3:PutLifecycleConfiguration'})
+        self.assertEqual(image['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'], 'cloudformation.amazonaws.com')
+        state = next(s for s in self.statements if s['Sid'] == 'AppliedSchemaState')
+        self.assertTrue(json.dumps(state['Resource']).endswith('applied-schema-digest"}'))
+        self.assertNotIn('*', json.dumps(state['Resource']))
+        extra = self.template['Resources']['ReleasePolicy']['Properties']['PolicyDocument']
+        self.assertLessEqual(len(json.dumps(extra,separators=(',',':'))),6144)
 
     def test_inline_policy_fits_role_limit_and_no_private_values(self):
         policy = json.dumps(self.role['Policies'][0]['PolicyDocument'], separators=(',', ':'))
