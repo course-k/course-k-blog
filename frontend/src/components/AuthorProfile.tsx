@@ -10,6 +10,7 @@ export function AuthorProfile() {
         <h1><img className="blog-wordmark" src="/brand/wordmark.png" width="2027" height="254" alt="course_kのブログ" /></h1>
         <p>{siteDescription}</p>
         <nav className="author-links" aria-label="course_kの公開プロフィール">
+          <a href="https://my.prairie.cards/u/course_k" target="_blank" rel="noopener noreferrer" aria-label="プロフィール（プレーリーカード）、新しいタブで開く">プロフィール ↗</a>
           <a href="https://github.com/course-k" target="_blank" rel="noopener noreferrer" aria-label="GitHubのプロフィール、新しいタブで開く">GitHub ↗</a>
           <a href="https://qiita.com/course_k" target="_blank" rel="noopener noreferrer" aria-label="Qiitaのプロフィール、新しいタブで開く">Qiita ↗</a>
           <a href="https://note.com/course__k" target="_blank" rel="noopener noreferrer" aria-label="noteのプロフィール、新しいタブで開く">note ↗</a>
