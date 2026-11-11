@@ -90,3 +90,49 @@ test('first-page redirect leaves home, later pages and other endpoints unchanged
     assert.equal(await result.text(), 'rendered', path)
   }
 })
+
+test('with an edge cache, only successful public pages may be kept by it', async () => {
+  const cookie = new Headers({ 'Set-Cookie': 'a=1' })
+  const handler = createHandler({
+    edgeSeconds: 86400,
+    staticFiles: (_, next) => next(),
+    articleImages: request => new URL(request.url).pathname.startsWith('/og/') ? new Response('png') : null,
+    render: request => {
+      const { pathname } = new URL(request.url)
+      if (pathname === '/posts/missing') return new Response('not found', { status: 404 })
+      if (pathname === '/posts/broken') throw new Error('private detail')
+      if (pathname === '/posts/cookie') return new Response('html', { headers: cookie })
+      return new Response('html')
+    },
+  })
+  const kept = 'public, max-age=0, s-maxage=86400'
+  const cases = [
+    ['GET', '/', kept],
+    ['HEAD', '/', kept],
+    ['GET', '/?page=2&month=2026-10', kept],
+    ['GET', '/posts/example', kept],
+    ['GET', '/og/posts/example.png', kept],
+    ['GET', '/_serverFn/abc?payload=x', kept],
+    // The owner's screens and anything that is not a plain success stay private.
+    ['GET', '/admin', 'no-store'],
+    ['GET', '/admin/anything', 'no-store'],
+    ['GET', '/healthz', 'no-store'],
+    ['GET', '/?page=1', 'no-store'],
+    ['GET', '/posts/missing', 'no-store'],
+    ['GET', '/posts/broken', 'no-store'],
+    ['GET', '/posts/cookie', 'no-store'],
+    ['POST', '/_serverFn/abc', 'no-store'],
+  ]
+  for (const [method, path, expected] of cases) {
+    const result = await handler(new Request('http://localhost' + path, { method }))
+    assert.equal(result.headers.get('Cache-Control'), expected, `${method} ${path}`)
+  }
+})
+
+test('without an edge cache nothing is cacheable, as before', async () => {
+  const handler = createHandler({ staticFiles: (_, next) => next(), render: () => new Response('html') })
+  for (const path of ['/', '/posts/example', '/admin']) {
+    const result = await handler(new Request('http://localhost' + path))
+    assert.equal(result.headers.get('Cache-Control'), 'no-store', path)
+  }
+})

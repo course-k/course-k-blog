@@ -709,3 +709,24 @@ test("publishing shows no delivery warning when readers are up to date or files 
   await expect(page.locator(".publication-state")).toHaveText("下書き");
   await expect(page.locator(".delivery-pending")).toHaveCount(0);
 });
+
+test("a slow first answer is explained as the database starting, then the workspace opens", async ({ page }) => {
+  // Where the database pauses when idle, the first request waits for it to resume.
+  await admin(page, { initialFailures: [{ method: "GET", path: "/api/session", mode: "hold" }] });
+  const status = page.getByRole("status");
+  await expect(status).toHaveText("ログイン状態を確認しています…");
+  await page.clock.runFor(3_000);
+  await expect(status).toContainText("データベースの起動を待っています");
+  // Well past the ordinary 15-second limit the screen is still waiting, not failing.
+  await page.clock.runFor(25_000);
+  await expect(status).toContainText("データベースの起動を待っています");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.evaluate(() => window.fixtureServer.release());
+  await expect(body(page)).toBeVisible();
+});
+
+test("a first answer that never comes is reported after a minute", async ({ page }) => {
+  await admin(page, { initialFailures: [{ method: "GET", path: "/api/session", mode: "hold" }] });
+  await page.clock.runFor(61_000);
+  await expect(page.getByText("接続を確認できませんでした。再読み込みしてください。")).toBeVisible();
+});

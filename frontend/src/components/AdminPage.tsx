@@ -21,6 +21,7 @@ export function AdminPage({ search }: { search: AdminSearch }) {
     loginScreen = (
       <p className="notice" role="status">
         ログイン状態を確認しています…
+        {auth.slowStart && " データベースの起動を待っています。1分ほどかかることがあります。"}
       </p>
     );
   else if (!auth.signedIn && auth.authMode === "loading")
