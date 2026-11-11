@@ -82,3 +82,26 @@ func (s *Store) updatePost(ctx context.Context, id, statement, snapshot string, 
 	}
 	return post, tx.Commit()
 }
+
+// PublicImages lists the images that the published version of a published post
+// refers to. These are the only images served to readers.
+func (s *Store) PublicImages(ctx context.Context) ([]images.Image, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT image.id,image.object_key,image.mime
+		FROM images image
+		JOIN post_images ref ON ref.image_id=image.id AND ref.snapshot='published'
+		JOIN posts post ON post.id=ref.post_id AND post.published
+		ORDER BY image.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []images.Image{}
+	for rows.Next() {
+		var image images.Image
+		if err := rows.Scan(&image.ID, &image.Key, &image.MIME); err != nil {
+			return nil, err
+		}
+		out = append(out, image)
+	}
+	return out, rows.Err()
+}
