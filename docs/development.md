@@ -22,6 +22,8 @@ docker compose up --build
 
 一覧は `http://localhost:8080`、管理は `http://localhost:8080/admin`。Originを照合するため、`127.0.0.1`へ読み替えない。生成したローカル認証情報は `config/local-login.txt` で本人が確認し、共有しない。既存設定は自動上書きしない。3ファイルの一部だけがある場合も生成を止める。既存DBを使う場合は対応する設定一式をバックアップから復元し、DBのパスワードだけを生成し直さない。新しい使い捨て環境なら、既存DBと切り離した上で設定一式を作る。プロセス中断で部分生成が残った場合も同様に扱う。
 
+ローカルのComposeは読者向けファイルを使う。APIが`public_data`ボリュームへ一覧・公開記事のJSONを書き出し、Caddyが`/data/*`で配信し、NodeのSSRはそこから描画する。画像はローカルではAPIが返す（ファイルに種類の情報を持てないため）。ファイルの手動再生成は`docker compose exec api /usr/local/bin/api refresh-public`。
+
 管理画面は共通メニューで新規作成・記事一覧・設定を切り替える。外部記事の同期は設定画面で媒体を選んだときだけ公開媒体へ接続し、定期同期はない。固定データのテストでは同期処理（`EXTERNAL_SYNC_ENABLED`）を停止する。ローカルでは画像本体を同じ管理APIへのPUTで送り、本番の署名付きS3 POSTを代替する。本番認証・保存先・復元コマンドは[運用手順](../infra/production.md)を参照。
 
 停止は `docker compose down`。データボリュームを消す `down -v` は通常の停止に使わない。ローカルDBの起動成功や再起動後の保持を、本番のバックアップ復元成功と扱わない。
@@ -40,7 +42,7 @@ go -C backend mod download
 | 種類 | コマンド | 必要な環境・確認範囲 |
 |---|---|---|
 | 文書・構文 | `python3 scripts/check-repository.py` | Git管理対象と新規ファイルの相対リンク、JSON・Python構文、差分の空白。外部URLやMarkdownの見出しアンカー、AWSの意味的な妥当性は検査しない |
-| フロント基本 | `npm --prefix frontend run check` | 本番ビルド→本体と試験の型検査→runtime→管理API通信・自動保存（時刻を差し替えた3秒／30秒・結果不明・競合）・画像Markdown・画像送信キュー・端末内保存→固定APIのSSR→記事OGP。ビルドでルート型と公開アセットを生成するため、この順序で実行。OGPは日本語・長いタイトル・PNG寸法・非公開後の拒否・公開状態の再確認を検証 |
+| フロント基本 | `npm --prefix frontend run check` | 本番ビルド→本体と試験の型検査→runtime→読者向けデータの取得先切り替え→管理API通信・自動保存（時刻を差し替えた3秒／30秒・結果不明・競合）・画像Markdown・画像送信キュー・端末内保存→固定APIのSSR→記事OGP。ビルドでルート型と公開アセットを生成するため、この順序で実行。OGPは日本語・長いタイトル・PNG寸法・非公開後の拒否・公開状態の再確認を検証 |
 | 固定APIの画面 | `npm --prefix frontend run test:ui` | Chrome、一時プロファイル、架空の固定API。画面幅・表示・操作・失敗時の復帰をオフラインで確認。実Go・DBへ接続しない |
 | Goの基本 | `TEST_DATABASE_URL= TEST_TLS_DATABASE_URL= go -C backend test -race -v ./...` と `go -C backend vet ./...` | 認証・HTTP・保存契約等。実DB・TLS専用・外部媒体の実取得試験はSKIPするため、実MySQLやTLSの成功と扱わない |
 | 実MySQL | 下記の専用DB手順 | 移行・公開版分離・競合・セッション等を実DBで確認。テストデータの作成・削除を伴う |
@@ -99,7 +101,7 @@ node scripts/test-local-e2e.mjs
 TEST_LIVE_EXTERNAL=1 go -C backend test -count=1 -v ./internal/external -run TestLiveOwnerMetadata
 ```
 
-本番のタスク内接続を模した検証は `node scripts/test-local-e2e.mjs --single-task`。Nginx/Node/Goがネットワークを共有し、localhostで接続する。通常のCaddy構成もCIで検証する。共有CPU・IAM・ECSによる更新を再現する試験ではない。
+本番のタスク内接続を模した検証は `node scripts/test-local-e2e.mjs --single-task`。Nginx/Node/Goがネットワークを共有し、localhostで接続する。稼働中の本番と同じく読者向けファイルを使わず、NodeがGoへ問い合わせる経路を確認する。通常の通し試験は読者向けファイルの経路を確認する。通常のCaddy構成もCIで検証する。共有CPU・IAM・ECSによる更新を再現する試験ではない。
 
 ## PRで確認する範囲
 

@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=build /api /usr/local/bin/api
 COPY certs/rds-global-bundle.crt /etc/ssl/certs/aws-rds-global-bundle.pem
 ENV DATABASE_CA_FILE=/etc/ssl/certs/aws-rds-global-bundle.pem
-RUN mkdir -p /data/media /backup/archives && chown -R 65532:65532 /data /backup
+RUN mkdir -p /data/media /backup/archives /public && chown -R 65532:65532 /data /backup /public
 USER 65532:65532
 EXPOSE 8081
 ENTRYPOINT ["/usr/local/bin/api"]

@@ -15,7 +15,8 @@
     "test:ui": "rsbuild build --config ui-test.config.ts && playwright test --config ui-playwright.config.ts",
     "test:ssr": "node --test ui-tests/ssr.test.mjs",
     "test:ogp": "node --test ogp.test.mjs",
-    "check": "npm run build && npm run typecheck && npm run typecheck:tests && npm run test:runtime && npm run test:api && npm run test:ssr && npm run test:ogp",
+    "test:data": "node --test publicData.test.mjs",
+    "check": "npm run build && npm run typecheck && npm run typecheck:tests && npm run test:runtime && npm run test:data && npm run test:api && npm run test:ssr && npm run test:ogp",
     "typecheck:tests": "tsc --project tsconfig.tests.json",
     "test:api": "node --experimental-strip-types --test src/features/editor/adminApi.test.ts src/features/editor/articleSession.test.ts src/features/editor/imageMarkdown.test.ts src/features/editor/imageUploads.test.ts src/features/editor/draftRecovery.test.ts"
   },

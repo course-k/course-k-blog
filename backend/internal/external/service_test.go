@@ -37,3 +37,40 @@ func TestMonthlyPageKeepsPaginationAndFullArchive(t *testing.T) {
 		}
 	}
 }
+
+// syncFixture is a repository with one accepted request and a fetch outcome.
+type syncFixture struct {
+	Repository
+	claimed     string
+	finishError error
+}
+
+func (f *syncFixture) ClaimSync(context.Context, string) (string, error) { return f.claimed, nil }
+func (f *syncFixture) FinishSync(context.Context, string, string, Batch, string) error {
+	return f.finishError
+}
+
+type fixedFetch struct{}
+
+func (fixedFetch) Fetch(context.Context, string) (Batch, error) { return Batch{}, nil }
+
+func TestFinishedSyncAnnouncesTheChange(t *testing.T) {
+	announced := 0
+	service := &Service{Repository: &syncFixture{claimed: "qiita"}, Client: fixedFetch{}, Changed: func(context.Context) { announced++ }}
+	if err := service.RunOnce(context.Background()); err != nil || announced != 1 {
+		t.Fatalf("a saved sync must announce the change once: %v, %d", err, announced)
+	}
+}
+
+func TestSyncThatSavedNothingAnnouncesNothing(t *testing.T) {
+	announced := 0
+	changed := func(context.Context) { announced++ }
+	idle := &Service{Repository: &syncFixture{}, Client: fixedFetch{}, Changed: changed}
+	if err := idle.RunOnce(context.Background()); err != nil || announced != 0 {
+		t.Fatalf("no request was waiting: %v, %d", err, announced)
+	}
+	unsaved := &Service{Repository: &syncFixture{claimed: "qiita", finishError: errors.New("fixture database unavailable")}, Client: fixedFetch{}, Changed: changed}
+	if err := unsaved.RunOnce(context.Background()); err == nil || announced != 0 {
+		t.Fatalf("an unsaved result must not be announced: %v, %d", err, announced)
+	}
+}

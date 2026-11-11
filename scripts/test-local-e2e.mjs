@@ -47,6 +47,8 @@ try {
   for (const name of ['db-password.txt', 'admin-hash.txt']) {
     await chmod(join(directory, name), 0o444)
   }
+  // The single task mirrors the deployed Fargate task, where the web server
+  // still asks the API; the default configuration reads the published files.
   // Sharing the gateway's network namespace reproduces a task's localhost links.
   // It does not reproduce a shared Fargate CPU quota, task IAM or lifecycle.
   const singleTaskOverride = singleTask ? `
@@ -56,11 +58,13 @@ try {
       APP_ORIGIN: http://localhost:${port}
       EXTERNAL_SYNC_ENABLED: "false"
       LISTEN_ADDR: 127.0.0.1:8081
+      PUBLIC_DIRECTORY: ""
   web:
     network_mode: service:gateway
     environment:
       HOST: 127.0.0.1
       API_BASE_URL: http://127.0.0.1:8081
+      PUBLIC_DATA_URL: ""
   gateway:
     image: ${project}-router
     build: ${root}infra/router
@@ -104,6 +108,12 @@ volumes:
     await new Promise(resolve => setTimeout(resolve, 500))
   }
   if (!ready) throw new Error('Disposable API did not become ready')
+  // The default configuration must render readers from published files, and
+  // the single task must not publish any.
+  const published = await fetch(`${origin}/data/articles/all/1.json`)
+  if (singleTask ? published.ok : !(published.ok && Array.isArray((await published.json()).articles))) {
+    throw new Error('Published reader files do not match the selected configuration')
+  }
   if (singleTask) {
     const router = await fetch(`${origin}/gateway-healthz`)
     if (!router.ok || (await router.json()).ok !== true) throw new Error('Task router health check failed')

@@ -47,7 +47,7 @@ func run() error {
 		command = os.Args[1]
 	}
 	switch command {
-	case "serve", "migrate", "backup", "restore", "revoke-sessions", "release-check", "schema-version", "verify-schema":
+	case "serve", "migrate", "backup", "restore", "revoke-sessions", "release-check", "schema-version", "verify-schema", "refresh-public":
 	default:
 		return errors.New("unknown application command")
 	}
@@ -166,6 +166,23 @@ func run() error {
 		slog.Info("production_checks_passed", "schema", mysql.LatestSchemaVersion(), "pngBytes", 10000000, "sync", check.Sync)
 		return nil
 	}
+	externalService := &external.Service{Repository: store, Client: external.NewClient()}
+	publisher, err := publicFiles(store, externalService, objects)
+	if err != nil {
+		return err
+	}
+	if command == "refresh-public" {
+		if len(os.Args) != 2 || publisher == nil {
+			return errors.New("refresh-public takes no arguments and needs PUBLIC_DIRECTORY")
+		}
+		work, done := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer done()
+		if err := publisher.Refresh(work); err != nil {
+			return errors.New("public files could not be refreshed")
+		}
+		slog.Info("public_files_refreshed")
+		return nil
+	}
 	hash := ""
 	if os.Getenv("OIDC_ISSUER") == "" {
 		hash = os.Getenv("ADMIN_PASSWORD_HASH")
@@ -177,7 +194,6 @@ func run() error {
 			hash = strings.TrimSpace(string(content))
 		}
 	}
-	externalService := &external.Service{Repository: store, Client: external.NewClient()}
 	imageService := &images.Service{Repository: store, Blobs: objects}
 	uploadService := &images.UploadService{Repository: store, Blobs: objects, Staging: images.LocalStaging{}}
 	_, localUploads := objects.(blob.Files)
@@ -207,7 +223,20 @@ func run() error {
 	} else if u.Scheme == "https" {
 		return errors.New("OIDC configuration is required for public administration")
 	}
-	handler, err := httpapi.NewWithFeatures(store, origin, hash, httpapi.Features{External: externalService, Images: imageService, Uploads: uploadService, LocalUploads: localUploads, Backups: backupService, Identity: identity, Creations: store})
+	if publisher != nil {
+		// Files may be missing after a first start or stale after an interrupted
+		// run. Refreshing is a no-op when they already match the database.
+		work, done := context.WithTimeout(context.Background(), time.Minute)
+		if err := publisher.Refresh(work); err != nil {
+			slog.Error("operation_failed", "operation", "publication", "code", "refresh_failed")
+		}
+		done()
+	}
+	features := httpapi.Features{External: externalService, Images: imageService, Uploads: uploadService, LocalUploads: localUploads, Backups: backupService, Identity: identity, Creations: store}
+	if publisher != nil {
+		features.Publication = publisher
+	}
+	handler, err := httpapi.NewWithFeatures(store, origin, hash, features)
 	if err != nil {
 		return err
 	}

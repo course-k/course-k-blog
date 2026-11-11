@@ -13,6 +13,13 @@
   handle @api {
     reverse_proxy {$API_UPSTREAM:127.0.0.1:8081}
   }
+  # Published reader data. Images stay with the API here because plain files
+  # carry no content type; production stores the type with each object.
+  handle /data/* {
+    root * /public
+    header Cache-Control "no-store"
+    file_server
+  }
   handle {
     header Cache-Control "no-store"
     reverse_proxy {$WEB_UPSTREAM:127.0.0.1:3000}
