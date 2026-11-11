@@ -16,8 +16,10 @@ type Fetcher interface {
 type Service struct {
 	Repository Repository
 	Client     Fetcher
-	wake       chan struct{}
-	once       sync.Once
+	// Changed, when set, is called after a sync result has been saved.
+	Changed func(context.Context)
+	wake    chan struct{}
+	once    sync.Once
 }
 
 func (s *Service) signal() chan struct{} {
@@ -73,6 +75,9 @@ func (s *Service) RunOnce(ctx context.Context) error {
 	finishCtx, finishCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer finishCancel()
 	err = s.Repository.FinishSync(finishCtx, source, runID, batch, code)
+	if err == nil && s.Changed != nil {
+		s.Changed(ctx)
+	}
 	if code != "" && !errors.Is(ctx.Err(), context.Canceled) {
 		slog.Error("operation_failed", "operation", "external_sync", "source", source, "code", code)
 	}

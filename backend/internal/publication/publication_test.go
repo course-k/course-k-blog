@@ -254,3 +254,51 @@ func TestFilesFromAFailedRefreshAreRemovedOnceTheyStopBeingPublic(t *testing.T) 
 		}
 	}
 }
+
+func TestRefreshWritesNothingWhenThePublicStateIsUnchanged(t *testing.T) {
+	source, media, target := fixture()
+	publisher := &Publisher{Source: source, Media: media, Target: target}
+	if err := publisher.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	target.puts = nil
+	if err := publisher.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(target.puts) != 0 {
+		t.Fatalf("an unchanged blog must not be rewritten: %v", target.puts)
+	}
+}
+
+func TestCurrentReportsWhetherReadersSeeTheLatestState(t *testing.T) {
+	source, media, target := fixture()
+	publisher := &Publisher{Source: source, Media: media, Target: target}
+	current := func() bool {
+		t.Helper()
+		ok, err := publisher.Current(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if current() {
+		t.Fatal("nothing has been published yet")
+	}
+	if err := publisher.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !current() {
+		t.Fatal("a finished refresh must be current")
+	}
+	source.posts["a"] = blog.PublicPost{ID: "a", Title: "post a", Markdown: "edited and republished"}
+	if current() {
+		t.Fatal("a republished body must be reported as not yet delivered")
+	}
+	target.failPut = "data/posts/a.json"
+	if err := publisher.Refresh(context.Background()); err == nil {
+		t.Fatal("a refused write must fail the refresh")
+	}
+	if current() {
+		t.Fatal("a failed refresh must not be reported as current")
+	}
+}

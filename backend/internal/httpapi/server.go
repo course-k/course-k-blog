@@ -37,6 +37,8 @@ type Features struct {
 	Backups   *backup.Service
 	Identity  *oidclogin.Service
 	Creations blog.CreationStore
+	// Publication is set when readers are served from files instead of this API.
+	Publication Publication
 	// LocalUploads registers the binary PUT that replaces S3 outside production.
 	LocalUploads bool
 }
@@ -97,6 +99,9 @@ func NewWithFeatures(store blog.Store, origin, hash string, features Features) (
 	}
 	if features.Backups != nil {
 		s.operationRoutes(m)
+	}
+	if features.Publication != nil {
+		s.publicationRoutes(m)
 	}
 	m.HandleFunc("GET /api/posts", s.listPublic)
 	m.HandleFunc("GET /api/posts/{id}", s.getPublic)
@@ -419,5 +424,6 @@ func (s *Server) change(w http.ResponseWriter, r *http.Request, publish bool) {
 		failure(w, err)
 		return
 	}
+	s.refreshPublication(w, r)
 	write(w, 200, p)
 }

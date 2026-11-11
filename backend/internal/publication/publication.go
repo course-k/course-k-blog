@@ -4,8 +4,11 @@ package publication
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"sort"
 	"strconv"
@@ -41,34 +44,28 @@ type Publisher struct {
 const manifestKey = "data/manifest.json"
 const jsonType = "application/json"
 
+// The manifest lists every file that may exist in the target. Digest identifies
+// the public state the files were written from; it is empty while a refresh is
+// in progress or after one failed.
 type manifest struct {
-	Keys []string `json:"keys"`
+	Keys   []string `json:"keys"`
+	Digest string   `json:"digest"`
 }
 
 // Refresh rewrites every public file from the current database state and
 // removes files that stopped being public. It is safe to repeat: a run that
 // fails part-way is completed by the next one.
 func (p *Publisher) Refresh(ctx context.Context) error {
-	previous, err := p.listed(ctx)
+	previous, delivered, err := p.listed(ctx)
 	if err != nil {
 		return err
 	}
-	files, postIDs, err := p.pages(ctx)
+	files, published, digest, err := p.render(ctx)
 	if err != nil {
 		return err
 	}
-	for _, id := range postIDs {
-		post, err := p.Source.GetPublic(ctx, id)
-		if err != nil {
-			return err
-		}
-		if files["data/posts/"+id+".json"], err = json.Marshal(post); err != nil {
-			return err
-		}
-	}
-	published, err := p.Source.PublicImages(ctx)
-	if err != nil {
-		return err
+	if delivered == digest {
+		return nil
 	}
 	current := map[string]bool{}
 	for key := range files {
@@ -79,7 +76,7 @@ func (p *Publisher) Refresh(ctx context.Context) error {
 	}
 	// Record the union first. Whatever this run uploads stays listed even if it
 	// fails, so a later run can still remove a file that is no longer public.
-	if err = p.record(ctx, previous, current); err != nil {
+	if err = p.record(ctx, "", previous, current); err != nil {
 		return err
 	}
 	for _, image := range published {
@@ -103,7 +100,53 @@ func (p *Publisher) Refresh(ctx context.Context) error {
 			}
 		}
 	}
-	return p.record(ctx, current)
+	return p.record(ctx, digest, current)
+}
+
+// Current reports whether the files readers receive match the database.
+func (p *Publisher) Current(ctx context.Context) (bool, error) {
+	_, delivered, err := p.listed(ctx)
+	if err != nil {
+		return false, err
+	}
+	_, _, digest, err := p.render(ctx)
+	return delivered == digest, err
+}
+
+// render builds every JSON file and the list of public images, with a digest
+// that changes whenever any of them does.
+func (p *Publisher) render(ctx context.Context) (map[string][]byte, []images.Image, string, error) {
+	files, postIDs, err := p.pages(ctx)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	for _, id := range postIDs {
+		post, err := p.Source.GetPublic(ctx, id)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		if files["data/posts/"+id+".json"], err = json.Marshal(post); err != nil {
+			return nil, nil, "", err
+		}
+	}
+	published, err := p.Source.PublicImages(ctx)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	keys := make([]string, 0, len(files))
+	for key := range files {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	hash := sha256.New()
+	for _, key := range keys {
+		fmt.Fprintf(hash, "%s\n%d\n", key, len(files[key]))
+		hash.Write(files[key])
+	}
+	for _, image := range published {
+		fmt.Fprintf(hash, "image\n%s\n%s\n", image.ID, image.MIME)
+	}
+	return files, published, hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // pages renders the unfiltered list and one list per archive month, and
@@ -158,33 +201,34 @@ func (p *Publisher) copyImage(ctx context.Context, image images.Image, key strin
 	return p.Target.Put(ctx, key, content, image.MIME)
 }
 
-func (p *Publisher) listed(ctx context.Context) (map[string]bool, error) {
+// listed returns the files that may exist and the digest they were written from.
+func (p *Publisher) listed(ctx context.Context) (map[string]bool, string, error) {
 	body, err := p.Target.Get(ctx, manifestKey)
 	if errors.Is(err, ErrNotFound) {
-		return map[string]bool{}, nil
+		return map[string]bool{}, "", nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	var saved manifest
 	if err = json.Unmarshal(body, &saved); err != nil {
-		return nil, errors.New("public file list is unreadable")
+		return nil, "", errors.New("public file list is unreadable")
 	}
 	keys := map[string]bool{}
 	for _, key := range saved.Keys {
 		keys[key] = true
 	}
-	return keys, nil
+	return keys, saved.Digest, nil
 }
 
-func (p *Publisher) record(ctx context.Context, sets ...map[string]bool) error {
+func (p *Publisher) record(ctx context.Context, digest string, sets ...map[string]bool) error {
 	merged := map[string]bool{}
 	for _, set := range sets {
 		for key := range set {
 			merged[key] = true
 		}
 	}
-	saved := manifest{Keys: make([]string, 0, len(merged))}
+	saved := manifest{Keys: make([]string, 0, len(merged)), Digest: digest}
 	for key := range merged {
 		saved.Keys = append(saved.Keys, key)
 	}
