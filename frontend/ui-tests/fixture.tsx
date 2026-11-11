@@ -55,7 +55,7 @@ for (const [key, { postId, title, markdown }] of Object.entries(cfg.creations ??
   creations[key] = { postId, payload: JSON.stringify([title, markdown]) };
 type Upload = { id: string; request: { clientImageId: string; fileName: string; contentType: string; byteSize: number }; status: string; received: boolean; result?: unknown; failure?: string };
 const uploads: Record<string, Upload> = {};
-const rules: FailureRule[] = [];
+const rules: FailureRule[] = (cfg.initialFailures ?? []).map((rule) => ({ times: 1, ...rule }));
 let held: (() => void)[] = [];
 let nextId = 1;
 const sync: SyncState[] = (["qiita", "wantedly", "note"] as const).map((source) => ({
@@ -210,7 +210,12 @@ window.fetch = async (input, init) => {
     if (rule.times <= 0) rules.splice(index, 1);
     if (rule.mode === "before") throw new TypeError("fixture: network failure before commit");
     if (rule.mode === "status") return json(rule.body ?? { error: "fixture failure" }, rule.status ?? 500, rule.headers);
-    if (rule.mode === "hold") await new Promise<void>((resolve) => held.push(resolve));
+    // Like a real request, a held one is rejected when its caller gives up.
+    if (rule.mode === "hold")
+      await new Promise<void>((resolve, reject) => {
+        held.push(resolve);
+        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason), { once: true });
+      });
   }
   const response = await handle(method, path, body);
   if (rule?.mode === "lost") throw new TypeError("fixture: response lost after commit");

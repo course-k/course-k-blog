@@ -5,6 +5,8 @@ export type FixtureConfig = {
   /** Initial admin URL, e.g. "/admin?view=articles". */
   path?: string;
   scenario?: "success" | "signed-out";
+  /** Rules that already apply to the requests the screen sends while loading. */
+  initialFailures?: FailureRule[];
   empty?: boolean;
   oidc?: boolean;
   posts?: Partial<AdminPost>[];

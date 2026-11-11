@@ -3,6 +3,11 @@ import { adminApi, ApiError, requestAdminJson } from "./adminApi";
 
 type AuthMode = "loading" | "password" | "oidc" | "unavailable";
 
+// Where the database pauses when idle, the first request waits for it to
+// resume: about 15 seconds, 30 or more after a long pause.
+const FIRST_ANSWER_TIMEOUT_MS = 60_000;
+const SLOW_START_NOTICE_MS = 3_000;
+
 // Owner sign-in only. Editing state lives in the article session, so an
 // expired session hides the workspace without discarding it.
 export function useAdminAuth() {
@@ -13,6 +18,8 @@ export function useAdminAuth() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // True while the first session check is taking longer than a normal answer.
+  const [slowStart, setSlowStart] = useState(false);
   const providerWait = useRef<AbortController | null>(null);
   const leavingForLogout = useRef(false);
   const [loginCount, setLoginCount] = useState(0);
@@ -28,8 +35,11 @@ export function useAdminAuth() {
       .catch(() => {
         if (active) setAuthMode("unavailable");
       });
+    const firstAnswer = new AbortController();
+    const deadline = setTimeout(() => firstAnswer.abort(new Error("first answer timed out")), FIRST_ANSWER_TIMEOUT_MS);
+    const notice = setTimeout(() => active && setSlowStart(true), SLOW_START_NOTICE_MS);
     adminApi
-      .session()
+      .session(firstAnswer.signal)
       .then(() => {
         if (active) {
           setSignedIn(true);
@@ -41,9 +51,16 @@ export function useAdminAuth() {
         setSignedIn(false);
         if (!(error instanceof ApiError && error.status === 401))
           setError("接続を確認できませんでした。再読み込みしてください。");
+      })
+      .finally(() => {
+        clearTimeout(deadline);
+        clearTimeout(notice);
+        if (active) setSlowStart(false);
       });
     return () => {
       active = false;
+      clearTimeout(deadline);
+      clearTimeout(notice);
       providerWait.current?.abort();
     };
   }, []);
@@ -140,6 +157,7 @@ export function useAdminAuth() {
     setPassword,
     busy,
     error,
+    slowStart,
     loginCount,
     leavingForLogout,
     requestLogin,
