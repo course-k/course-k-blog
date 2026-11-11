@@ -673,3 +673,35 @@ test("choosing new again keeps the input; leaving during IME composition waits f
   await expect(page.getByRole("heading", { level: 1, name: "設定" })).toBeVisible();
   expect(await page.evaluate(() => Object.values(window.fixtureServer.posts).map((post) => post.markdown))).toEqual(["日本語"]);
 });
+
+test("publishing warns when readers do not see the change yet and offers a retry", async ({ page }) => {
+  await admin(page);
+  await page.evaluate(() => { window.fixtureServer.publicationCurrent = false; });
+  await typeArticle(page, "反映に失敗する記事", "本文");
+  await page.getByRole("button", { name: "公開する" }).click();
+  // The article itself is published; only the delivery to readers is pending.
+  await expect(page.locator(".publication-state")).toHaveText("公開中");
+  const warning = page.locator(".delivery-pending");
+  await expect(warning).toContainText("公開ページへまだ反映されていません");
+  // A retry that fails keeps the warning and says so.
+  await page.evaluate(() => window.fixtureServer.fail({ method: "POST", path: "/api/admin/publication", mode: "status", status: 503, body: { error: "公開ページへ反映できませんでした。時間をおいて再実行してください。" } }));
+  await warning.getByRole("button", { name: "公開ページへ反映する" }).click();
+  await expect(warning).toContainText("公開ページへ反映できませんでした");
+  await warning.getByRole("button", { name: "公開ページへ反映する" }).click();
+  await expect(warning).toHaveCount(0);
+  expect(await page.evaluate(() => window.fixtureServer.publicationCurrent)).toBe(true);
+});
+
+test("publishing shows no delivery warning when readers are up to date or files are not used", async ({ page }) => {
+  await admin(page);
+  await typeArticle(page, "反映される記事", "本文");
+  await page.getByRole("button", { name: "公開する" }).click();
+  await expect(page.locator(".publication-state")).toHaveText("公開中");
+  await expect.poll(() => page.evaluate(() => window.fixtureServer.calls.includes("GET /api/admin/publication"))).toBe(true);
+  await expect(page.locator(".delivery-pending")).toHaveCount(0);
+  await page.evaluate(() => { window.fixtureServer.publicationCurrent = true; });
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "非公開に戻す" }).click();
+  await expect(page.locator(".publication-state")).toHaveText("下書き");
+  await expect(page.locator(".delivery-pending")).toHaveCount(0);
+});

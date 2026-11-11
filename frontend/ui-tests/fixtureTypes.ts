@@ -37,6 +37,8 @@ export type FixtureServer = {
   signedIn: boolean;
   sync: SyncState[];
   imagesRegistered: number;
+  /** Whether reader files match the database. Undefined: this API does not publish files (404). */
+  publicationCurrent?: boolean;
   /** File name → failure code returned by completion. */
   uploadFailures: Record<string, string>;
 };

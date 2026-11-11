@@ -13,8 +13,14 @@ type Publication interface {
 	Current(context.Context) (bool, error)
 }
 
-// Refreshing rewrites every list page, so it gets more time than one request.
-const publicationTimeout = 25 * time.Second
+// An explicit refresh rewrites every list page, so it gets more time than one
+// request. A refresh that follows a publication change is cut short instead:
+// the editor waits 15 seconds for that response, and a refresh that does not
+// finish in time is reported as pending and retried by the owner.
+const (
+	publicationTimeout       = 25 * time.Second
+	inlinePublicationTimeout = 6 * time.Second
+)
 
 // refreshPublication runs after a change is committed. The change stays saved
 // when the refresh fails; the response header tells the editor that readers do
@@ -23,7 +29,7 @@ func (s *Server) refreshPublication(w http.ResponseWriter, r *http.Request) {
 	if s.features.Publication == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), publicationTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), inlinePublicationTimeout)
 	defer cancel()
 	if err := s.features.Publication.Refresh(ctx); err != nil {
 		slog.Error("operation_failed", "operation", "publication", "code", "refresh_failed")

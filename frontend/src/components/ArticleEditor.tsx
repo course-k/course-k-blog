@@ -19,6 +19,7 @@ import { updateImageDisplay } from "../features/editor/imageMarkdown";
 import { UnknownOutcomeError, type SessionSnapshot } from "../features/editor/articleSession";
 import { Markdown } from "./Markdown";
 import type { ImageContextValue } from "./BlogImage";
+import { adminApi } from "../features/editor/adminApi";
 
 export type EditorHandle = {
   /** Saves (and waits for images) before leaving; may ask the owner. */
@@ -82,6 +83,8 @@ export function ArticleEditor({
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
   const [operationError, setOperationError] = useState("");
+  // Set when the article was published or unpublished but readers still see the old state.
+  const [delivery, setDelivery] = useState<{ error: string; busy: boolean } | null>(null);
   const [leave, setLeave] = useState<LeaveQuestion | null>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const lastValue = useRef(snapshot.doc.markdown);
@@ -253,6 +256,21 @@ export function ArticleEditor({
       setOperationError(
         error instanceof UnknownOutcomeError || error instanceof Error ? error.message : "処理できませんでした。",
       );
+      return;
+    }
+    // Warn only on a definite answer. A failed check, or an API that does not
+    // publish reader files, says nothing about what readers see.
+    const current = await adminApi.publicationState().then((state) => state.current, () => true);
+    setDelivery(current ? null : { error: "", busy: false });
+  }
+
+  async function deliver() {
+    setDelivery({ error: "", busy: true });
+    try {
+      await adminApi.refreshPublication();
+      setDelivery(null);
+    } catch (error) {
+      setDelivery({ error: error instanceof Error ? error.message : "処理できませんでした。", busy: false });
     }
   }
 
@@ -336,6 +354,15 @@ export function ArticleEditor({
         <p className={operationError ? "error" : "muted"} role={operationError ? "alert" : "status"}>
           {operationError || snapshot.operationMessage}
         </p>
+      )}
+      {delivery && (
+        <div className="error delivery-pending" role="alert">
+          <p>記事の変更は保存しましたが、公開ページへまだ反映されていません。</p>
+          {delivery.error && <p>{delivery.error}</p>}
+          <button type="button" onClick={() => void deliver()} disabled={delivery.busy}>
+            公開ページへ反映する
+          </button>
+        </div>
       )}
       {(notice || editor.rejections.length > 0) && (
         <div className="error" role="alert">

@@ -107,6 +107,11 @@ async function handle(method: string, path: string, body: unknown): Promise<Resp
   if (path === "/api/admin/operations")
     return json({ state: { generation: 1, backedUpGeneration: 0, running: false, lastSuccess: null, lastError: "", dueAt: null }, backups: [] });
   if (path === "/api/admin/backups") return json({ queued: true }, 202);
+  if (path === "/api/admin/publication") {
+    if (server.publicationCurrent === undefined) return json({ error: "not found" }, 404);
+    if (method === "POST") server.publicationCurrent = true;
+    return json({ current: server.publicationCurrent });
+  }
   if (path === "/api/admin/sync") return json(sync);
   const syncMatch = path.match(/^\/api\/admin\/sync\/(\w+)$/);
   if (syncMatch && method === "POST") {
