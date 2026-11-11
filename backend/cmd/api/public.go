@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"time"
@@ -30,14 +31,28 @@ func (s publicSource) PublicImages(ctx context.Context) ([]images.Image, error) 
 	return s.store.PublicImages(ctx)
 }
 
+// publicTarget picks the local directory or the bucket. Naming both is a
+// configuration mistake: files would be written to one and served from the other.
+func publicTarget(ctx context.Context, directory, bucket string) (publication.Target, error) {
+	switch {
+	case directory != "" && bucket != "":
+		return nil, errors.New("set only one of PUBLIC_DIRECTORY and PUBLIC_BUCKET")
+	case bucket != "":
+		return publication.NewBucket(ctx, bucket)
+	case directory != "":
+		return publication.Directory{Path: directory}, nil
+	}
+	return nil, nil
+}
+
 // publicFiles returns nil unless a destination is configured: without one,
 // readers are served by this API and no files are written.
-func publicFiles(store *mysql.Store, articles *external.Service, media images.Blobs) (*publication.Publisher, error) {
-	directory := os.Getenv("PUBLIC_DIRECTORY")
-	if directory == "" {
-		return nil, nil
+func publicFiles(ctx context.Context, store *mysql.Store, articles *external.Service, media images.Blobs) (*publication.Publisher, error) {
+	target, err := publicTarget(ctx, os.Getenv("PUBLIC_DIRECTORY"), os.Getenv("PUBLIC_BUCKET"))
+	if target == nil || err != nil {
+		return nil, err
 	}
-	publisher := &publication.Publisher{Source: publicSource{store, articles}, Media: media, Target: publication.Directory{Path: directory}}
+	publisher := &publication.Publisher{Source: publicSource{store, articles}, Media: media, Target: target}
 	articles.Changed = func(ctx context.Context) {
 		work, done := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 		defer done()
