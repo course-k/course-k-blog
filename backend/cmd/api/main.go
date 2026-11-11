@@ -20,6 +20,7 @@ import (
 	"coursek/blog/backend/internal/images"
 	"coursek/blog/backend/internal/mysql"
 	"coursek/blog/backend/internal/oidclogin"
+	"coursek/blog/backend/internal/ondemand"
 	"coursek/blog/backend/internal/releasecheck"
 )
 
@@ -83,7 +84,13 @@ func run() error {
 			return errors.New("HTTPS deployment requires a MySQL URL with tls=verify-full")
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// On demand, the database may be paused and need to resume before it answers.
+	function := os.Getenv("ON_DEMAND_FUNCTION")
+	startup := 30 * time.Second
+	if function != "" {
+		startup = 90 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), startup)
 	defer cancel()
 	store, err := mysql.Open(ctx, dsn)
 	if err != nil {
@@ -202,17 +209,20 @@ func run() error {
 	} else if !localUploads {
 		return errors.New("image upload staging unavailable")
 	}
+	syncEnabled, backupEnabled := os.Getenv("EXTERNAL_SYNC_ENABLED") == "true", os.Getenv("BACKUP_ENABLED") == "true"
 	workerCtx, stopWorkers := context.WithCancel(context.Background())
 	var workers sync.WaitGroup
 	defer func() { stopWorkers(); workers.Wait() }()
-	// The sync worker only processes explicit owner requests (and resumes an
-	// interrupted one); there is no scheduled sync. Disable it only for offline tests.
-	if os.Getenv("EXTERNAL_SYNC_ENABLED") == "true" {
-		workers.Go(func() { externalService.Run(workerCtx) })
-	}
-	workers.Go(func() { uploadService.RunSweeper(workerCtx) })
-	if os.Getenv("BACKUP_ENABLED") == "true" {
-		workers.Go(func() { backupService.Run(workerCtx) })
+	if function == "" {
+		// The sync worker only processes explicit owner requests (and resumes an
+		// interrupted one); there is no scheduled sync. Disable it only for offline tests.
+		if syncEnabled {
+			workers.Go(func() { externalService.Run(workerCtx) })
+		}
+		workers.Go(func() { uploadService.RunSweeper(workerCtx) })
+		if backupEnabled {
+			workers.Go(func() { backupService.Run(workerCtx) })
+		}
 	}
 	var identity *oidclogin.Service
 	if issuer := os.Getenv("OIDC_ISSUER"); issuer != "" {
@@ -223,9 +233,10 @@ func run() error {
 	} else if u.Scheme == "https" {
 		return errors.New("OIDC configuration is required for public administration")
 	}
-	if publisher != nil {
+	if publisher != nil && function == "" {
 		// Files may be missing after a first start or stale after an interrupted
 		// run. Refreshing is a no-op when they already match the database.
+		// On demand this is part of the work invocation instead of every start.
 		work, done := context.WithTimeout(context.Background(), time.Minute)
 		if err := publisher.Refresh(work); err != nil {
 			slog.Error("operation_failed", "operation", "publication", "code", "refresh_failed")
@@ -236,15 +247,29 @@ func run() error {
 	if publisher != nil {
 		features.Publication = publisher
 	}
+	if function != "" {
+		features.RequestTimeout = onDemandRequestTimeout
+	}
 	handler, err := httpapi.NewWithFeatures(store, origin, hash, features)
 	if err != nil {
 		return err
+	}
+	writeTimeout := 35 * time.Second
+	if function != "" {
+		store.CloseWhenIdle()
+		self, err := ondemand.NewFunction(ctx, function)
+		if err != nil {
+			return err
+		}
+		tasks := pendingWork(syncEnabled, backupEnabled, externalService, backupService, uploadService, publisher)
+		handler = ondemand.Route(ondemand.AfterChange(handler, self.Request), tasks)
+		writeTimeout = onDemandRequestTimeout + 10*time.Second
 	}
 	addr := os.Getenv("LISTEN_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:8081"
 	}
-	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
+	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: writeTimeout, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
 	stopped := make(chan os.Signal, 1)
 	signal.Notify(stopped, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(stopped)

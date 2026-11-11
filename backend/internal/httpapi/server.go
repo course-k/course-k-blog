@@ -39,6 +39,9 @@ type Features struct {
 	Creations blog.CreationStore
 	// Publication is set when readers are served from files instead of this API.
 	Publication Publication
+	// RequestTimeout replaces the default limit of ordinary requests. It is
+	// raised where the database may have to resume before it can answer.
+	RequestTimeout time.Duration
 	// LocalUploads registers the binary PUT that replaces S3 outside production.
 	LocalUploads bool
 }
@@ -132,6 +135,9 @@ func NewWithFeatures(store blog.Store, origin, hash string, features Features) (
 			}
 		}
 		timeout := defaultRequestTimeout
+		if features.RequestTimeout > 0 {
+			timeout = features.RequestTimeout
+		}
 		if uploadPath(r.URL.Path, "/complete") || uploadPath(r.URL.Path, "/content") {
 			timeout = uploadRequestTimeout
 		}
