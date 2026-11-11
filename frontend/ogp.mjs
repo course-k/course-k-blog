@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
+import { loadPost, NotFound } from './publicData.mjs'
 
 // Use the bundled font on hosts and minimal containers alike.
 process.env.FONTCONFIG_FILE = fileURLToPath(new URL('./assets/fonts/fonts.conf', import.meta.url))
@@ -58,16 +59,14 @@ export function createArticleImageHandler({
     const id = match[1]
     let post
     try {
-      // Recheck the public API on every request, even when an image is cached.
-      // No owner cookies or authorization headers are forwarded to this API.
-      const response = await fetchPost(`${apiBase}/api/posts/${id}`, { signal: AbortSignal.timeout(5000) })
-      if (response.status === 404) return new Response('Not found', { status: 404 })
-      if (!response.ok) return new Response('Service unavailable', { status: 502 })
-      post = await response.json()
+      // Recheck the public source on every request, even when an image is cached.
+      // No owner cookies or authorization headers are forwarded to it.
+      post = await loadPost(id, { fetch: fetchPost, env: { ...process.env, API_BASE_URL: apiBase } })
       if (post.id !== id || typeof post.title !== 'string' || !post.title.trim() || [...post.title].length > 200) {
         return new Response('Service unavailable', { status: 502 })
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof NotFound) return new Response('Not found', { status: 404 })
       return new Response('Service unavailable', { status: 502 })
     }
     const key = `${id}\0${post.title}`

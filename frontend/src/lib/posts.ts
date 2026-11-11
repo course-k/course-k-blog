@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { notFound } from "@tanstack/react-router";
 import type { PublicPost, ArticlePage } from "./types";
+import { loadArticlePage, loadPost, NotFound } from "../../publicData.mjs";
 
 export const listPosts = createServerFn({ method: "GET" })
   .validator(({ page, month }: { page: number; month?: string }) => {
@@ -11,16 +12,7 @@ export const listPosts = createServerFn({ method: "GET" })
       throw new Error("invalid article filter");
     return { page, month };
   })
-  .handler(async ({ data }): Promise<ArticlePage> => {
-    const base = process.env.API_BASE_URL || "http://127.0.0.1:8081";
-    const query = new URLSearchParams({ page: String(data.page) });
-    if (data.month) query.set("month", data.month);
-    const response = await fetch(`${base}/api/articles?${query}`, {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!response.ok) throw new Error("記事を取得できませんでした。");
-    return response.json();
-  });
+  .handler(({ data }): Promise<ArticlePage> => loadArticlePage(data));
 
 export const getPost = createServerFn({ method: "GET" })
   .validator((id: string) => {
@@ -28,12 +20,10 @@ export const getPost = createServerFn({ method: "GET" })
     return id;
   })
   .handler(async ({ data }): Promise<PublicPost> => {
-    const base = process.env.API_BASE_URL || "http://127.0.0.1:8081";
-    const response = await fetch(
-      `${base}/api/posts/${encodeURIComponent(data)}`,
-      { signal: AbortSignal.timeout(5000) },
-    );
-    if (response.status === 404) throw notFound();
-    if (!response.ok) throw new Error("記事を取得できませんでした。");
-    return response.json();
+    try {
+      return await loadPost(data);
+    } catch (error) {
+      if (error instanceof NotFound) throw notFound();
+      throw error;
+    }
   });
