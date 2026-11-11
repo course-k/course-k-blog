@@ -2,7 +2,7 @@
 
 最終更新：2026-11-11。
 
-**状態：本人が移行を決定（2026-11-11）。実装・AWS設定の変更は未着手。** 本番は[現行設計](current-design.md)のFargate構成で稼働している。本書は移行先の構成・費用・作業順を定める。実装と本番切替が済んだ部分から現行設計へ移し、進捗は[公開台帳](blog-publication-roadmap-2026-10-18.md)で管理する。
+**状態：本人が移行を決定（2026-11-11）。段階1の検証は完了、段階2を実装中。本番のAWS設定は未変更。** 本番は[現行設計](current-design.md)のFargate構成で稼働している。本書は移行先の構成・費用・作業順を定める。実装と本番切替が済んだ部分から現行設計へ移し、進捗は[公開台帳](blog-publication-roadmap-2026-10-18.md)で管理する。
 
 ## 目的と前提
 
@@ -67,10 +67,12 @@ Goは現行のMySQLドライバとSQLを変えずにAuroraへ接続するため�
 |---|---|---|
 | Aurora | VPC内のプライベート接続 | — |
 | S3 | ゲートウェイエンドポイント（無料） | — |
-| Cognito（OIDCの設定・鍵・トークン交換） | デュアルスタックのサブネットとEgress-Only Internet GatewayによるIPv6 | 2026-11-11に`cognito-idp.us-west-2.amazonaws.com`と`*.auth.us-west-2.amazoncognito.com`のAAAAレコードを確認 |
-| Qiita API | 同上 | `qiita.com`のAAAAレコードを確認 |
-| SSM・Lambda・CloudFrontのAPI | 同上。デュアルスタックのエンドポイントを使う | `ssm.us-west-2.api.aws`・`lambda.us-west-2.api.aws`のAAAAレコードを確認。CloudFrontのAPIは未確認 |
-| note・Wantedly | 取得用Lambdaを呼び出して代理取得 | `note.com`・`www.wantedly.com`にAAAAレコードなし |
+| Cognito（OIDCの設定・鍵・トークン交換） | デュアルスタックのサブネットとEgress-Only Internet GatewayによるIPv6 | VPC内Lambdaから`cognito-idp.us-west-2.amazonaws.com`へ到達。本番のトークン交換先のホストはAAAAレコードの確認まで |
+| Qiita API | 同上 | VPC内Lambdaから`qiita.com`のAPIが200 |
+| SSM・Lambda・CloudFront・S3のAPI | 同上。デュアルスタックのエンドポイントを使う | VPC内Lambdaから`ssm.us-west-2.api.aws`・`lambda.us-west-2.api.aws`・`cloudfront.global.api.aws`・`s3.dualstack.us-west-2.amazonaws.com`へ到達 |
+| note・Wantedly | 取得用Lambdaを呼び出して代理取得 | VPC内Lambdaから`note.com`・`www.wantedly.com`へは到達不可（AAAAレコードなし） |
+
+上表は2026-11-11に一時スタック（デュアルスタックのVPC、Egress-Only Internet Gateway、`Ipv6AllowedForDualStack`を有効にしたLambda）で確認した。到達はHTTPSの応答が返ることで判定し、認証済みのAPI呼び出しまでは行っていない。
 
 取得用Lambdaは取得先を現行の許可リストに限定し、DB・S3・秘密値への権限を持たない。
 
@@ -91,7 +93,8 @@ Lambdaは応答後に凍結されるため、現行の常駐ループを次の�
 - 管理画面は、最初の操作が再開待ちで遅いことを表示する。
 - 疎通監視は`/api/readyz`（DBへ接続する）を対象から外し、公開ページと`/healthz`だけにする。定期的にDBへ触れる処理を置かない。
 - RDS Proxyとバイナリログのレプリケーションは使わない。どちらも停止を妨げる。
-- エンジンはAurora MySQL 3.08.0以上。現行のMySQL 8.4向けSQLがAurora MySQL 3（MySQL 8.0互換）で動くことを、移行前に実DB試験で確かめる。
+- エンジンはAurora MySQL 3.08.0以上。版を指定せずに作成した既定は3.10.3（MySQL 8.0.42互換）だった。現行のSQLと移行はMySQL 8.0の一時コンテナで実DB試験が22件成功（SKIPは権限とTLSの2件）。Aurora自体での試験は段階4で行う。
+- 2026-11-11の一時クラスタ（最小0・最大1 ACU、停止まで300秒）での実測：最後の接続の約6分後に0 ACUになり、17分間0のまま。停止後の最初の接続は13.7秒、直後の接続は0.01秒。作成直後の最初の接続も11.6秒かかったが、その時点の容量は0ではなく、原因は未確認。24時間を超える停止後の再開時間は未計測。
 
 出典：[Auroraの自動停止・再開](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-serverless-v2-auto-pause.html)、[VPC接続したLambdaとIPv6](https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html)。
 
@@ -135,8 +138,8 @@ DBのデータは、現行の論理バックアップをAuroraへ復元して移
 
 | 順序 | 到達点 | 本番への影響 |
 |---|---|---|
-| 1 | 小さな検証：VPC内LambdaからIPv6でCognito・Qiita・SSMへ届くこと、Auroraの停止と再開時間、Aurora MySQL 3での全DB試験 | なし。検証用資材は数日で撤去、費用は1 USD未満の見込み |
-| 2 | アプリの変更：公開用JSON・公開画像の書き出し、Lambdaでの起動、常駐処理の置き換え。ローカルとCIの試験を通す | なし。現行のFargateでも動く形を保つ。書き出しとNodeの読み込み先切り替えは実装済み（[API契約](current-design.md#6-api現在の実装契約)） |
+| 1 | 小さな検証：VPC内LambdaからIPv6でCognito・Qiita・SSMへ届くこと、Auroraの停止と再開時間、MySQL 8.0での全DB試験 | **完了（2026-11-11）。** 本番への影響なし。検証用スタックは同日中に撤去し、Aurora・スナップショット・Lambda・VPC・ロール・ログが残っていないことを確認した |
+| 2 | アプリの変更：公開用JSON・公開画像の書き出し、Lambdaでの起動、常駐処理の置き換え。ローカルとCIの試験を通す | なし。現行のFargateでも動く形を保つ。書き出し（ディレクトリ・S3）、Nodeの読み込み先切り替え、未反映時の編集画面の警告は実装・本番配備済み（[API契約](current-design.md#6-api現在の実装契約)）。本番では未設定のため動作は変わらない |
 | 3 | 新構成の本番定義・権限・配備ワークフロー | 新スタックを別名で作る。現行は稼働したまま |
 | 4 | 並行稼働での受入：仮ホスト名で閲覧・執筆・公開・非公開・画像・同期・バックアップ・復元を確認 | 新旧が同時に動く間、費用が一時的に増える |
 | 5 | 切替：書き込みを止め、バックアップをAuroraへ復元し、DNSをCloudFrontへ向ける | XServer DomainのCNAME変更。戻すときは同じレコードを旧値へ戻す |
