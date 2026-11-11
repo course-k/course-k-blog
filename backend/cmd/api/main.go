@@ -167,13 +167,13 @@ func run() error {
 		return nil
 	}
 	externalService := &external.Service{Repository: store, Client: external.NewClient()}
-	publisher, err := publicFiles(store, externalService, objects)
+	publisher, err := publicFiles(ctx, store, externalService, objects)
 	if err != nil {
 		return err
 	}
 	if command == "refresh-public" {
 		if len(os.Args) != 2 || publisher == nil {
-			return errors.New("refresh-public takes no arguments and needs PUBLIC_DIRECTORY")
+			return errors.New("refresh-public takes no arguments and needs PUBLIC_DIRECTORY or PUBLIC_BUCKET")
 		}
 		work, done := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer done()

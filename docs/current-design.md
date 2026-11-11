@@ -301,7 +301,7 @@ Go側はすでにStore契約とDB実装が分かれ、公開版の保存をSQL�
 - 日時は時刻付きJSON、画面では日本時間。IDは32バイト乱数のbase64url文字列（43文字）。タイトル変更でIDを変えない。
 - エラー本文は `{error:文字列}`。入力400、認証401、Origin拒否403、未存在404、競合409、JSON以外415、ログイン試行制限429、内部失敗500。
 - 更新系はOrigin完全一致とJSONを要求する。JSON上限300KiB、タイトルは最大200 Unicodeコードポイント（空は保存可、公開時は空白だけを拒否）、本文は最大256KiB。予約した画像表示設定（`blog-image:`で始まる画像title）は文法に合わなければ400。入力欄も同じく200コードポイントで制限する。
-- 読者向けファイル：`PUBLIC_DIRECTORY`を設定すると、Goは公開・非公開化・外部同期の完了・起動のたびに、一覧（`data/articles/{all|YYYY-MM}/{ページ}.json`）、公開記事（`data/posts/{id}.json`）、公開画像（`api/images/{id}`）を書き出す。JSONは上記の公開APIと同じ形。公開でなくなったファイルは消す。書き出しに失敗しても記事の変更は保存し、応答ヘッダー`X-Publication: pending`で未反映を伝える。公開状態が変わらなければ何も書かない。Nodeは`PUBLIC_DATA_URL`があるとこのファイルから描画し、Goを呼ばない。稼働中のFargate本番は両方とも未設定で、従来どおりNodeがGoへ問い合わせる。採用理由は[移行設計](future-static-delivery.md)。
+- 読者向けファイル：`PUBLIC_DIRECTORY`（ローカルのディレクトリ）か`PUBLIC_BUCKET`（S3。オブジェクトごとに種類を保存し、暗号化する）のどちらかを設定すると、Goは公開・非公開化・外部同期の完了・起動のたびに、一覧（`data/articles/{all|YYYY-MM}/{ページ}.json`）、公開記事（`data/posts/{id}.json`）、公開画像（`api/images/{id}`）を書き出す。JSONは上記の公開APIと同じ形。公開でなくなったファイルは消す。書き出しに失敗しても記事の変更は保存し、応答ヘッダー`X-Publication: pending`で未反映を伝える。公開状態が変わらなければ何も書かない。Nodeは`PUBLIC_DATA_URL`があるとこのファイルから描画し、Goを呼ばない。稼働中のFargate本番は両方とも未設定で、従来どおりNodeがGoへ問い合わせる。採用理由は[移行設計](future-static-delivery.md)。
 - 公開APIを含めCache-Controlはno-store。SSR側のGo取得は5秒タイムアウト。キャッシュの最終方針は未決。
 - 読者一覧は21件取得し、20件とhasNextを返す。旧 `/api/posts` は自作記事だけの互換API。管理一覧はページ分割なしで、規模拡大時には再検討する。
 
