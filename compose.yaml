@@ -32,6 +32,8 @@ services:
       MEDIA_DIRECTORY: /data/media
       BACKUP_DIRECTORY: /backup/archives
       BACKUP_ENABLED: "true"
+      # Readers are rendered from these files; the API rewrites them on publication changes.
+      PUBLIC_DIRECTORY: /public
     secrets: [db_password, admin_hash]
     depends_on:
       db: { condition: service_healthy }
@@ -39,7 +41,7 @@ services:
     build: ./backend
     environment: *api_environment
     secrets: [db_password, admin_hash]
-    volumes: [media_data:/data, backup_data:/backup]
+    volumes: [media_data:/data, backup_data:/backup, public_data:/public]
     depends_on:
       migrate: { condition: service_completed_successfully }
     restart: unless-stopped
@@ -47,6 +49,7 @@ services:
     build: ./frontend
     environment:
       API_BASE_URL: http://api:8081
+      PUBLIC_DATA_URL: http://gateway:8080
     depends_on: [api]
     restart: unless-stopped
   gateway:
@@ -54,7 +57,7 @@ services:
     environment:
       API_UPSTREAM: api:8081
       WEB_UPSTREAM: web:3000
-    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro"]
+    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "public_data:/public:ro"]
     ports: ["127.0.0.1:8080:8080"]
     depends_on: [web]
     restart: unless-stopped
@@ -65,3 +68,4 @@ volumes:
   mysql_data:
   media_data:
   backup_data:
+  public_data:

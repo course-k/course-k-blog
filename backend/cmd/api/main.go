@@ -223,6 +223,15 @@ func run() error {
 	} else if u.Scheme == "https" {
 		return errors.New("OIDC configuration is required for public administration")
 	}
+	if publisher != nil {
+		// Files may be missing after a first start or stale after an interrupted
+		// run. Refreshing is a no-op when they already match the database.
+		work, done := context.WithTimeout(context.Background(), time.Minute)
+		if err := publisher.Refresh(work); err != nil {
+			slog.Error("operation_failed", "operation", "publication", "code", "refresh_failed")
+		}
+		done()
+	}
 	features := httpapi.Features{External: externalService, Images: imageService, Uploads: uploadService, LocalUploads: localUploads, Backups: backupService, Identity: identity, Creations: store}
 	if publisher != nil {
 		features.Publication = publisher

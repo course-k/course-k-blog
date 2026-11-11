@@ -10,7 +10,7 @@
 
 React/TypeScript・TanStack StartのSSR、Go、非公開RDS MySQL、Node/Go/Nginxを同じECS Fargateタスクへ配置する構成、AWSオレゴンの選定を維持する。コメント・いいね・会員登録・検索・SNS投稿連携・別アプリは初回公開へ追加しない。
 
-公開後の請求は月約35 USD（税別）のペースで、本人が許容できないと判断した。2026-11-11にCloudFront・Lambda・自動停止するAuroraへの移行を決定した。構成・費用・作業順は[移行設計](future-static-delivery.md)を参照する。実装は未着手で、段階1（小さな検証）から始める。
+公開後の請求は月約35 USD（税別）のペースで、本人が許容できないと判断した。2026-11-11にCloudFront・Lambda・自動停止するAuroraへの移行を決定した。構成・費用・作業順は[移行設計](future-static-delivery.md)を参照する。段階2のうち、読者向けファイルの書き出し（Go）とNodeの読み込み先切り替えを実装し、ローカルの通し試験で公開・更新・非公開の反映を確認した。MySQL 8.0（Aurora MySQL 3が互換とする版）での実DB試験は22件成功・SKIP 2（権限・TLS）。残りは、S3への書き出しとキャッシュ無効化、Lambdaでの起動と常駐処理の置き換え、書き出し失敗（`X-Publication: pending`）の管理画面表示、実AWSでの段階1の検証、新構成の定義・配備・切替。
 
 ### 公開準備の確認済み情報
 
