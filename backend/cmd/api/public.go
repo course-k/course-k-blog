@@ -53,6 +53,14 @@ func publicFiles(ctx context.Context, store *mysql.Store, articles *external.Ser
 		return nil, err
 	}
 	publisher := &publication.Publisher{Source: publicSource{store, articles}, Media: media, Target: target}
+	// Without a distribution nothing is cached in front of the files.
+	if id := os.Getenv("PUBLIC_DISTRIBUTION_ID"); id != "" {
+		distribution, err := publication.NewDistribution(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		publisher.Purge = distribution.Purge
+	}
 	articles.Changed = func(ctx context.Context) {
 		work, done := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 		defer done()
