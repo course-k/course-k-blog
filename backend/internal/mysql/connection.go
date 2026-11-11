@@ -36,6 +36,10 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	return &Store{db}, nil
 }
 
+// CloseWhenIdle stops keeping unused connections open. A paused process cannot
+// close them later, and an open connection keeps a pausing database awake.
+func (s *Store) CloseWhenIdle() { s.db.SetMaxIdleConns(0) }
+
 // Application URLs stay readable in secret configuration. The driver receives a
 // structured config, so passwords are never concatenated into driver syntax.
 func ConnectionConfig(dsn string) (*driver.Config, error) {
