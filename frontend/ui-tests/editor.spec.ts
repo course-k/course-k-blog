@@ -145,6 +145,10 @@ test("autosave starts 3 seconds after the last edit, then replaces the URL with 
 
 test("continuous typing is saved at 30 seconds and input stays enabled during a slow save", async ({ page }) => {
   await admin(page);
+  // The installed clock still follows real time between runFor calls. This test
+  // checks a 100 ms margin before the 30-second save, so stop it: only runFor
+  // may move time, however long the browser takes to type.
+  await page.clock.pauseAt(new Date("2026-10-31T09:01:00+09:00"));
   await body(page).focus();
   for (let second = 0; second < 29; second++) {
     await page.keyboard.type("あ");
