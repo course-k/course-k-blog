@@ -39,6 +39,8 @@ type Publisher struct {
 	Source Source
 	Media  Media
 	Target Target
+	// Purge, when set, discards cached copies of the public files and pages.
+	Purge func(context.Context) error
 }
 
 const manifestKey = "data/manifest.json"
@@ -98,6 +100,13 @@ func (p *Publisher) Refresh(ctx context.Context) error {
 			if err = p.Target.Delete(ctx, key); err != nil {
 				return err
 			}
+		}
+	}
+	// Purge before recording success: if it fails, the digest stays empty and
+	// the next refresh rewrites and purges again instead of skipping.
+	if p.Purge != nil {
+		if err = p.Purge(ctx); err != nil {
+			return err
 		}
 	}
 	return p.record(ctx, digest, current)

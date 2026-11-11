@@ -302,3 +302,46 @@ func TestCurrentReportsWhetherReadersSeeTheLatestState(t *testing.T) {
 		t.Fatal("a failed refresh must not be reported as current")
 	}
 }
+
+// A counter standing in for the cache in front of the public files.
+type fakeCache struct {
+	purges  int
+	failure error
+}
+
+func (f *fakeCache) purge(context.Context) error {
+	f.purges++
+	return f.failure
+}
+
+func TestRefreshPurgesTheCacheOnlyWhenFilesChanged(t *testing.T) {
+	source, media, target := fixture()
+	cache := &fakeCache{}
+	publisher := &Publisher{Source: source, Media: media, Target: target, Purge: cache.purge}
+	if err := publisher.Refresh(context.Background()); err != nil || cache.purges != 1 {
+		t.Fatalf("the first publication must purge once: %v, %d", err, cache.purges)
+	}
+	if err := publisher.Refresh(context.Background()); err != nil || cache.purges != 1 {
+		t.Fatalf("an unchanged blog must not purge: %v, %d", err, cache.purges)
+	}
+	source.posts["a"] = blog.PublicPost{ID: "a", Title: "post a", Markdown: "republished"}
+	if err := publisher.Refresh(context.Background()); err != nil || cache.purges != 2 {
+		t.Fatalf("a republished post must purge again: %v, %d", err, cache.purges)
+	}
+}
+
+func TestFailedPurgeIsRetriedByTheNextRefresh(t *testing.T) {
+	source, media, target := fixture()
+	cache := &fakeCache{failure: errors.New("cache unavailable")}
+	publisher := &Publisher{Source: source, Media: media, Target: target, Purge: cache.purge}
+	if err := publisher.Refresh(context.Background()); err == nil {
+		t.Fatal("readers may still receive old pages, so the refresh must fail")
+	}
+	if current, err := publisher.Current(context.Background()); err != nil || current {
+		t.Fatalf("a refresh whose purge failed must not be reported as delivered: %v %v", current, err)
+	}
+	cache.failure = nil
+	if err := publisher.Refresh(context.Background()); err != nil || cache.purges != 2 {
+		t.Fatalf("the retry must purge again even though the files are already written: %v, %d", err, cache.purges)
+	}
+}
