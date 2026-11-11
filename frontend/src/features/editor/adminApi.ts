@@ -3,6 +3,8 @@ import type { AdminPost, SyncState } from "../../lib/types";
 const REQUEST_TIMEOUT_MS = 15_000;
 // Completion verifies and re-encodes up to 10MB on the server (20 s budget).
 const COMPLETE_TIMEOUT_MS = 30_000;
+// Rewriting the reader files may take up to 25 s on the server.
+const PUBLICATION_TIMEOUT_MS = 30_000;
 
 export type UploadTarget = {
   method: "POST" | "PUT";
@@ -121,6 +123,16 @@ export const adminApi = {
     requestAdminJson<AdminPost>(`/admin/posts/${encodeURIComponent(id)}/unpublish`, "POST", {
       version,
     }),
+  // Whether the files readers are served from match the database. The API
+  // answers 404 when it does not publish files at all.
+  publicationState: () => requestAdminJson<{ current: boolean }>("/admin/publication"),
+  refreshPublication: () =>
+    requestAdminJson<{ current: boolean }>(
+      "/admin/publication",
+      "POST",
+      {},
+      AbortSignal.timeout(PUBLICATION_TIMEOUT_MS),
+    ),
   beginUpload: (request: UploadRequest) =>
     requestAdminJson<UploadStatus>("/admin/image-uploads", "POST", request),
   completeUpload: (uploadId: string) =>
