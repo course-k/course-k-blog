@@ -48,6 +48,7 @@ go -C backend mod download
 | 実MySQL | 下記の専用DB手順 | 移行・公開版分離・競合・セッション等を実DBで確認。テストデータの作成・削除を伴う |
 | 設定生成補助 | `node --test scripts/local-config.test.mjs` | 一時ディレクトリで設定の部分生成・失敗時の復帰を確認。実秘密値や既存DBは使わない |
 | AWS操作補助 | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/aws -p 'test_*.py' -v` | 偽のAWS応答を使い、対象・実行順・秘密値の扱いを確認。AWS CLIを起動しない |
+| 取得の中継 | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s infra/relay -p 'test_*.py' -v` | 許可した3ページだけを取得し、それ以外を拒否することを偽の応答で確認。実際の媒体へは接続しない |
 | 監視 | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s infra/monitoring -p 'test_*.py' -v` | 応答の判定と配備コピーの一致を確認。実際の通知到達を意味しない |
 | ローカル通し確認 | 下記の明示実行手順 | 実ブラウザ→SSR/API→実DB。仮記事を作成・公開・更新・非公開にする |
 | AWS実経路 | [AWS手順](../infra/README.md) | 対象・課金・公開範囲を確認して別途実施。通常のPR検証から実行しない |

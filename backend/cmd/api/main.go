@@ -174,6 +174,15 @@ func run() error {
 		return nil
 	}
 	externalService := &external.Service{Repository: store, Client: external.NewClient()}
+	// Where the API's network has no IPv4 way out, IPv4-only media are fetched
+	// by a relay function outside it.
+	if name := os.Getenv("FETCH_RELAY_FUNCTION"); name != "" {
+		relay, err := external.NewLambdaRelay(ctx, name)
+		if err != nil {
+			return err
+		}
+		externalService.Client = external.NewRelayedClient(relay.Invoke)
+	}
 	publisher, err := publicFiles(ctx, store, externalService, objects)
 	if err != nil {
 		return err

@@ -31,6 +31,7 @@ jobs:
       - run: python3 scripts/check-repository.py
       - run: python3 -m unittest discover -s scripts/aws -p 'test_*.py' -v
       - run: python3 -m unittest discover -s infra/monitoring -p 'test_*.py' -v
+      - run: python3 -m unittest discover -s infra/relay -p 'test_*.py' -v
       - name: Validate production CloudFormation without AWS access
         run: |
           python3 -m venv "$RUNNER_TEMP/cfn-lint"
