@@ -55,7 +55,12 @@ func run() error {
 	if (command == "serve" || command == "migrate") && len(os.Args) > 2 {
 		return errors.New("unexpected application arguments")
 	}
-	dsn := os.Getenv("DATABASE_URL")
+	lookup, stop := context.WithTimeout(context.Background(), 20*time.Second)
+	dsn, err := databaseURL(lookup, os.Getenv, fetchParameter)
+	stop()
+	if err != nil {
+		return err
+	}
 	if dsn == "" && os.Getenv("DATABASE_PASSWORD_FILE") != "" {
 		password, err := os.ReadFile(os.Getenv("DATABASE_PASSWORD_FILE"))
 		if err != nil {
