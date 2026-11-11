@@ -37,7 +37,7 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 
 ### 採用した構成
 
-公開先は`https://blog.course-k.com`、リージョンはus-west-2、スタック名は`course-k-blog-production`を使う。本人メール・通知先とオレゴンの発行済み証明書ARNはGit対象外の`config/aws-production/domain.json`に記録済み。証明書の発行とDNS/HTTPS接続は確認済み。後日の静的配信・Lambda化は現行構成に含めない。
+公開先は`https://blog.course-k.com`、リージョンはus-west-2、スタック名は`course-k-blog-production`を使う。本人メール・通知先とオレゴンの発行済み証明書ARNはGit対象外の`config/aws-production/domain.json`に記録済み。証明書の発行とDNS/HTTPS接続は確認済み。[移行設計](../docs/future-static-delivery.md)の構成は、切替までこの手順の対象に含めない。
 
 通常はNode/Go/Nginxの1タスク（ARM64、0.5vCPU/2GiB）、公開IPv4 1個、非公開RDS MySQL db.t4g.micro・gp3 20GiB。ネットワークは新規VPC・4サブネット・3セキュリティグループ、入口はHTTP API・VPC Link・Cloud Map・Nginx、保存は非公開S3 2バケット。ECR 4リポジトリのうち1件は初期化用。ECSタスク定義は通常用・移行用・初期化用の3件だが、常駐サービスは1件だけで、移行用・初期化用を常駐させない。ほかにCognito、SNSメール購読、7アラーム、ログ5グループ、15分間隔の疎通確認Lambdaと定期ルールを含む。詳細な資材の正本は生成定義とし、ここではアプリ本体の全68論理資源を68台のサーバーと解釈しない。
 
