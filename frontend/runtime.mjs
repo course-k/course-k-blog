@@ -1,7 +1,11 @@
 // The outer handler also protects static and error responses, which bypass Start.
-export function createHandler({ render, staticFiles, articleImages }) {
+// edgeSeconds > 0 means a content delivery network caches in front of this
+// server and is purged whenever publication changes. Only then may it keep
+// successful reader pages; browsers still revalidate on every visit.
+export function createHandler({ render, staticFiles, articleImages, edgeSeconds = 0 }) {
   return async function fetch(request) {
     let response
+    let reader = false
     try {
       const url = new URL(request.url)
       const pathname = url.pathname
@@ -21,6 +25,10 @@ export function createHandler({ render, staticFiles, articleImages }) {
       } else {
         response = await articleImages?.(request)
           ?? await staticFiles(request, () => render(request))
+        // Reader pages are everything rendered or served here except the
+        // owner's screens. The redirect and health answers above stay private.
+        reader = ['GET', 'HEAD'].includes(request.method)
+          && pathname !== '/admin' && !pathname.startsWith('/admin/')
       }
     } catch {
       // Do not return upstream details or credentials to clients.
@@ -31,7 +39,8 @@ export function createHandler({ render, staticFiles, articleImages }) {
     headers.set('X-Content-Type-Options', 'nosniff')
     headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
     headers.set('X-Frame-Options', 'DENY')
-    headers.set('Cache-Control', 'no-store')
+    const keep = edgeSeconds > 0 && reader && response.status === 200 && !headers.has('Set-Cookie')
+    headers.set('Cache-Control', keep ? `public, max-age=0, s-maxage=${edgeSeconds}` : 'no-store')
     headers.delete('Server')
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
   }

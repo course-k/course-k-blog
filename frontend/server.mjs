@@ -11,6 +11,8 @@ serve({
   trustProxy: false,
   gracefulShutdown: true,
   fetch: createHandler({
+    // Set only where a purged content delivery network sits in front.
+    edgeSeconds: Number(process.env.EDGE_CACHE_SECONDS || 0),
     articleImages: createArticleImageHandler(),
     render: request => entry.fetch(request),
     staticFiles: staticMiddleware({ dir: fileURLToPath(new URL('./dist/client/', import.meta.url)) }),

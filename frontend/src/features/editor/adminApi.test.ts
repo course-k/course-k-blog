@@ -61,3 +61,31 @@ test("transport sends same-origin JSON credentials and an abort signal", async (
   };
   assert.deepEqual(await requestAdminJson("/admin/posts", "POST", { title: "title" }), { id: "fixture" });
 });
+
+test("a request with a body carries the SHA-256 of exactly the bytes sent", async () => {
+  // The signed origin in front of the API accepts a body only with its hash.
+  const sent: { body: string; hash: string | null }[] = [];
+  globalThis.fetch = async (_input, init) => {
+    sent.push({ body: String(init?.body), hash: new Headers(init?.headers).get("x-amz-content-sha256") });
+    return new Response("{}", { status: 200 });
+  };
+  await requestAdminJson("/admin/posts", "POST", { title: "題名", markdown: "本文" });
+  await requestAdminJson("/session", "DELETE", {});
+  const digest = async (text: string) =>
+    Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))))
+      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  assert.equal(sent[0].body, '{"title":"題名","markdown":"本文"}');
+  assert.equal(sent[0].hash, await digest(sent[0].body));
+  assert.equal(sent[1].hash, await digest("{}"));
+  assert.notEqual(sent[0].hash, sent[1].hash);
+});
+
+test("a request without a body carries no body hash", async () => {
+  let hash: string | null = "unset";
+  globalThis.fetch = async (_input, init) => {
+    hash = new Headers(init?.headers).get("x-amz-content-sha256");
+    return new Response("[]", { status: 200 });
+  };
+  await requestAdminJson("/admin/posts");
+  assert.equal(hash, null);
+});

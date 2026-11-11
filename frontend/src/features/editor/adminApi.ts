@@ -52,18 +52,28 @@ export function outcomeIsUnknown(error: unknown): boolean {
   );
 }
 
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export async function requestAdminJson<T>(
   path: string,
   method = "GET",
   body?: unknown,
   signal: AbortSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 ): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const payload = body === undefined ? undefined : JSON.stringify(body);
+  // The signed origin in front of the API accepts a request body only together
+  // with its SHA-256. Elsewhere the header is ignored.
+  if (payload !== undefined) headers["x-amz-content-sha256"] = await sha256Hex(payload);
   const response = await fetch(`/api${path}`, {
     method,
     credentials: "same-origin",
     cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers,
+    body: payload,
     signal,
   });
   const retryHeader = Number(response.headers.get("Retry-After"));
