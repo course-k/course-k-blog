@@ -135,6 +135,11 @@ func TestLambdaRelayReportsAFunctionError(t *testing.T) {
 
 func TestRelayAllowsExactlyThePagesTheSyncRequests(t *testing.T) {
 	source, err := os.ReadFile("../../../infra/relay/relay.py")
+	if errors.Is(err, os.ErrNotExist) {
+		// The image build copies only backend/. The repository checks run this
+		// test from a full checkout, where the relay source is present.
+		t.Skip("relay source is outside this build context")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
