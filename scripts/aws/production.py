@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 
+from ondemand import add_on_demand
 from single_task import consolidate_runtime
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -123,6 +124,8 @@ def production_template():
         'AllowedPattern': '^$|^[0-9]{12}\\.dkr\\.ecr\\.us-west-2\\.amazonaws\\.com/course-k-blog-production-gorepository-[a-z0-9]+@sha256:[a-f0-9]{64}$'}
     template['Conditions']['MigrationOverride'] = {'Fn::Not': [{'Fn::Equals': [ref('MigrationImage'), '']}]}
     template['Resources']['MigrationTask']['Properties']['ContainerDefinitions'][0]['Image'] = {'Fn::If': ['MigrationOverride', ref('MigrationImage'), ref('GoImage')]}
+    # Off by default: the on-demand side is created beside the running service.
+    add_on_demand(template)
     return template
 
 
