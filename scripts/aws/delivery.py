@@ -208,7 +208,11 @@ class Release:
                 '--function-name', self.functions['OnDemandGoImage'], '--payload', '{"work":"pending"}',
                 '--cli-binary-format', 'raw-in-base64-out', str(output)])
             require(result.get('StatusCode') == 200 and not result.get('FunctionError'), 'Pending work failed')
-            response = json.loads(output.read_text() or '{}')
+            # The web adapter pads the response after the JSON document.
+            try:
+                response, _ = json.JSONDecoder().raw_decode(output.read_text().strip())
+            except ValueError:
+                response = {}
             require(response.get('statusCode') == 200, 'Pending work failed; production was not updated')
         print('Pending work, including any due backup, completed successfully', flush=True)
 

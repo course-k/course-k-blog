@@ -99,7 +99,7 @@ class DeliveryTest(unittest.TestCase):
             self.assertNotIn('data', kwargs)
             self.assertEqual(extra[:4], ['--function-name', 'api', '--payload', '{"work":"pending"}'])
             with open(extra[-1], 'w') as stream:
-                stream.write('{"statusCode":200}')
+                stream.write('{"statusCode":200,"cookies":[]}' + ' ' * 8)
             return {'StatusCode': 200}
 
         aws.call.side_effect = invoke
@@ -111,6 +111,15 @@ class DeliveryTest(unittest.TestCase):
             return {'StatusCode': 200}
 
         aws.call.side_effect = failed
+        with self.assertRaisesRegex(ReleaseError, 'Pending work failed'):
+            release.backup()
+
+        def garbled(service, action, *, extra=(), **kwargs):
+            with open(extra[-1], 'w') as stream:
+                stream.write('not json')
+            return {'StatusCode': 200}
+
+        aws.call.side_effect = garbled
         with self.assertRaisesRegex(ReleaseError, 'Pending work failed'):
             release.backup()
 
