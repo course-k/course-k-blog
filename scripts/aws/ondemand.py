@@ -79,6 +79,13 @@ def parameters():
                                             'Description': 'SSM SecureString with the application URL of the pausing database. Setting it creates the functions and the distribution.'},
         'OnDemandMigrationUrlParameterArn': {'Type': 'String', 'Default': '', 'AllowedPattern': arn,
                                              'Description': 'SSM SecureString with the schema owner URL of the pausing database. Setting it creates its migration task.'},
+        # The on-demand side has its own image parameters. A normal release changes
+        # only the running service's images, so it never touches these resources
+        # and needs no permissions for them.
+        'OnDemandGoImage': {'Type': 'String', 'Default': '', 'AllowedPattern': '^$|^.+@sha256:[a-f0-9]{64}$',
+                            'Description': 'API image for the on-demand function and tasks, pinned by digest.'},
+        'OnDemandNodeImage': {'Type': 'String', 'Default': '', 'AllowedPattern': '^$|^.+@sha256:[a-f0-9]{64}$',
+                              'Description': 'Web image for the on-demand function, pinned by digest.'},
         'OnDemandOrigin': {'Type': 'String', 'Default': '', 'AllowedPattern': r'^$|^https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$',
                            'Description': 'HTTPS origin readers and the owner use for the on-demand side; the distribution host until the switch.'},
         'OnDemandDistributionId': {'Type': 'String', 'Default': '', 'AllowedPattern': '^$|^[A-Z0-9]{8,20}$',
@@ -93,11 +100,12 @@ def conditions():
     on = {'Fn::Equals': [ref('EnableOnDemand'), 'true']}
     return {
         'OnDemand': on,
-        'OnDemandRuntime': {'Fn::And': [on, is_set('OnDemandDatabaseUrlParameterArn')]},
-        'OnDemandMigration': {'Fn::And': [on, is_set('OnDemandMigrationUrlParameterArn')]},
+        'OnDemandRuntime': {'Fn::And': [on, is_set('OnDemandDatabaseUrlParameterArn'), is_set('OnDemandGoImage'), is_set('OnDemandNodeImage')]},
+        'OnDemandMigration': {'Fn::And': [on, is_set('OnDemandMigrationUrlParameterArn'), is_set('OnDemandGoImage')]},
         'OnDemandBootstrap': {'Fn::And': [on, is_set('BootstrapImage')]},
         # The restore task copies the migration task, so it needs both URLs.
-        'OnDemandRestore': {'Fn::And': [on, is_set('OnDemandDatabaseUrlParameterArn'), is_set('OnDemandMigrationUrlParameterArn')]},
+        'OnDemandRestore': {'Fn::And': [on, is_set('OnDemandDatabaseUrlParameterArn'), is_set('OnDemandMigrationUrlParameterArn'),
+                                        is_set('OnDemandGoImage')]},
         'OnDemandOriginSet': is_set('OnDemandOrigin'),
         'OnDemandDistributionKnown': is_set('OnDemandDistributionId'),
         'OnDemandAlias': is_set('OnDemandCertificateArn'),
@@ -208,6 +216,7 @@ def database_tools(resources):
         'OnDemandMigrationExecutionRole': retarget(resources['MigrationExecutionRole'], migration_swaps),
         'OnDemandMigrationTask': retarget(resources['MigrationTask'], migration_swaps),
     }
+    added['OnDemandMigrationTask']['Properties']['ContainerDefinitions'][0]['Image'] = ref('OnDemandGoImage')
     # The migration container only needs an origin to start; it serves nothing.
     environment = added['OnDemandMigrationTask']['Properties']['ContainerDefinitions'][0]['Environment']
     for entry in environment:
@@ -223,7 +232,6 @@ def database_tools(resources):
     ]
     restore = retarget(added['OnDemandMigrationTask'], restore_swaps)
     container = restore['Properties']['ContainerDefinitions'][0]
-    container['Image'] = ref('GoImage')
     # The operator supplies the backup and names the target server when running it.
     container['Command'] = ['restore']
     container['Environment'].extend([
@@ -329,7 +337,7 @@ def functions():
         'OnDemandApiFunction': {'Type': 'AWS::Lambda::Function', 'Condition': 'OnDemandRuntime',
                                 'DependsOn': ['OnDemandIpv6Route', 'OnDemandSubnet1Routes', 'OnDemandSubnet2Routes', 'OnDemandInstance'],
                                 'Properties': {
-            'FunctionName': api_name, 'PackageType': 'Image', 'Code': {'ImageUri': ref('GoImage')}, 'Architectures': ['arm64'],
+            'FunctionName': api_name, 'PackageType': 'Image', 'Code': {'ImageUri': ref('OnDemandGoImage')}, 'Architectures': ['arm64'],
             'Role': att('OnDemandApiRole'), 'MemorySize': 1024,
             # A work invocation may fetch an external source and take a backup.
             'Timeout': 900,
@@ -360,7 +368,7 @@ def functions():
         'OnDemandApiFromEdge': from_edge('OnDemandApiFunction'),
         'OnDemandWebRole': role([log_writer('NodeLogs')]),
         'OnDemandWebFunction': {'Type': 'AWS::Lambda::Function', 'Condition': 'OnDemandRuntime', 'Properties': {
-            'FunctionName': sub('${AWS::StackName}-web'), 'PackageType': 'Image', 'Code': {'ImageUri': ref('NodeImage')},
+            'FunctionName': sub('${AWS::StackName}-web'), 'PackageType': 'Image', 'Code': {'ImageUri': ref('OnDemandNodeImage')},
             'Architectures': ['arm64'], 'Role': att('OnDemandWebRole'), 'MemorySize': 1024, 'Timeout': 30,
             'LoggingConfig': {'LogGroup': ref('NodeLogs')},
             # npm writes to its home directory, which is read-only here.
@@ -517,17 +525,7 @@ def add_on_demand(template):
     client['LogoutURLs'].append(ACCEPTANCE_LOGOUT)
     resources['ImagesBucket']['Properties']['CorsConfiguration']['CorsRules'][0]['AllowedOrigins'].append(ACCEPTANCE_ORIGIN)
 
-    template['Outputs'].update({
-        'OnDemandDbEndpoint': {'Condition': 'OnDemand', 'Value': att('OnDemandCluster', 'Endpoint.Address')},
-        'OnDemandDbAdminSecretArn': {'Condition': 'OnDemand', 'Value': att('OnDemandCluster', 'MasterUserSecret.SecretArn')},
-        'OnDemandSubnets': {'Condition': 'OnDemand', 'Value': {'Fn::Join': [',', [ref('OnDemandSubnet1'), ref('OnDemandSubnet2')]]}},
-        'OnDemandPublicBucket': {'Condition': 'OnDemand', 'Value': ref('OnDemandPublicBucket')},
-        'OnDemandBootstrapTaskDefinition': {'Condition': 'OnDemandBootstrap', 'Value': ref('OnDemandBootstrapTask')},
-        'OnDemandMigrationTaskDefinition': {'Condition': 'OnDemandMigration', 'Value': ref('OnDemandMigrationTask')},
-        'OnDemandRestoreTaskDefinition': {'Condition': 'OnDemandRestore', 'Value': ref('OnDemandRestoreTask')},
-        'OnDemandDistributionId': {'Condition': 'OnDemandRuntime', 'Value': ref('OnDemandDistribution')},
-        'OnDemandDistributionDomain': {'Condition': 'OnDemandRuntime', 'Value': att('OnDemandDistribution', 'DomainName')},
-        'OnDemandApiFunction': {'Condition': 'OnDemandRuntime', 'Value': ref('OnDemandApiFunction')},
-        'OnDemandWebFunction': {'Condition': 'OnDemandRuntime', 'Value': ref('OnDemandWebFunction')},
-    })
+    # No outputs: CloudFormation re-evaluates every output on any update, so a
+    # normal release would need read access to these resources. Their names and
+    # addresses are read from the stack's resource list instead.
     return template
