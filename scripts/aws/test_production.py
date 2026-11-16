@@ -1,6 +1,7 @@
 import json
 import unittest
 
+from ondemand import ACCEPTANCE_CALLBACK, ACCEPTANCE_LOGOUT, ACCEPTANCE_ORIGIN
 from production import ROOT, production_template
 
 
@@ -42,8 +43,9 @@ class ProductionTemplateTest(unittest.TestCase):
         client = self.resources['OwnerClient']['Properties']
         self.assertFalse(client['GenerateSecret'])
         self.assertEqual(client['AllowedOAuthFlows'], ['code'])
-        self.assertEqual(client['CallbackURLs'], [{'Fn::Sub': '${PublicOrigin}/api/auth/callback'}])
-        self.assertEqual(client['LogoutURLs'], [{'Fn::Sub': '${PublicOrigin}/api/auth/signed-out'}])
+        # The second entry exists only while the on-demand side has its own origin.
+        self.assertEqual(client['CallbackURLs'], [{'Fn::Sub': '${PublicOrigin}/api/auth/callback'}, ACCEPTANCE_CALLBACK])
+        self.assertEqual(client['LogoutURLs'], [{'Fn::Sub': '${PublicOrigin}/api/auth/signed-out'}, ACCEPTANCE_LOGOUT])
 
     def test_backup_retention_does_not_expire_referenced_image_copies(self):
         bucket = self.resources['BackupsBucket']['Properties']
@@ -140,7 +142,7 @@ class DirectImageUploadTest(unittest.TestCase):
         self.assertTrue(all(bucket['PublicAccessBlockConfiguration'].values()))
         rules = bucket['CorsConfiguration']['CorsRules']
         self.assertEqual(len(rules), 1)
-        self.assertEqual(rules[0]['AllowedOrigins'], [{'Ref': 'PublicOrigin'}])
+        self.assertEqual(rules[0]['AllowedOrigins'], [{'Ref': 'PublicOrigin'}, ACCEPTANCE_ORIGIN])
         self.assertEqual(rules[0]['AllowedMethods'], ['POST'])
         self.assertNotIn('*', json.dumps(rules))
 

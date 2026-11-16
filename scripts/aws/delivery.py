@@ -53,8 +53,12 @@ def review_changes(changes):
         names.add(name)
         require(change['Action'] == 'Modify', 'Release would add or remove a resource')
         require(name in {'ApplicationTask', 'ApplicationService', 'MigrationTask',
-                         'ApplicationCPUUtilizationAlarm', 'ApplicationMemoryUtilizationAlarm'},
+                         'ApplicationCPUUtilizationAlarm', 'ApplicationMemoryUtilizationAlarm',
+                         # The on-demand functions run the same images.
+                         'OnDemandApiFunction', 'OnDemandWebFunction', 'OnDemandMigrationTask'},
                 'Release would change infrastructure outside the application')
+        if name.startswith('OnDemand') and name.endswith('Function'):
+            require(change.get('Replacement') == 'False', 'Function replacement is forbidden')
         if name == 'ApplicationService':
             require(change.get('Replacement') == 'False', 'Service replacement is forbidden')
         if name.endswith('Alarm'):

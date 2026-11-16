@@ -23,12 +23,29 @@ def production_access_template():
     }
     resources = template['Resources']
     boundary = resources['RuntimeBoundary']['Properties']
-    boundary['Description'] = 'Administrator-owned maximum for production ECS/probe roles; no IAM mutation.'
+    boundary['Description'] = 'Administrator-owned maximum for production task, probe and function roles; no IAM mutation.'
     boundary['PolicyDocument']['Statement'].extend([
         {'Effect': 'Allow', 'Action': ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
          'Resource': {'Fn::Sub': 'arn:${AWS::Partition}:s3:::course-k-blog-production-*/*'}},
         {'Effect': 'Allow', 'Action': ['s3:ListBucket'],
          'Resource': {'Fn::Sub': 'arn:${AWS::Partition}:s3:::course-k-blog-production-*'}},
+    ])
+    # The on-demand functions run under the same boundary as the tasks.
+    function = {'Fn::Sub': 'arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:course-k-blog-production-*'}
+    regional_only = {'StringEquals': {'aws:RequestedRegion': 'us-west-2'}}
+    boundary['PolicyDocument']['Statement'].extend([
+        # A function in a VPC creates and removes its own network interfaces.
+        {'Effect': 'Allow', 'Action': ['ec2:CreateNetworkInterface', 'ec2:DescribeNetworkInterfaces', 'ec2:DescribeSubnets',
+                                       'ec2:DeleteNetworkInterface', 'ec2:AssignPrivateIpAddresses', 'ec2:UnassignPrivateIpAddresses'],
+         'Resource': '*', 'Condition': regional_only},
+        # The API queues its own pending work and asks the fetch relay.
+        {'Effect': 'Allow', 'Action': ['lambda:InvokeFunction'], 'Resource': function},
+        # The API purges cached pages after publication changes.
+        {'Effect': 'Allow', 'Action': ['cloudfront:CreateInvalidation'],
+         'Resource': {'Fn::Sub': 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*'}},
+        # The bootstrap task reads the managed administrator secret of the pausing cluster.
+        {'Effect': 'Allow', 'Action': ['secretsmanager:GetSecretValue'],
+         'Resource': {'Fn::Sub': 'arn:${AWS::Partition}:secretsmanager:us-west-2:${AWS::AccountId}:secret:rds!cluster-*'}},
     ])
     for name in ('OperatorPolicy1', 'OperatorPolicy2', 'OperatorPolicy3'):
         policy = resources[name]['Properties']['PolicyDocument']

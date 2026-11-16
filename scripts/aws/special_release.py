@@ -9,6 +9,7 @@ import re
 import subprocess
 import tempfile
 
+from ondemand import ACCEPTANCE_ORIGIN
 from delivery import AWS, Release, ReleaseError, ROOT, STACK, REGION, SCHEMA_STATE, require, schema_digest, wait_for
 
 
@@ -41,8 +42,9 @@ def review_template(actual, target):
             for key in ('CorsConfiguration', 'LifecycleConfiguration'):
                 a['Properties'].pop(key, None)
                 b['Properties'].pop(key, None)
+            # The blog origin, plus the on-demand side's own origin while it has one.
             require(new['Properties'].get('CorsConfiguration') == {'CorsRules': [{
-                'AllowedOrigins': [{'Ref': 'PublicOrigin'}], 'AllowedMethods': ['POST']}]}, 'Unexpected CORS rules')
+                'AllowedOrigins': [{'Ref': 'PublicOrigin'}, ACCEPTANCE_ORIGIN], 'AllowedMethods': ['POST']}]}, 'Unexpected CORS rules')
             rules = new['Properties'].get('LifecycleConfiguration', {}).get('Rules', [])
             require(rules and all(r.get('Prefix') == 'images/staging/' and r.get('ExpirationInDays') == 1
                                 and r.get('NoncurrentVersionExpiration') == {'NoncurrentDays': 1} for r in rules), 'Unexpected image expiry')

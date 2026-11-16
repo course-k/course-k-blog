@@ -150,6 +150,22 @@ python3 scripts/aws/production_access.py > config/aws-production/access.template
 
 ロールバック：アプリは直前のdigestへ戻せる（002は旧アプリと互換）。002自体は自動で巻き戻さない。空タイトルの作業版や10,000,000バイト近い画像が保存された後に旧スキーマへ戻す必要があれば、手順1のバックアップから別DBへ復元して切り替えを判断する。CORS・ライフサイクルはスタックの再更新で外せるが、外すと新しい画面から画像を送れない。実AWSでの直接アップロード（署名・CORS・期限）は未検証であり、適用までは本番で「10MB対応済み」と扱わない。
 
+## オンデマンド構成の追加（未適用）
+
+[移行設計](../docs/future-static-delivery.md#新構成の定義と切替の進め方)の資材は、同じ本番定義（`scripts/aws/production.py`）へ[`scripts/aws/ondemand.py`](../scripts/aws/ondemand.py)が足す。パラメータが既定値のままなら何も作らず、稼働中の構成は変わらない。**本番スタックへはまだ適用していない。**
+
+| パラメータ | 設定すると作られるもの |
+|---|---|
+| `EnableOnDemand=true` | 新しいデュアルスタックのサブネットとIPv6の出口、S3のゲートウェイエンドポイント、Auroraのクラスタとインスタンス、読者向けファイルのバケット、Aurora向けの初期化タスク |
+| `OnDemandMigrationUrlParameterArn` | Aurora向けの移行タスク |
+| `OnDemandDatabaseUrlParameterArn` | GoとNodeのLambda、取得の中継、CloudFront、1日1回の定期呼び出し |
+| `OnDemandOrigin`・`OnDemandDistributionId` | 新構成が自分のホスト名で応答するための設定（GoのOrigin照合、キャッシュ無効化の権限、Cognitoのコールバック、画像バケットのCORS）。CloudFrontの作成後に、その出力を渡して更新する |
+| `OnDemandCertificateArn` | 切替時に設定する。ブログのホスト名をCloudFrontへ割り当てる |
+
+適用の順序は、権限上限の更新（[`scripts/aws/production_access.py`](../scripts/aws/production_access.py)。Lambdaのネットワークインターフェース、自分自身と中継の呼び出し、キャッシュ無効化、Auroraの管理者シークレットの読み取りを足した）→ `EnableOnDemand=true` → Auroraの初期化と2つの接続文字列の登録（`/course-k/blog-production/`の下）→ 残りのパラメータ、の順。新しい資材の種類を作る権限は操作者ロールにないため、スタックの更新は管理者ログインで行う。
+
+生成した定義は51,200バイトを超えるので、S3経由（TemplateURL）で渡す。定義の不変条件は`scripts/aws/test_ondemand.py`で確認する：既定では何も作らない、稼働中の資材への変更は受入用ホスト名の2か所だけ、関数URLは署名つきでこのCloudFrontからだけ呼べる、読者向けバケットはこのCloudFrontだけが読める、DBは非公開でAPIと一時タスクだけが届く、実行ロールの権限は権限上限に収まる。
+
 ## 現在の配置結果
 
 2026-10-19、mainのdd049adと一致する基盤変更セットを費用承認後に実行し、CREATE_COMPLETEを確認した。RDSは暗号化・非公開・7日バックアップ・削除保護、両S3は公開アクセス全面ブロック・SSE-S3・版管理が有効。DB初期化とMySQLの001_initial.sqlの移行は別々の単発タスクで終了コード0を確認。通常用と移行用の接続値はSSM SecureStringに分離し、Gitやコマンド引数へ秘密値を保存していない。
