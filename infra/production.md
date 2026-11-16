@@ -162,6 +162,7 @@ python3 scripts/aws/production_access.py > config/aws-production/access.template
 | `OnDemandDatabaseUrlParameterArn` | GoとNodeのLambda、取得の中継、CloudFront、1日1回の定期呼び出し、CloudFront向けの疎通監視（公開ページと`/healthz`だけを見る。DBへ接続する`/api/readyz`は停止中のDBを15分ごとに起こすため対象にしない） |
 | 上の2つの両方 | Auroraへバックアップを復元する一時タスク |
 | `OnDemandOrigin`・`OnDemandDistributionId` | 新構成が自分のホスト名で応答するための設定（GoのOrigin照合、キャッシュ無効化の権限、Cognitoのコールバック、画像バケットのCORS）。CloudFrontの作成後に、その出力を渡して更新する |
+| `OnDemandDataOrigin` | Nodeが読者向けデータを読む先。CloudFront自身のホスト名（`https://….cloudfront.net`）を設定する。ブログのホスト名はDNSに従うため、切替の前後は旧構成を指し得る |
 | `OnDemandCertificateArn` | 切替時に設定する。ブログのホスト名をCloudFrontへ割り当てる |
 
 適用の順序は、権限上限の更新（[`scripts/aws/production_access.py`](../scripts/aws/production_access.py)。Lambdaのネットワークインターフェース、自分自身と中継の呼び出し、キャッシュ無効化、Auroraの管理者シークレットの読み取りを足した）→ `EnableOnDemand=true` → Auroraの初期化と2つの接続文字列の登録（`/course-k/blog-production/`の下）→ 残りのパラメータ、の順。新しい資材の種類を作る権限は操作者ロールにないため、スタックの更新は管理者ログインで行う。

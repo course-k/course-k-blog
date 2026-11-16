@@ -88,6 +88,11 @@ def parameters():
                               'Description': 'Web image for the on-demand function, pinned by digest.'},
         'OnDemandOrigin': {'Type': 'String', 'Default': '', 'AllowedPattern': r'^$|^https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$',
                            'Description': 'HTTPS origin readers and the owner use for the on-demand side; the distribution host until the switch.'},
+        # The web function reads the published lists through the distribution. It
+        # must use the distribution's own host name: the blog host name follows
+        # DNS, which points elsewhere until the switch and for a while after it.
+        'OnDemandDataOrigin': {'Type': 'String', 'Default': '', 'AllowedPattern': r'^$|^https://[a-z0-9]+\.cloudfront\.net$',
+                               'Description': "The distribution's own https origin, passed back so the web function reads reader data from it."},
         'OnDemandDistributionId': {'Type': 'String', 'Default': '', 'AllowedPattern': '^$|^[A-Z0-9]{8,20}$',
                                    'Description': 'The distribution created by this stack, passed back so the API may purge it.'},
         'OnDemandCertificateArn': {'Type': 'String', 'Default': '',
@@ -107,6 +112,7 @@ def conditions():
         'OnDemandRestore': {'Fn::And': [on, is_set('OnDemandDatabaseUrlParameterArn'), is_set('OnDemandMigrationUrlParameterArn'),
                                         is_set('OnDemandGoImage')]},
         'OnDemandOriginSet': is_set('OnDemandOrigin'),
+        'OnDemandDataOriginSet': is_set('OnDemandDataOrigin'),
         'OnDemandDistributionKnown': is_set('OnDemandDistributionId'),
         'OnDemandAlias': is_set('OnDemandCertificateArn'),
     }
@@ -381,7 +387,8 @@ def functions():
             'ImageConfig': {'EntryPoint': ['node'], 'Command': ['server.mjs'], 'WorkingDirectory': '/web'},
             'Environment': variables({
                 'HOST': '127.0.0.1', 'PORT': '3000', 'AWS_LWA_PORT': '3000', 'AWS_LWA_READINESS_CHECK_PATH': '/healthz',
-                'NODE_ENV': 'production', 'PUBLIC_DATA_URL': origin, 'EDGE_CACHE_SECONDS': str(EDGE_CACHE_SECONDS),
+                'NODE_ENV': 'production', 'EDGE_CACHE_SECONDS': str(EDGE_CACHE_SECONDS),
+                'PUBLIC_DATA_URL': {'Fn::If': ['OnDemandDataOriginSet', ref('OnDemandDataOrigin'), origin]},
             }),
         }},
         'OnDemandWebUrl': url('OnDemandWebFunction', 'BUFFERED'),

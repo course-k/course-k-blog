@@ -249,6 +249,18 @@ class OnDemandTemplateTest(unittest.TestCase):
         self.assertEqual(self.resources['OnDemandWebFunction']['Properties']['Code'], {'ImageUri': {'Ref': 'OnDemandNodeImage'}})
         self.assertEqual(self.resources['OnDemandRestoreTask']['Properties']['ContainerDefinitions'][0]['Image'], {'Ref': 'OnDemandGoImage'})
 
+    def test_web_function_reads_reader_data_from_the_distribution_itself(self):
+        # During and after the switch the blog host name may still resolve to the
+        # old service, which has no reader data. The distribution's own host
+        # name does not depend on DNS.
+        env = self.resources['OnDemandWebFunction']['Properties']['Environment']['Variables']
+        self.assertEqual(env['PUBLIC_DATA_URL']['Fn::If'][:2], ['OnDemandDataOriginSet', {'Ref': 'OnDemandDataOrigin'}])
+        pattern = self.template['Parameters']['OnDemandDataOrigin']['AllowedPattern']
+        import re
+        self.assertTrue(re.fullmatch(pattern, 'https://d111111abcdef8.cloudfront.net'))
+        for refused in ('https://blog.course-k.com', 'http://d111111abcdef8.cloudfront.net', 'https://d111111abcdef8.cloudfront.net/'):
+            self.assertFalse(re.fullmatch(pattern, refused), refused)
+
     def test_relay_runs_the_tested_source(self):
         embedded = self.resources['OnDemandRelayFunction']['Properties']['Code']['ZipFile']
         self.assertEqual(embedded, (ROOT / 'infra/relay/relay.py').read_text())
