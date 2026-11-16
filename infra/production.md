@@ -157,6 +157,7 @@ python3 scripts/aws/production_access.py > config/aws-production/access.template
 | パラメータ | 設定すると作られるもの |
 |---|---|
 | `EnableOnDemand=true` | 新しいデュアルスタックのサブネットとIPv6の出口、S3のゲートウェイエンドポイント、Auroraのクラスタとインスタンス、読者向けファイルのバケット、Aurora向けの初期化タスク |
+| `OnDemandGoImage`・`OnDemandNodeImage` | 新構成が使うイメージ（ダイジェスト指定）。下の3行の資材は、対応するイメージも設定されているときだけ作られる |
 | `OnDemandMigrationUrlParameterArn` | Aurora向けの移行タスク |
 | `OnDemandDatabaseUrlParameterArn` | GoとNodeのLambda、取得の中継、CloudFront、1日1回の定期呼び出し、CloudFront向けの疎通監視（公開ページと`/healthz`だけを見る。DBへ接続する`/api/readyz`は停止中のDBを15分ごとに起こすため対象にしない） |
 | 上の2つの両方 | Auroraへバックアップを復元する一時タスク |
@@ -168,6 +169,8 @@ python3 scripts/aws/production_access.py > config/aws-production/access.template
 Auroraへの復元は`<Goイメージ> restore --backup-id <ID> --confirm-empty-target --new-database-host <Auroraのホスト名>`で行う。復元先は本来`_restore`か`_test`で終わる専用DBに限るが、新しいDBサーバーへ移すときは実際のDB（`blog`）へ入れる必要があるため、接続先のホスト名を一致させたときだけ許可する。復元先が空でなければ、復元の処理自体が拒否する。復元はアプリ用の利用者で行い、タスクのロールはバックアップの読み取りと画像バケットへの追加だけを持つ。
 
 適用時には疎通監視の修正も反映される。監視は`/?page=1`の200を確かめていたが、このURLは`/`への308を返すため、2026-10-29から毎回失敗していた。対象を`/`へ直した。
+
+新構成は稼働中のサービスとは別のイメージ用パラメータを持ち、出力（Outputs）を足さない。通常の配備は稼働中のサービスの3つのイメージだけを変えるので、新構成の資材には一切触れず、配備用ロールに新しい権限が要らない。新構成のイメージは、受入の間は管理者ログインでの更新時に指定する。資材の名前やアドレスは、スタックの資材一覧から読む。
 
 生成した定義は51,200バイトを超えるので、S3経由（TemplateURL）で渡す。定義の不変条件は`scripts/aws/test_ondemand.py`で確認する：既定では何も作らない、稼働中の資材への変更は受入用ホスト名の2か所だけ、関数URLは署名つきでこのCloudFrontからだけ呼べる、読者向けバケットはこのCloudFrontだけが読める、DBは非公開でAPIと一時タスクだけが届く、実行ロールの権限は権限上限に収まる。
 

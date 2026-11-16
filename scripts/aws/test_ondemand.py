@@ -37,9 +37,8 @@ class OnDemandTemplateTest(unittest.TestCase):
         self.assertEqual(conditions['OnDemand'], on)
         for name in ('OnDemandRuntime', 'OnDemandMigration', 'OnDemandBootstrap', 'OnDemandRestore'):
             self.assertEqual(conditions[name]['Fn::And'][0], on, name)
-        for name, output in self.template['Outputs'].items():
-            if name not in self.before['Outputs']:
-                self.assertTrue(output['Condition'].startswith('OnDemand'), name)
+        # Outputs are re-evaluated on every update, including a normal release.
+        self.assertEqual(self.template['Outputs'], self.before['Outputs'])
 
     def test_running_resources_gain_only_the_acceptance_origin(self):
         changed = {name for name, value in self.before['Resources'].items() if self.resources[name] != value}
@@ -160,7 +159,7 @@ class OnDemandTemplateTest(unittest.TestCase):
     def test_api_function_is_configured_for_on_demand_work_without_embedded_secrets(self):
         function = self.resources['OnDemandApiFunction']['Properties']
         env = function['Environment']['Variables']
-        self.assertEqual(function['Code'], {'ImageUri': {'Ref': 'GoImage'}})
+        self.assertEqual(function['Code'], {'ImageUri': {'Ref': 'OnDemandGoImage'}})
         self.assertEqual(env['DATABASE_URL_PARAMETER'], {'Ref': 'OnDemandDatabaseUrlParameterArn'})
         self.assertNotIn('DATABASE_URL', env)
         self.assertNotIn('ADMIN_PASSWORD_HASH', env)
@@ -227,6 +226,21 @@ class OnDemandTemplateTest(unittest.TestCase):
         # The running probe keeps its own target and settings.
         self.assertEqual(self.resources['ProbeFunction'], self.before['Resources']['ProbeFunction'])
 
+    def test_a_normal_release_does_not_touch_the_on_demand_side(self):
+        # A release changes the three image parameters of the running service.
+        # Nothing on the on-demand side may depend on them, or the release role
+        # would need permissions for functions, tasks and outputs it never manages.
+        released = ('"NodeImage"', '"GoImage"', '"RouterImage"', '"MigrationImage"')
+        for name, resource in self.added.items():
+            encoded = json.dumps(resource)
+            for parameter in released:
+                self.assertNotIn('{"Ref": ' + parameter + '}', encoded, name)
+        for name in ('OnDemandRuntime', 'OnDemandMigration', 'OnDemandRestore'):
+            self.assertIn('OnDemandGoImage', json.dumps(self.template['Conditions'][name]), name)
+        self.assertIn('OnDemandNodeImage', json.dumps(self.template['Conditions']['OnDemandRuntime']))
+        self.assertEqual(self.resources['OnDemandWebFunction']['Properties']['Code'], {'ImageUri': {'Ref': 'OnDemandNodeImage'}})
+        self.assertEqual(self.resources['OnDemandRestoreTask']['Properties']['ContainerDefinitions'][0]['Image'], {'Ref': 'OnDemandGoImage'})
+
     def test_relay_runs_the_tested_source(self):
         embedded = self.resources['OnDemandRelayFunction']['Properties']['Code']['ZipFile']
         self.assertEqual(embedded, (ROOT / 'infra/relay/relay.py').read_text())
@@ -240,7 +254,7 @@ class OnDemandTemplateTest(unittest.TestCase):
         container = migration['ContainerDefinitions'][0]
         self.assertEqual(container['Command'], ['migrate'])
         self.assertEqual(container['Secrets'], [{'Name': 'DATABASE_URL', 'ValueFrom': {'Ref': 'OnDemandMigrationUrlParameterArn'}}])
-        self.assertEqual(container['Image'], self.resources['MigrationTask']['Properties']['ContainerDefinitions'][0]['Image'])
+        self.assertEqual(container['Image'], {'Ref': 'OnDemandGoImage'})
         granted = json.dumps(self.resources['OnDemandMigrationExecutionRole'])
         self.assertIn('OnDemandMigrationUrlParameterArn', granted)
         self.assertNotIn('"MigrationUrlParameterArn"', granted)
