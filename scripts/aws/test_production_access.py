@@ -33,6 +33,12 @@ class ProductionAccessTest(unittest.TestCase):
         create = next(s for s in self.statements if s.get('Sid') == 'RoleCreateWithBoundary')
         self.assertEqual(create['Condition']['StringEquals']['iam:PermissionsBoundary'], {'Ref': 'RuntimeBoundary'})
 
+    def test_boundary_keeps_the_deployed_description_so_it_is_updated_in_place(self):
+        # A managed policy's description is immutable: changing it replaces the
+        # policy and its ARN, which every runtime role refers to.
+        self.assertEqual(self.resources['RuntimeBoundary']['Properties']['Description'],
+                         'Administrator-owned maximum for production ECS/probe roles; no IAM mutation.')
+
     def test_boundary_allows_production_objects_without_version_deletion(self):
         boundary = self.resources['RuntimeBoundary']['Properties']['PolicyDocument']['Statement']
         actions = {a for s in boundary for a in s['Action']}

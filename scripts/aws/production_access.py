@@ -23,7 +23,10 @@ def production_access_template():
     }
     resources = template['Resources']
     boundary = resources['RuntimeBoundary']['Properties']
-    boundary['Description'] = 'Administrator-owned maximum for production task, probe and function roles; no IAM mutation.'
+    # IAM cannot change a managed policy's description. A different text makes
+    # CloudFormation replace the policy, which changes the ARN every runtime
+    # role is bound to. Keep this text exactly as deployed.
+    boundary['Description'] = 'Administrator-owned maximum for production ECS/probe roles; no IAM mutation.'
     boundary['PolicyDocument']['Statement'].extend([
         {'Effect': 'Allow', 'Action': ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
          'Resource': {'Fn::Sub': 'arn:${AWS::Partition}:s3:::course-k-blog-production-*/*'}},
