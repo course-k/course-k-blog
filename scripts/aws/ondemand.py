@@ -96,6 +96,8 @@ def conditions():
         'OnDemandRuntime': {'Fn::And': [on, is_set('OnDemandDatabaseUrlParameterArn')]},
         'OnDemandMigration': {'Fn::And': [on, is_set('OnDemandMigrationUrlParameterArn')]},
         'OnDemandBootstrap': {'Fn::And': [on, is_set('BootstrapImage')]},
+        # The restore task copies the migration task, so it needs both URLs.
+        'OnDemandRestore': {'Fn::And': [on, is_set('OnDemandDatabaseUrlParameterArn'), is_set('OnDemandMigrationUrlParameterArn')]},
         'OnDemandOriginSet': is_set('OnDemandOrigin'),
         'OnDemandDistributionKnown': is_set('OnDemandDistributionId'),
         'OnDemandAlias': is_set('OnDemandCertificateArn'),
@@ -211,6 +213,38 @@ def database_tools(resources):
     for entry in environment:
         if entry['Name'] == 'APP_ORIGIN':
             entry['Value'] = ref('PublicOrigin')
+    # Restoring a backup into the pausing database writes rows as the
+    # application user and copies images from the archive to the image bucket.
+    restore_swaps = [
+        (ref('OnDemandMigrationUrlParameterArn'), ref('OnDemandDatabaseUrlParameterArn')),
+        (att('OnDemandMigrationExecutionRole'), att('OnDemandRestoreExecutionRole')),
+        (att('OnDemandToolTaskRole'), att('OnDemandRestoreTaskRole')),
+        (sub('${AWS::StackName}-on-demand-migration'), sub('${AWS::StackName}-on-demand-restore')),
+    ]
+    restore = retarget(added['OnDemandMigrationTask'], restore_swaps)
+    container = restore['Properties']['ContainerDefinitions'][0]
+    container['Image'] = ref('GoImage')
+    # The operator supplies the backup and names the target server when running it.
+    container['Command'] = ['restore']
+    container['Environment'].extend([
+        {'Name': 'MEDIA_BUCKET', 'Value': ref('ImagesBucket')},
+        {'Name': 'BACKUP_BUCKET', 'Value': ref('BackupsBucket')},
+        {'Name': 'BACKUP_RETAIN', 'Value': '4'},
+    ])
+    restore_role = retarget(resources['MigrationTaskRole'], [])
+    restore_role['Properties']['Policies'] = [policy('restore-into-production', [
+        {'Effect': 'Allow', 'Action': ['s3:GetObject'],
+         'Resource': [sub('${BackupsBucket.Arn}/images/*'), sub('${BackupsBucket.Arn}/backups/*')]},
+        {'Effect': 'Allow', 'Action': ['s3:GetObject', 's3:PutObject'], 'Resource': sub('${ImagesBucket.Arn}/images/*')},
+        {'Effect': 'Allow', 'Action': ['s3:ListBucket'], 'Resource': [att('ImagesBucket'), att('BackupsBucket')]},
+    ])]
+    added.update({
+        'OnDemandRestoreExecutionRole': retarget(added['OnDemandMigrationExecutionRole'], restore_swaps),
+        'OnDemandRestoreTaskRole': restore_role,
+        'OnDemandRestoreTask': restore,
+    })
+    for name in ('OnDemandRestoreExecutionRole', 'OnDemandRestoreTaskRole', 'OnDemandRestoreTask'):
+        added[name]['Condition'] = 'OnDemandRestore'
     added['OnDemandToolTaskRole']['Condition'] = 'OnDemand'
     added['OnDemandBootstrapExecutionRole']['Condition'] = 'OnDemandBootstrap'
     added['OnDemandBootstrapTask']['Condition'] = 'OnDemandBootstrap'
@@ -460,6 +494,7 @@ def add_on_demand(template):
         'OnDemandPublicBucket': {'Condition': 'OnDemand', 'Value': ref('OnDemandPublicBucket')},
         'OnDemandBootstrapTaskDefinition': {'Condition': 'OnDemandBootstrap', 'Value': ref('OnDemandBootstrapTask')},
         'OnDemandMigrationTaskDefinition': {'Condition': 'OnDemandMigration', 'Value': ref('OnDemandMigrationTask')},
+        'OnDemandRestoreTaskDefinition': {'Condition': 'OnDemandRestore', 'Value': ref('OnDemandRestoreTask')},
         'OnDemandDistributionId': {'Condition': 'OnDemandRuntime', 'Value': ref('OnDemandDistribution')},
         'OnDemandDistributionDomain': {'Condition': 'OnDemandRuntime', 'Value': att('OnDemandDistribution', 'DomainName')},
         'OnDemandApiFunction': {'Condition': 'OnDemandRuntime', 'Value': ref('OnDemandApiFunction')},

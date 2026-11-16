@@ -159,10 +159,15 @@ python3 scripts/aws/production_access.py > config/aws-production/access.template
 | `EnableOnDemand=true` | 新しいデュアルスタックのサブネットとIPv6の出口、S3のゲートウェイエンドポイント、Auroraのクラスタとインスタンス、読者向けファイルのバケット、Aurora向けの初期化タスク |
 | `OnDemandMigrationUrlParameterArn` | Aurora向けの移行タスク |
 | `OnDemandDatabaseUrlParameterArn` | GoとNodeのLambda、取得の中継、CloudFront、1日1回の定期呼び出し |
+| 上の2つの両方 | Auroraへバックアップを復元する一時タスク |
 | `OnDemandOrigin`・`OnDemandDistributionId` | 新構成が自分のホスト名で応答するための設定（GoのOrigin照合、キャッシュ無効化の権限、Cognitoのコールバック、画像バケットのCORS）。CloudFrontの作成後に、その出力を渡して更新する |
 | `OnDemandCertificateArn` | 切替時に設定する。ブログのホスト名をCloudFrontへ割り当てる |
 
 適用の順序は、権限上限の更新（[`scripts/aws/production_access.py`](../scripts/aws/production_access.py)。Lambdaのネットワークインターフェース、自分自身と中継の呼び出し、キャッシュ無効化、Auroraの管理者シークレットの読み取りを足した）→ `EnableOnDemand=true` → Auroraの初期化と2つの接続文字列の登録（`/course-k/blog-production/`の下）→ 残りのパラメータ、の順。新しい資材の種類を作る権限は操作者ロールにないため、スタックの更新は管理者ログインで行う。
+
+Auroraへの復元は`<Goイメージ> restore --backup-id <ID> --confirm-empty-target --new-database-host <Auroraのホスト名>`で行う。復元先は本来`_restore`か`_test`で終わる専用DBに限るが、新しいDBサーバーへ移すときは実際のDB（`blog`）へ入れる必要があるため、接続先のホスト名を一致させたときだけ許可する。復元先が空でなければ、復元の処理自体が拒否する。復元はアプリ用の利用者で行い、タスクのロールはバックアップの読み取りと画像バケットへの追加だけを持つ。
+
+適用時には疎通監視の修正も反映される。監視は`/?page=1`の200を確かめていたが、このURLは`/`への308を返すため、2026-10-29から毎回失敗していた。対象を`/`へ直した。
 
 生成した定義は51,200バイトを超えるので、S3経由（TemplateURL）で渡す。定義の不変条件は`scripts/aws/test_ondemand.py`で確認する：既定では何も作らない、稼働中の資材への変更は受入用ホスト名の2か所だけ、関数URLは署名つきでこのCloudFrontからだけ呼べる、読者向けバケットはこのCloudFrontだけが読める、DBは非公開でAPIと一時タスクだけが届く、実行ロールの権限は権限上限に収まる。
 

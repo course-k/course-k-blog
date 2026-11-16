@@ -22,9 +22,20 @@ class ProbeTest(unittest.TestCase):
         class Opener:
             def open(self, url, timeout):
                 paths.append(url)
-                return Reply(b'<html></html>', 'text/html') if url.endswith('/?page=1') else Reply(b'{"ok":true}')
+                return Reply(b'<html></html>', 'text/html') if url == 'https://example.test/' else Reply(b'{"ok":true}')
         check('https://example.test', Opener())
-        self.assertEqual(paths, ['https://example.test/healthz','https://example.test/api/readyz','https://example.test/?page=1'])
+        self.assertEqual(paths, ['https://example.test/healthz','https://example.test/api/readyz','https://example.test/'])
+    def test_first_page_is_requested_at_its_own_address(self):
+        # '/?page=1' answers with a redirect to '/', which the probe does not
+        # follow; asking for it made every run fail.
+        paths = []
+        class Opener:
+            def open(self, url, timeout):
+                paths.append(url)
+                return Reply(b'<html></html>', 'text/html') if url == 'https://example.test/' else Reply(b'{"ok":true}')
+        check('https://example.test/', Opener())
+        self.assertIn('https://example.test/', paths)
+        self.assertFalse([p for p in paths if '?' in p])
     def test_failure_is_not_reported_as_success(self):
         for body in [b'{"ok":false}',b'<login>']:
             class Opener:
