@@ -4,11 +4,16 @@ import unittest
 from delivery_access import delivery_access_template
 
 
+def forwarded(statement):
+    return statement.get('Condition', {}).get('ForAnyValue:StringEquals', {}).get('aws:CalledVia') == 'cloudformation.amazonaws.com'
+
+
 class DeliveryAccessTest(unittest.TestCase):
     def setUp(self):
         self.template = delivery_access_template()
         self.role = self.template['Resources']['DeliveryRole']['Properties']
         self.statements = self.role['Policies'][0]['PolicyDocument']['Statement'] + self.template['Resources']['ReleasePolicy']['Properties']['PolicyDocument']['Statement']
+        self.by_sid = {s['Sid']: s for s in self.statements}
 
     def test_only_identity_resources_and_main_branch_trust(self):
         self.assertEqual({r['Type'] for r in self.template['Resources'].values()},
@@ -25,89 +30,80 @@ class DeliveryAccessTest(unittest.TestCase):
 
     def test_no_direct_data_identity_or_infrastructure_administration(self):
         actions = {a for s in self.statements for a in s['Action']}
-        self.assertFalse(any(a.split(':')[0] in {'secretsmanager',
-                                               'route53', 'cognito-idp', 'ec2'} for a in actions))
+        self.assertFalse(any(a.split(':')[0] in {'secretsmanager', 'route53', 'cognito-idp', 'ec2', 'rds', 'apigateway'}
+                             for a in actions))
         self.assertEqual({a for a in actions if a.startswith('iam:')}, {'iam:PassRole', 'iam:GetRole'})
-        self.assertNotIn('sts:AssumeRole', actions)
         self.assertFalse(any(a.endswith('*') for a in actions))
-        self.assertNotIn('cloudformation:DeleteStack', actions)
-        self.assertNotIn('ecs:CreateService', actions)
-        self.assertNotIn('ecs:DeleteService', actions)
-        self.assertEqual({a for a in actions if a.startswith('rds:')}, {'rds:DescribeDBInstances'})
-        self.assertEqual({a for a in actions if a.startswith('apigateway:')}, {'apigateway:GET'})
+        for action in ('sts:AssumeRole', 'cloudformation:DeleteStack', 'lambda:CreateFunction', 'lambda:DeleteFunction',
+                       'lambda:UpdateFunctionConfiguration', 'lambda:AddPermission', 'cloudfront:UpdateDistribution',
+                       'ecr:SetRepositoryPolicy', 'ecs:CreateService'):
+            self.assertNotIn(action, actions)
 
-    def test_existing_stack_output_reads_are_resource_scoped_and_forwarded_only(self):
-        for sid in ('ReadDatabaseOutputThroughStack', 'ReadGatewayOutputsThroughStack',
-                    'ReadBootstrapRepositoryOutputThroughStack'):
-            statement = next(s for s in self.statements if s['Sid'] == sid)
-            self.assertNotEqual(statement['Resource'], '*')
-            self.assertEqual(statement['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'],
-                             'cloudformation.amazonaws.com')
-            self.assertEqual(statement['Condition']['StringEquals']['aws:RequestedRegion'], 'us-west-2')
-        gateway = next(s for s in self.statements if s['Sid'] == 'ReadGatewayOutputsThroughStack')
-        self.assertNotIn('/*', json.dumps(gateway['Resource']))
+    def test_functions_change_only_through_the_stack_and_only_the_blog_functions(self):
+        update = self.by_sid['UpdateFunctionsThroughStack']
+        self.assertTrue(forwarded(update))
+        self.assertIn('lambda:UpdateFunctionCode', update['Action'])
+        functions = json.dumps(update['Resource'])
+        self.assertIn('function:course-k-blog-production-api', functions)
+        self.assertIn('function:course-k-blog-production-web', functions)
+        self.assertNotIn('relay', functions)
+        self.assertNotIn('*', functions)
+        invoke = self.by_sid['RunPendingWork']
+        self.assertEqual(invoke['Action'], ['lambda:InvokeFunction'])
+        self.assertTrue(json.dumps(invoke['Resource']).endswith('course-k-blog-production-api"}'))
 
-    def test_changes_are_scoped_to_blog_and_cloudformation(self):
-        service = next(s for s in self.statements if s['Sid'] == 'UpdateApplicationThroughStack')
-        self.assertIn('course-k-blog-production-Cluster-', json.dumps(service['Resource']))
-        self.assertEqual(service['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'],
-                         'cloudformation.amazonaws.com')
-        runtime = next(s for s in self.statements if s['Sid'] == 'PassRuntimeRoles')
-        self.assertEqual(runtime['Condition']['StringEquals']['iam:PassedToService'],
-                         'ecs-tasks.amazonaws.com')
-        self.assertEqual(len(runtime['Resource']), 4)
-        self.assertNotIn('Operator', json.dumps(runtime))
-        self.assertNotIn('Bootstrap', json.dumps(runtime))
-        tasks = next(s for s in self.statements if s['Sid'] == 'RegisterDefinitionsThroughStack')
-        self.assertNotEqual(tasks['Resource'], '*')
-        self.assertEqual(len(tasks['Resource']), 2)
+    def test_purging_pages_is_the_only_direct_distribution_action(self):
+        actions = {a for s in self.statements if not forwarded(s) for a in s['Action'] if a.startswith('cloudfront:')}
+        self.assertEqual(actions, {'cloudfront:CreateInvalidation', 'cloudfront:GetInvalidation'})
+        read = self.by_sid['ReadDistributionThroughStack']
+        self.assertTrue(forwarded(read))
+        self.assertFalse([a for a in read['Action'] if not a.startswith('cloudfront:Get')])
 
-    def test_backup_can_only_run_application_definition_in_blog_cluster(self):
-        run = next(s for s in self.statements if s['Sid'] == 'RunBackup')
-        self.assertIn('-application:', json.dumps(run['Resource']))
-        self.assertNotIn('migration', json.dumps(run))
-        self.assertIn('ecs:cluster', run['Condition']['ArnLike'])
+    def test_task_definitions_and_roles_are_the_on_demand_tools_only(self):
+        register = self.by_sid['RegisterDefinitionsThroughStack']
+        self.assertTrue(forwarded(register))
+        text = json.dumps(register['Resource'])
+        self.assertIn('on-demand-migration:*', text)
+        self.assertIn('on-demand-restore:*', text)
+        self.assertNotIn('bootstrap', text)
+        passed = self.by_sid['PassTaskRoles']
+        self.assertEqual(passed['Condition']['StringEquals']['iam:PassedToService'], 'ecs-tasks.amazonaws.com')
+        self.assertEqual(len(passed['Resource']), 4)
+        self.assertNotIn('Bootstrap', json.dumps(passed))
+        self.assertNotIn('ApiRole', json.dumps(passed))
+        roles = self.by_sid['ReadRuntimeRolesThroughStack']
+        self.assertTrue(forwarded(roles))
+        self.assertNotIn('aws:RequestedRegion', json.dumps(roles['Condition']))
 
-    def test_provider_cleanup_and_attribute_reads_are_forwarded_only(self):
-        cleanup = next(s for s in self.statements if s['Sid'] == 'RetireDefinitionsThroughStack')
-        self.assertEqual(cleanup['Action'], ['ecs:DeregisterTaskDefinition'])
-        self.assertEqual(cleanup['Resource'], '*')
-        discovery = next(s for s in self.statements if s['Sid'] == 'ReadApplicationDiscoveryThroughStack')
-        self.assertEqual(discovery['Action'], ['servicediscovery:GetService'])
-        self.assertIn('service/srv-4uf2ei7tn3cmfk73', json.dumps(discovery['Resource']))
-        for statement in (cleanup, discovery):
-            self.assertEqual(statement['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'],
-                             'cloudformation.amazonaws.com')
-            self.assertEqual(statement['Condition']['StringEquals']['aws:RequestedRegion'], 'us-west-2')
+    def test_role_patterns_match_the_generated_role_names(self):
+        # Names CloudFormation generated for the applied stack (truncated logical IDs).
+        names = ['course-k-blog-production-OnDemandMigrationExecution-Q57gUSBuaJ4v',
+                 'course-k-blog-production-OnDemandToolTaskRole-7a0vwZHPwwAc',
+                 'course-k-blog-production-OnDemandRestoreExecutionRo-4kdzJGemcIAN',
+                 'course-k-blog-production-OnDemandRestoreTaskRole-RTWhi1WOCzgT']
+        patterns = [r['Fn::Sub'].rsplit('role/', 1)[1] for r in self.by_sid['PassTaskRoles']['Resource']]
+        for name in names:
+            self.assertTrue(any(name.startswith(p.rstrip('*')) for p in patterns), name)
+
+    def test_cloudformation_only_reads_cannot_be_called_directly(self):
+        for sid in ('ReadDefinitionsThroughStack', 'RetireDefinitionsThroughStack', 'ReadSchedulesThroughStack',
+                    'ReadBootstrapRepositoryOutputThroughStack', 'ReadFunctionImagesThroughStack'):
+            self.assertTrue(forwarded(self.by_sid[sid]), sid)
 
     def test_special_release_permissions_are_bounded(self):
-        image = next(s for s in self.statements if s['Sid'] == 'ImageSettingsThroughStack')
+        image = self.by_sid['ImageSettingsThroughStack']
         self.assertNotIn('s3:GetObject', image['Action'])
         self.assertEqual({a for a in image['Action'] if a.startswith('s3:Put')}, {'s3:PutBucketCORS', 's3:PutLifecycleConfiguration'})
-        self.assertEqual(image['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'], 'cloudformation.amazonaws.com')
-        state = next(s for s in self.statements if s['Sid'] == 'AppliedSchemaState')
+        self.assertTrue(forwarded(image))
+        state = self.by_sid['AppliedSchemaState']
         self.assertTrue(json.dumps(state['Resource']).endswith('applied-schema-digest"}'))
-        self.assertNotIn('*', json.dumps(state['Resource']))
         extra = self.template['Resources']['ReleasePolicy']['Properties']['PolicyDocument']
-        self.assertLessEqual(len(json.dumps(extra,separators=(',',':'))),6144)
+        self.assertLessEqual(len(json.dumps(extra, separators=(',', ':'))), 6144)
 
     def test_inline_policy_fits_role_limit_and_no_private_values(self):
         policy = json.dumps(self.role['Policies'][0]['PolicyDocument'], separators=(',', ':'))
         self.assertLess(len(policy), 10240)
         self.assertNotIn('757412973334', json.dumps(self.template))
-
-    def test_cloudformation_required_reads_cannot_be_called_directly(self):
-        read = next(s for s in self.statements if s['Sid'] == 'ReadDefinitionsThroughStack')
-        self.assertEqual(read['Action'], ['ecs:DescribeTaskDefinition'])
-        self.assertEqual(read['Resource'], '*')
-        self.assertEqual(read['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'],
-                         'cloudformation.amazonaws.com')
-        roles = next(s for s in self.statements if s['Sid'] == 'ReadRuntimeRolesThroughStack')
-        self.assertEqual(roles['Action'], ['iam:GetRole'])
-        self.assertEqual(len(roles['Resource']), 4)
-        self.assertEqual(roles['Condition']['ForAnyValue:StringEquals']['aws:CalledVia'],
-                         'cloudformation.amazonaws.com')
-        self.assertNotIn('aws:RequestedRegion', json.dumps(roles['Condition']))
 
 
 if __name__ == '__main__':

@@ -51,7 +51,7 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 
 接続元は`course-k/course-k-blog`の`main`だけで、GitHubの通常のsubject形式と所有者・リポジトリID付き形式を完全一致で許可する。PR、別ブランチ、Environmentを使うsubjectは許可しない。GitHub Actionsで`id-token: write`を宣言し、`course-k-blog-github-deploy`を利用する。長期アクセスキーや管理者権限をGitHubへ渡さない。
 
-権限はオレゴンの本番ブログ用ECR（node/go/router）へのイメージ登録、既存本番スタックの変更セット、CloudFormation経由のアプリ・移行タスク定義更新と既存サービス更新、関連する監視の更新、更新前バックアップ用のアプリタスク起動に絞る。CloudFormationの公式リソース仕様が要求するタスク定義・実行ロールの照会と、同じサービス/監視のタグ・配備状態操作も、CloudFormationを経由する場合だけ許可する。DescribeTaskDefinitionとDeregisterTaskDefinitionはARNで限定できないため、この経路に限ってResource=*を使い、GitHubから直接の全定義照会・無効化は許可しない。サービスのRegistryArn解決に必要なCloud Map GetServiceは、既存の本番サービス1件だけをCloudFormation経由で照会できる。スタック出力の再評価では、既存DB1件の構成照会、API/ドメイン各1件のGET、bootstrap用ECRのURI照会もCloudFormation経由だけ許可する。DBレコードや管理者秘密値は取得できない。渡せる実行ロールは既存のアプリ・移行用4種で、自分の権限変更、IAMユーザー作成、別ロールへの切替、RDS/DNS/ネットワークの変更、S3や秘密値の直接読み取りは許可しない。ただし、配備されるアプリは実行時の権限で記事・画像・バックアップへアクセスできる。配備権限が記事データから完全に隔離される意味ではない。
+権限はオレゴンの本番ブログ用ECR（node/go）へのイメージ登録、既存本番スタックの変更セット、CloudFormation経由の2つの関数（`course-k-blog-production-api`・`-web`）のイメージ更新とAuroraへの一時タスク（移行・復元）の定義更新、更新前の未処理作業の呼び出し（APIの関数だけ）、CloudFrontのキャッシュ無効化に絞る。イメージ更新で再評価される関数URL・定期ルール・配信の照会、タスク定義・ロールの照会は、CloudFormationを経由する場合だけ許可する。DescribeTaskDefinitionとDeregisterTaskDefinitionはARNで限定できないため、この経路に限ってResource=*を使う。渡せる実行ロールはAurora向け一時タスクの4種で、関数の設定・権限・配信設定の変更、自分の権限変更、IAMユーザー作成、RDS/DNS/ネットワークの変更、S3や秘密値の直接読み取りは許可しない。ただし、配備されるアプリは実行時の権限で記事・画像・バックアップへアクセスできる。配備権限が記事データから完全に隔離される意味ではない。
 
 [検証ワークフロー](../.github/workflows/checks.yml)の`Deploy production`が、mainへのpushまたはmainを指定した手動実行で、4つの検査ジョブがすべて成功した後に実行される。PRでは配備しない。新しいmainに置き換わった版と、文書だけのpushは配備しない。実行中の本番更新を新しいpushでキャンセルせず、配備を直列化する。GitHub環境変数のアカウント番号は接続先識別子であり、秘密鍵ではない。公式AWS認証アクションv6.3.0をコミットで固定し、OIDCで取得する一時権限を配備ジョブだけに与える。
 
@@ -59,11 +59,13 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 
 [`delivery.py`](../scripts/aws/delivery.py)は以下の手順を実行する。`--apply`がない場合は読み取りと前提確認までで、ビルド・バックアップ・更新は開始しない。
 
-1. AWSアカウントと専用ロール、テスト対象とcheckoutのコミット、既存本番の安定状態・ARM64・固定イメージを照合する。CloudFormationサービスロールが付いた場合は停止する。DB移行SQLと移行処理のハッシュをSSMの`/course-k/blog-production/applied-schema-digest`と照合し、未登録・不一致なら停止する。通常配備からDDLは実行しない。
-2. GitHubのARM64ランナーでNode/Go/Nginxをビルドし、専用ECRへ登録してdigestで固定する。Docker認証情報は一時ディレクトリに置いて終了時に削除し、保存・表示しない。
-3. 既存アプリ定義のGoコマンドを`backup`にした単発タスクでバックアップを実行する。成功した場合だけ更新を続け、その単発タスクだけを停止する。
-4. 現行CloudFormationテンプレートと他のパラメータを維持し、NodeImage/GoImage/RouterImageだけの変更セットを作る。アプリ・移行タスク、置き換えないアプリサービス、サービス名に追随する監視以外の変更は拒否してから実行する。
-5. 更新したパラメータでスタックが完了したこと、稼働タスクのdigest・全コンテナのHEALTHY、公開HTTPSの一覧・readiness・healthを確認する。さらに単発タスクの`release-check --confirm-production`で本番APIとS3への直接送信を確認する。試験用記事・画像・短時間セッションを作り、10,000,000バイトのPNGとWebP、保存・公開・非公開時の画像アクセスを照合し、専用データを削除してバックアップする。本人の記事は変更しない。起動失敗はECS/CloudFormationのロールバックに任せ、配備を失敗にする。更新完了後の確認で失敗した場合は、元の3イメージのdigestへ戻して確認し、候補の配備自体は失敗として扱う。
+1. AWSアカウントと専用ロール、テスト対象とcheckoutのコミット、ECSサービスが無いこと、2つの関数が停止中でなく直前の更新を終え、スタックのイメージで動いていることを照合する。CloudFormationサービスロールが付いた場合は停止する。DB移行SQLと移行処理のハッシュをSSMの`/course-k/blog-production/applied-schema-digest`と照合し、未登録・不一致なら停止する。通常配備からDDLは実行しない。
+2. GitHubのARM64ランナーでNode/Goをビルドし、専用ECRへ登録してdigestで固定する。Docker認証情報は一時ディレクトリに置いて終了時に削除し、保存・表示しない。
+3. APIの関数を`{"work":"pending"}`で呼び出し、未処理の作業（期限の来たバックアップを含む）を実行する。成功した場合だけ更新を続ける。変更が無ければ新しいバックアップは作らない。
+4. 現行CloudFormationテンプレートと他のパラメータを維持し、OnDemandGoImage/OnDemandNodeImageだけの変更セットを作る。2つの関数のイメージ、一時タスク2つの定義の置き換え、関数や配信を参照する資材の再評価（値は変わらない）以外の変更は拒否してから実行する。
+5. 更新したパラメータでスタックが完了したこと、2つの関数が新しいイメージで更新を終えたことを待って確かめ、CloudFrontのキャッシュを全体で無効化する（読者のページは1日キャッシュされ、古いページは新しいビルドに無い資材を参照するため）。その後、公開HTTPSのhealth・readiness・一覧を確認する。DBが停止中なら再開を待つ。確認で失敗した場合は、元の2イメージのdigestへ戻して確認し、候補の配備自体は失敗として扱う。
+
+Fargate時代の単発タスク`release-check`（本番S3への直接送信の確認）は、ECSのアプリ定義が無くなったため配備から外した。[`special-release.yml`](../.github/workflows/special-release.yml)はまだFargateの定義を前提にしており、新構成のスキーマ変更には使えない。スキーマを変える配備は、対応するまで管理者がAurora向けの移行タスクで行う。
 
 #### DB・画像バケットの変更を伴う配備
 
@@ -171,7 +173,7 @@ Auroraへの復元は`<Goイメージ> restore --backup-id <ID> --confirm-empty-
 
 適用時には疎通監視の修正も反映される。監視は`/?page=1`の200を確かめていたが、このURLは`/`への308を返すため、2026-10-29から毎回失敗していた。対象を`/`へ直した。
 
-新構成は稼働中のサービスとは別のイメージ用パラメータを持ち、出力（Outputs）を足さない。通常の配備は稼働中のサービスの3つのイメージだけを変えるので、新構成の資材には一切触れず、配備用ロールに新しい権限が要らない。新構成のイメージは、受入の間は管理者ログインでの更新時に指定する。資材の名前やアドレスは、スタックの資材一覧から読む。
+新構成はイメージ用パラメータ（`OnDemandGoImage`・`OnDemandNodeImage`）を持ち、出力（Outputs）を足さない。切替後の通常の配備はこの2つを変える（[手順](#githubからのアプリ更新と専用アクセス)）。資材の名前やアドレスは、スタックの資材一覧から読む。
 
 権限上限は2026-11-16に適用した。適用済みのアクセス用スタックには、リポジトリの生成処理にない資材（MacからのRoles Anywhere接続用のTrustAnchorとProfile、それに合わせたOperatorRole）がある。生成した定義をそのまま適用するとこれらが削除されるため、適用済みの定義へ権限上限の文だけを足して更新した。アクセス用スタックを更新するときは、生成した定義と適用済みの定義の差を先に確かめる。
 

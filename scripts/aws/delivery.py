@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Release tested application images through the existing production stack."""
+"""Release tested application images to the on-demand functions through the production stack."""
 import argparse
 import hashlib
 import json
@@ -44,6 +44,18 @@ def image_reference(repository, digest):
     return repository + '@' + digest
 
 
+# A release changes only the on-demand image parameters. These resources take
+# the new image directly; the task definitions are replaced by new revisions.
+DIRECT = {'OnDemandApiFunction': 'False', 'OnDemandWebFunction': 'False',
+          'OnDemandMigrationTask': 'True', 'OnDemandRestoreTask': 'True'}
+IMAGE_TARGETS = {'Code', 'ContainerDefinitions'}
+# Resources that CloudFormation lists only because they refer to the functions
+# or the distribution; it re-reads those values, which do not change.
+REEVALUATED = {'OnDemandApiUrl', 'OnDemandWebUrl', 'OnDemandDailyWork', 'OnDemandDailyWorkPermission',
+               'OnDemandDistribution', 'OnDemandProbeFunction', 'OnDemandProbeSchedule', 'OnDemandProbePermission'}
+IMAGE_PARAMETERS = {'OnDemandNodeImage', 'OnDemandGoImage'}
+
+
 def review_changes(changes):
     require(changes, 'Empty application change set')
     names = set()
@@ -51,26 +63,19 @@ def review_changes(changes):
         change = entry['ResourceChange']
         name = change['LogicalResourceId']
         names.add(name)
+        details = change.get('Details', [])
         require(change['Action'] == 'Modify', 'Release would add or remove a resource')
-        require(name in {'ApplicationTask', 'ApplicationService', 'MigrationTask',
-                         'ApplicationCPUUtilizationAlarm', 'ApplicationMemoryUtilizationAlarm'},
-                'Release would change infrastructure outside the application')
-        if name == 'ApplicationService':
-            require(change.get('Replacement') == 'False', 'Service replacement is forbidden')
-        if name.endswith('Alarm'):
-            require(change.get('Replacement') == 'False', 'Alarm replacement is forbidden')
-            require(all(detail['Target'].get('Name') == 'Dimensions' and
-                        detail.get('CausingEntity') == 'ApplicationService.Name'
-                        for detail in change.get('Details', [])), 'Unexpected alarm change')
-    require('ApplicationTask' in names, 'No application image update in change set')
-
-
-def validate_service(service, task):
-    require(service.get('taskDefinition') == task, 'Service differs from stack task definition')
-    require(service.get('desiredCount') == service.get('runningCount') == 1 and
-            service.get('pendingCount', 0) == 0, 'Production service is not stable')
-    require(len(service.get('deployments', [])) == 1 and
-            service['deployments'][0].get('rolloutState') == 'COMPLETED', 'Deployment is not complete')
+        if name in DIRECT:
+            require(change.get('Replacement') == DIRECT[name], 'Unexpected replacement of ' + name)
+            require(details and all(d['Target'].get('Name') in IMAGE_TARGETS and (
+                d.get('Evaluation') == 'Dynamic' or d.get('CausingEntity') in IMAGE_PARAMETERS) for d in details),
+                'Release would change more than the image of ' + name)
+        else:
+            require(name in REEVALUATED, 'Release would change infrastructure outside the application')
+            require(change.get('Replacement') != 'True', 'Unexpected replacement of ' + name)
+            require(details and all(d.get('Evaluation') == 'Dynamic' and d.get('ChangeSource') == 'ResourceAttribute'
+                                    for d in details), 'Unexpected direct change to ' + name)
+    require(names & {'OnDemandApiFunction', 'OnDemandWebFunction'}, 'No application image update in change set')
 
 
 def wait_for(check, timeout=600, interval=10):
@@ -84,9 +89,9 @@ def wait_for(check, timeout=600, interval=10):
 
 
 class AWS:
-    def call(self, service, action, *, data=None, raw=False, file_body=None):
+    def call(self, service, action, *, data=None, raw=False, file_body=None, extra=()):
         command = ['aws', service, action, '--region', REGION, '--no-cli-pager',
-                   '--cli-connect-timeout', '10', '--cli-read-timeout', '45']
+                   '--cli-connect-timeout', '10', '--cli-read-timeout', '300' if action == 'invoke' else '45']
         if not raw:
             command += ['--output', 'json']
         if file_body is not None:
@@ -94,7 +99,8 @@ class AWS:
         # Input can contain environment parameter references; never echo it or raw AWS errors.
         if data is not None:
             command += ['--cli-input-json', json.dumps(data)]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=90)
+        command += list(extra)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=330 if action == 'invoke' else 90)
         if result.returncode:
             code = re.search(r'An error occurred \(([A-Za-z0-9_.-]+)\)', result.stderr)
             raise ReleaseError(f'{service} {action} failed ({code[1] if code else "CommandFailed"})')
@@ -133,46 +139,26 @@ class Release:
         require(f':{self.account}:stack/{STACK}/' in stack['StackId'], 'Unexpected stack account')
         self.outputs = {entry['OutputKey']: entry['OutputValue'] for entry in stack['Outputs']}
         self.previous = {entry['ParameterKey']: entry['ParameterValue'] for entry in stack['Parameters']}
-        require(self.previous['PublicOrigin'] == ORIGIN, 'Unexpected production hostname')
+        require(self.previous.get('PublicOrigin') == ORIGIN and self.previous.get('OnDemandOrigin') == '',
+                'Unexpected production hostname')
         resources = self.aws.call('cloudformation', 'list-stack-resources', data={'StackName': STACK})
         self.resources = {r['LogicalResourceId']: r['PhysicalResourceId']
                           for r in resources['StackResourceSummaries'] if r.get('PhysicalResourceId')}
-        self.cluster = self.resources['Cluster']
-        self.service_arn = self.resources['ApplicationService']
-        self.old_task = self.resources['ApplicationTask']
-        validate_service(self.service(), self.old_task)
-        template = self.aws.call('cloudformation', 'get-template', data={'StackName': STACK})['TemplateBody']
-        if isinstance(template, str):
-            template = json.loads(template)
-        require(template['Resources']['ApplicationTask']['Properties']['RuntimePlatform']['CpuArchitecture']
-                == 'ARM64', 'Expected ARM64 runtime')
-        task = self.running_task(self.old_task)
-        expected = {'node': 'NodeImage', 'go': 'GoImage', 'router': 'RouterImage'}
-        require({c['name']: c['image'] for c in task['containers']} ==
-                {name: self.previous[key] for name, key in expected.items()}, 'Stack and running images differ')
-        print('AWS identity, current production deployment and unchanged database schema verified', flush=True)
+        require('ApplicationService' not in self.resources, 'The Fargate service still exists')
+        self.functions = {'OnDemandGoImage': self.resources['OnDemandApiFunction'],
+                          'OnDemandNodeImage': self.resources['OnDemandWebFunction']}
+        self.distribution = self.resources['OnDemandDistribution']
+        self.check_functions({key: self.previous[key] for key in IMAGE_PARAMETERS})
+        print('AWS identity, current production functions and unchanged database schema verified', flush=True)
 
-    def running_task(self, definition):
-        # DescribeTaskDefinition has no resource-level IAM scoping. Read only
-        # this service's running task instead of granting account-wide reads.
-        tasks = self.aws.call('ecs', 'list-tasks', data={
-            'cluster': self.cluster, 'serviceName': self.service_arn})['taskArns']
-        require(len(tasks) == 1, 'Unexpected number of production tasks')
-        result = self.aws.call('ecs', 'describe-tasks', data={'cluster': self.cluster, 'tasks': tasks})
-        require(not result.get('failures') and len(result.get('tasks', [])) == 1,
-                'Production task cannot be identified')
-        task = result['tasks'][0]
-        require(task['taskDefinitionArn'] == definition, 'Running task differs from stack definition')
-        require(all(c.get('healthStatus') == 'HEALTHY' for c in task['containers']),
-                'Production containers are not healthy')
-        return task
-
-    def service(self):
-        result = self.aws.call('ecs', 'describe-services', data={
-            'cluster': self.cluster, 'services': [self.service_arn]})
-        require(not result.get('failures') and len(result.get('services', [])) == 1,
-                'Cannot identify production service')
-        return result['services'][0]
+    def check_functions(self, images):
+        """Both functions run the given images and finished their last update."""
+        for parameter, function in self.functions.items():
+            result = self.aws.call('lambda', 'get-function', data={'FunctionName': function})
+            config = result['Configuration']
+            require(config.get('State') == 'Active' and config.get('LastUpdateStatus') == 'Successful',
+                    'Function is not ready: ' + function)
+            require(result['Code'].get('ImageUri') == images[parameter], 'Function image differs from stack: ' + function)
 
     def images(self):
         images = {}
@@ -184,9 +170,8 @@ class Release:
                            input=password, text=True, check=True, env=env, stdout=subprocess.DEVNULL)
             password = None
             for name, output, folder, parameter in [
-                ('node', 'NodeRepository', 'frontend', 'NodeImage'),
-                ('go', 'GoRepository', 'backend', 'GoImage'),
-                ('router', 'RouterRepository', 'infra/router', 'RouterImage'),
+                ('node', 'NodeRepository', 'frontend', 'OnDemandNodeImage'),
+                ('go', 'GoRepository', 'backend', 'OnDemandGoImage'),
             ]:
                 repository = self.outputs[output]
                 image_reference(repository, 'sha256:' + '0' * 64)
@@ -215,34 +200,16 @@ class Release:
         return images
 
     def backup(self):
-        validate_service(self.service(), self.old_task)
-        result = self.aws.call('ecs', 'run-task', data={
-            'cluster': self.cluster, 'taskDefinition': self.old_task, 'launchType': 'FARGATE',
-            'count': 1, 'networkConfiguration': self.service()['networkConfiguration'],
-            'startedBy': 'gh-backup-' + self.run_id,
-            'overrides': {'containerOverrides': [{'name': 'go', 'command': ['backup']}]},
-        })
-        require(not result.get('failures') and len(result.get('tasks', [])) == 1, 'Backup task did not start')
-        arn = result['tasks'][0]['taskArn']
-
-        def check():
-            result = self.aws.call('ecs', 'describe-tasks', data={'cluster': self.cluster, 'tasks': [arn]})
-            require(not result.get('failures') and len(result.get('tasks', [])) == 1, 'Backup task unavailable')
-            task = result['tasks'][0]
-            go = next(c for c in task['containers'] if c['name'] == 'go')
-            if go.get('lastStatus') == 'STOPPED':
-                require(go.get('exitCode') == 0, 'Backup command failed; production was not updated')
-                return True
-            require(task['lastStatus'] != 'STOPPED', 'Backup stopped without successful completion')
-            return None
-
-        try:
-            wait_for(check, timeout=300)
-        finally:
-            # Stop only the task created above, never the running service's task.
-            self.aws.call('ecs', 'stop-task', data={
-                'cluster': self.cluster, 'task': arn, 'reason': 'Pre-release backup finished'})
-        print('Pre-release backup command completed successfully', flush=True)
+        """Run the pending work once, which takes a backup when content changed."""
+        with tempfile.TemporaryDirectory(prefix='blog-invoke-') as directory:
+            output = Path(directory) / 'response.json'
+            result = self.aws.call('lambda', 'invoke', data={
+                'FunctionName': self.functions['OnDemandGoImage'], 'Payload': '{"work":"pending"}'},
+                extra=['--cli-binary-format', 'raw-in-base64-out', str(output)])
+            require(result.get('StatusCode') == 200 and not result.get('FunctionError'), 'Pending work failed')
+            response = json.loads(output.read_text() or '{}')
+            require(response.get('statusCode') == 200, 'Pending work failed; production was not updated')
+        print('Pending work, including any due backup, completed successfully', flush=True)
 
     def change_images(self, images, suffix):
         stack = self.aws.stack()
@@ -297,77 +264,65 @@ class Release:
 
         wait_for(complete, timeout=900)
 
+    def purge(self):
+        """Readers' pages stay at the edge for a day; drop them so they use the new build."""
+        result = self.aws.call('cloudfront', 'create-invalidation', data={
+            'DistributionId': self.distribution, 'InvalidationBatch': {
+                'Paths': {'Quantity': 1, 'Items': ['/*']}, 'CallerReference': f'release-{self.run_id}-{self.attempt}-{time.time_ns()}'}})
+        identifier = result['Invalidation']['Id']
+
+        def done():
+            value = self.aws.call('cloudfront', 'get-invalidation', data={
+                'DistributionId': self.distribution, 'Id': identifier})
+            return value['Invalidation']['Status'] == 'Completed'
+
+        wait_for(done, timeout=900, interval=15)
+
     def verify(self, images):
-        stack = self.aws.stack()
-        outputs = {o['OutputKey']: o['OutputValue'] for o in stack['Outputs']}
-        task = outputs['ApplicationTaskDefinition']
-        validate_service(self.service(), task)
-        running = self.running_task(task)
-        expected = {'node': images['NodeImage'], 'go': images['GoImage'], 'router': images['RouterImage']}
-        require({c['name']: c['image'] for c in running['containers']} == expected,
-                'Running task definition does not match released images')
-        for path in ('/healthz', '/api/readyz', '/'):
-            with urllib.request.urlopen(ORIGIN + path, timeout=30) as response:
-                require(response.status == 200, 'Public HTTPS verification failed')
-                require(response.geturl() == ORIGIN + path, 'Unexpected public redirect')
-                if path == '/':
-                    require('course_k' in response.read(2_000_000).decode('utf-8'), 'Unexpected homepage')
-        print('Pinned images, healthy containers and public HTTPS verified', flush=True)
+        # Functions finish updating shortly after the stack reports completion.
+        def ready():
+            try:
+                self.check_functions(images)
+            except ReleaseError:
+                return None
+            return True
 
-    def run_command(self, command, *, migration=False, sync=False):
-        stack = self.aws.stack()
-        outputs = {o['OutputKey']: o['OutputValue'] for o in stack['Outputs']}
-        definition = outputs['MigrationTaskDefinition' if migration else 'ApplicationTaskDefinition']
-        result = self.aws.call('ecs', 'run-task', data={
-            'cluster': self.cluster, 'taskDefinition': definition, 'launchType': 'FARGATE', 'count': 1,
-            'networkConfiguration': self.service()['networkConfiguration'],
-            'startedBy': 'gh-check-' + self.run_id,
-            'overrides': {'containerOverrides': [{'name': 'go', 'command': command,
-                'environment': [{'name': 'RELEASE_CHECK_SYNC', 'value': 'true' if sync else 'false'}]}]},
-        })
-        require(not result.get('failures') and len(result.get('tasks', [])) == 1, 'Release task did not start')
-        arn = result['tasks'][0]['taskArn']
-        def check():
-            tasks = self.aws.call('ecs', 'describe-tasks', data={'cluster': self.cluster, 'tasks': [arn]})
-            require(not tasks.get('failures') and len(tasks.get('tasks', [])) == 1, 'Release task unavailable')
-            task = tasks['tasks'][0]
-            go = next(c for c in task['containers'] if c['name'] == 'go')
-            if go.get('lastStatus') == 'STOPPED':
-                require(go.get('exitCode') == 0, 'Release command failed; inspect ECS logs')
-                return True
-            require(task['lastStatus'] != 'STOPPED', 'Release task stopped before command success')
-            return None
-        try:
-            wait_for(check, timeout=420)
-        finally:
-            self.aws.call('ecs', 'stop-task', data={'cluster': self.cluster, 'task': arn, 'reason': 'Release command finished'})
+        wait_for(ready, timeout=300)
+        self.purge()
 
-    def production_check(self, *, sync=False):
-        self.run_command(['release-check', '--confirm-production'], sync=sync)
-        print('Real S3 upload (10MB PNG and WebP), save, publication visibility, cleanup and backup passed', flush=True)
+        def public():
+            for path in ('/healthz', '/api/readyz', '/'):
+                try:
+                    with urllib.request.urlopen(ORIGIN + path, timeout=60) as response:
+                        if response.status != 200 or response.geturl() != ORIGIN + path:
+                            return None
+                        if path == '/' and 'course_k' not in response.read(2_000_000).decode('utf-8'):
+                            return None
+                except OSError:
+                    return None
+            return True
+
+        # The first request after a pause waits for the database to resume.
+        wait_for(public, timeout=300, interval=15)
+        print('Pinned images, updated functions, purged pages and public HTTPS verified', flush=True)
 
     def apply(self):
         self.preflight()
         images = self.images()
         self.backup()
-        validate_service(self.service(), self.old_task)
-        candidate = dict(images)
-        if 'MigrationImage' in self.previous:
-            candidate['MigrationImage'] = ''
-        self.change_images(candidate, 'update')
+        self.change_images(images, 'update')
         try:
             self.verify(images)
-            self.production_check()
         except Exception as error:
             print('Post-release verification failed; restoring previous image digests', flush=True)
-            previous = {key: self.previous[key] for key in ('NodeImage', 'GoImage', 'RouterImage')}
+            previous = {key: self.previous[key] for key in IMAGE_PARAMETERS}
             self.change_images(previous, 'restore')
             self.verify(previous)
             raise ReleaseError('Candidate failed verification; previous images restored') from error
         summary = os.environ.get('GITHUB_STEP_SUMMARY')
         if summary:
             with open(summary, 'a') as stream:
-                stream.write(f'Production updated to `{self.commit}`. Backup, ECS health and HTTPS passed.\n')
+                stream.write(f'Production updated to `{self.commit}`. Pending work, functions and HTTPS passed.\n')
 
 
 if __name__ == '__main__':

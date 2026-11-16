@@ -19,17 +19,24 @@ def delivery_access_template():
     cfn = 'arn:${AWS::Partition}:cloudformation:us-west-2:${AWS::AccountId}:'
     iam = 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/'
     definitions = [sub(ecs + f'task-definition/{stack}-{family}:*')
-                   for family in ('application', 'migration')]
+                   for family in ('on-demand-migration', 'on-demand-restore')]
+    # Kept for the reviewed special release, which still names the retired family.
+    migration_definition = sub(ecs + f'task-definition/{stack}-migration:*')
     cluster = sub(ecs + f'cluster/{stack}-Cluster-*')
-    service = sub(ecs + f'service/{stack}-Cluster-*/{stack}-ApplicationService-*')
-    deployments = sub(ecs + f'service-deployment/{stack}-Cluster-*/{stack}-ApplicationService-*/*')
-    runtime_roles = [sub(iam + f'{stack}-{name}-*') for name in (
-        'ApplicationExecutionRole', 'ApplicationTaskRole', 'MigrationExecutionRole', 'MigrationTaskRole',
+    functions = [sub('arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:' + f'{stack}-{name}')
+                 for name in ('api', 'web')]
+    # Role names are generated from the logical names and truncated to 64 characters.
+    task_roles = [sub(iam + f'{stack}-{name}-*') for name in (
+        'OnDemandMigrationExecution', 'OnDemandToolTaskRole', 'OnDemandRestoreExecutionRo', 'OnDemandRestoreTaskRole',
     )]
+    function_roles = [sub(iam + f'{stack}-{name}-*') for name in (
+        'OnDemandApiRole', 'OnDemandWebRole', 'OnDemandProbeRole',
+    )]
+    distribution = sub('arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*')
 
     def allow(sid, actions, resources, condition=regional):
-        return {'Sid': sid, 'Effect': 'Allow', 'Action': actions,
-                'Resource': resources, 'Condition': condition}
+        statement = {'Sid': sid, 'Effect': 'Allow', 'Action': actions, 'Resource': resources}
+        return {**statement, 'Condition': condition} if condition else statement
 
     artifacts = sub('arn:${AWS::Partition}:s3:::course-k-blog-release-${AWS::AccountId}-${AWS::Region}')
     statements = [
@@ -46,7 +53,7 @@ def delivery_access_template():
               sub('arn:${AWS::Partition}:s3:::course-k-blog-release-${AWS::AccountId}-${AWS::Region}/templates/*')),
         allow('AppliedSchemaState', ['ssm:GetParameter', 'ssm:PutParameter'],
               sub('arn:${AWS::Partition}:ssm:us-west-2:${AWS::AccountId}:parameter/course-k/blog-production/applied-schema-digest')),
-        allow('RunMigration', ['ecs:RunTask'], definitions[1], {
+        allow('RunMigration', ['ecs:RunTask'], migration_definition, {
             **regional, 'ArnLike': {'ecs:cluster': cluster},
         }),
         allow('ImageSettingsThroughStack', ['s3:GetAccelerateConfiguration', 's3:GetLifecycleConfiguration', 's3:GetBucketPublicAccessBlock', 's3:GetAnalyticsConfiguration', 's3:GetBucketCORS', 's3:GetEncryptionConfiguration', 's3:GetInventoryConfiguration', 's3:GetBucketLogging', 's3:GetMetricsConfiguration', 's3:GetBucketNotification', 's3:GetBucketVersioning', 's3:GetReplicationConfiguration', 's3:GetBucketWebsite', 's3:GetBucketObjectLockConfiguration', 's3:GetBucketTagging', 's3:ListTagsForResource', 's3:GetBucketAbac', 's3:GetBucketOwnershipControls', 's3:GetIntelligentTieringConfiguration', 's3:GetBucketMetadataTableConfiguration', 's3:ListBucket', 's3:GetBucketPolicy', 's3:GetBucketPolicyStatus', 's3:PutBucketCORS', 's3:PutLifecycleConfiguration'],
@@ -58,60 +65,45 @@ def delivery_access_template():
             'ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer',
             'ecr:DescribeImages', 'ecr:DescribeRepositories',
         ], [sub('arn:${AWS::Partition}:ecr:us-west-2:${AWS::AccountId}:repository/'
-                + f'{stack}-{name}repository-*') for name in ('node', 'go', 'router')]),
-        allow('ReadApplicationService', ['ecs:DescribeServices'], service),
-        allow('ReadApplicationCluster', ['ecs:DescribeClusters'], cluster),
+                + f'{stack}-{name}repository-*') for name in ('node', 'go')]),
+        # Lambda checks that the caller may read the image it is given.
+        allow('ReadFunctionImagesThroughStack', ['ecr:GetRepositoryPolicy'],
+              [sub('arn:${AWS::Partition}:ecr:us-west-2:${AWS::AccountId}:repository/'
+                   + f'{stack}-{name}repository-*') for name in ('node', 'go')], through_stack),
+        # Before and after a release: which image each function runs.
+        allow('ReadFunctions', ['lambda:GetFunction', 'lambda:GetFunctionConfiguration'], functions),
+        # The pending work takes a due backup before images change.
+        allow('RunPendingWork', ['lambda:InvokeFunction'], functions[0]),
+        allow('UpdateFunctionsThroughStack', [
+            'lambda:UpdateFunctionCode', 'lambda:ListTags', 'lambda:TagResource', 'lambda:UntagResource',
+            'lambda:GetFunctionCodeSigningConfig', 'lambda:GetRuntimeManagementConfig',
+            'lambda:GetFunctionRecursionConfig', 'lambda:GetFunctionUrlConfig', 'lambda:GetPolicy',
+        ], functions, through_stack),
+        # Readers' pages stay at the edge for a day; a release purges them.
+        allow('PurgePages', ['cloudfront:CreateInvalidation', 'cloudfront:GetInvalidation'], distribution, None),
+        # Resources that refer to the functions or the distribution are re-read
+        # on an image update; their values do not change.
+        allow('ReadDistributionThroughStack', ['cloudfront:GetDistribution', 'cloudfront:GetDistributionConfig'],
+              distribution, {'ForAnyValue:StringEquals': {'aws:CalledVia': 'cloudformation.amazonaws.com'}}),
+        allow('ReadSchedulesThroughStack', ['events:DescribeRule', 'events:ListTargetsByRule'],
+              sub('arn:${AWS::Partition}:events:us-west-2:${AWS::AccountId}:rule/' + f'{stack}-OnDemand*'), through_stack),
+        allow('ReadBootstrapRepositoryOutputThroughStack', ['ecr:DescribeRepositories'],
+              [sub('arn:${AWS::Partition}:ecr:us-west-2:${AWS::AccountId}:repository/'
+                   + f'{stack}-{name}repository-*') for name in ('bootstrap', 'router')], through_stack),
         allow('ReadDefinitionTags', ['ecs:ListTagsForResource'], definitions),
-        # This API has no resource-level IAM support. Permit only forwarded
+        # These APIs have no resource-level IAM support. Permit only forwarded
         # CloudFormation calls; the role can operate only the existing blog stack.
         allow('ReadDefinitionsThroughStack', ['ecs:DescribeTaskDefinition'], '*', through_stack),
-        # DeregisterTaskDefinition also has no resource-level IAM support.
-        # CloudFormation uses it to retire replaced revisions and finish rollback.
         allow('RetireDefinitionsThroughStack', ['ecs:DeregisterTaskDefinition'], '*', through_stack),
-        allow('ReadApplicationDiscoveryThroughStack', ['servicediscovery:GetService'],
-              sub('arn:${AWS::Partition}:servicediscovery:us-west-2:${AWS::AccountId}:service/srv-4uf2ei7tn3cmfk73'),
-              through_stack),
-        # Outputs are re-evaluated on an image-only update. These reads return
-        # configuration, never database records or the managed secret's value.
-        allow('ReadDatabaseOutputThroughStack', ['rds:DescribeDBInstances'],
-              sub('arn:${AWS::Partition}:rds:us-west-2:${AWS::AccountId}:db:course-k-blog-production-database-3pxvru6efueg'),
-              through_stack),
-        allow('ReadGatewayOutputsThroughStack', ['apigateway:GET'], [
-            sub('arn:${AWS::Partition}:apigateway:us-west-2::/apis/5dqxughlo6'),
-            sub('arn:${AWS::Partition}:apigateway:us-west-2::/domainnames/blog.course-k.com'),
-        ], through_stack),
-        allow('ReadBootstrapRepositoryOutputThroughStack', ['ecr:DescribeRepositories'],
-              sub('arn:${AWS::Partition}:ecr:us-west-2:${AWS::AccountId}:repository/'
-                  + f'{stack}-bootstraprepository-*'), through_stack),
-        # IAM uses a global endpoint; do not impose the ECS regional condition.
-        allow('ReadRuntimeRolesThroughStack', ['iam:GetRole'], runtime_roles, {
-            'ForAnyValue:StringEquals': {'aws:CalledVia': 'cloudformation.amazonaws.com'},
-        }),
         allow('RegisterDefinitionsThroughStack', [
             'ecs:RegisterTaskDefinition', 'ecs:TagResource', 'ecs:UntagResource',
         ], definitions, through_stack),
-        allow('UpdateApplicationThroughStack', [
-            'ecs:UpdateService', 'ecs:ListTagsForResource', 'ecs:TagResource', 'ecs:UntagResource',
-            'ecs:ListServiceDeployments', 'ecs:DescribeServiceDeployments', 'ecs:StopServiceDeployment',
-        ], [service, deployments], through_stack),
-        allow('ReadApplicationTasks', ['ecs:ListTasks'], '*', {
-            **regional, 'ArnLike': {'ecs:cluster': cluster},
+        # IAM uses a global endpoint; do not impose the regional condition.
+        allow('ReadRuntimeRolesThroughStack', ['iam:GetRole'], task_roles + function_roles, {
+            'ForAnyValue:StringEquals': {'aws:CalledVia': 'cloudformation.amazonaws.com'},
         }),
-        allow('ReadAndStopBackupTasks', ['ecs:DescribeTasks', 'ecs:StopTask'],
-              sub(ecs + f'task/{stack}-Cluster-*/*'), {
-                  **regional, 'ArnLike': {'ecs:cluster': cluster},
-              }),
-        allow('RunBackup', ['ecs:RunTask'], definitions[0], {
-            **regional, 'ArnLike': {'ecs:cluster': cluster},
-        }),
-        allow('PassRuntimeRoles', ['iam:PassRole'], runtime_roles,
+        allow('PassTaskRoles', ['iam:PassRole'], task_roles,
               {'StringEquals': {'iam:PassedToService': 'ecs-tasks.amazonaws.com'}}),
-        allow('UpdateApplicationAlarmsThroughStack', [
-            'cloudwatch:PutMetricAlarm', 'cloudwatch:DescribeAlarms', 'cloudwatch:ListTagsForResource',
-            'cloudwatch:TagResource', 'cloudwatch:UntagResource',
-        ], [sub('arn:${AWS::Partition}:cloudwatch:us-west-2:${AWS::AccountId}:alarm:'
-                + f'{stack}-Application{name}Alarm-*')
-            for name in ('CPUUtilization', 'MemoryUtilization')], through_stack),
     ]
     extra_sids = {'ReleaseTemplates', 'AppliedSchemaState', 'RunMigration', 'ImageSettingsThroughStack'}
     release_statements = [s for s in statements if s['Sid'] in extra_sids]
