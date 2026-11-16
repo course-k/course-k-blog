@@ -103,7 +103,15 @@ class OnDemandTemplateTest(unittest.TestCase):
         self.assertEqual(len(by_action['lambda:InvokeFunctionUrl']), 2)
         for permission in by_action['lambda:InvokeFunctionUrl']:
             self.assertEqual((permission['Principal'], permission['SourceArn']), (EDGE, DISTRIBUTION_ARN))
-        scheduled = {json.dumps(p['FunctionName']): p for p in by_action['lambda:InvokeFunction']}
+        # A function URL refuses a caller that holds only one of the two actions.
+        through_url = [p for p in by_action['lambda:InvokeFunction'] if p['Principal'] == EDGE]
+        self.assertEqual({json.dumps(p['FunctionName']) for p in through_url},
+                         {json.dumps({'Ref': 'OnDemandApiFunction'}), json.dumps({'Ref': 'OnDemandWebFunction'})})
+        for permission in through_url:
+            self.assertEqual(permission['SourceArn'], DISTRIBUTION_ARN)
+            # The distribution may call the URL, not invoke the function directly.
+            self.assertIs(permission['InvokedViaFunctionUrl'], True)
+        scheduled = {json.dumps(p['FunctionName']): p for p in by_action['lambda:InvokeFunction'] if p['Principal'] != EDGE}
         self.assertEqual(len(scheduled), 2)
         work = scheduled[json.dumps({'Ref': 'OnDemandApiFunction'})]
         self.assertEqual((work['Principal'], work['SourceArn']), ('events.amazonaws.com', {'Fn::GetAtt': ['OnDemandDailyWork', 'Arn']}))

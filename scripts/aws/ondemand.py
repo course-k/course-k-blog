@@ -323,11 +323,16 @@ def functions():
         return {'Type': 'AWS::Lambda::Url', 'Condition': 'OnDemandRuntime', 'Properties': {
             'TargetFunctionArn': att(function), 'AuthType': 'AWS_IAM', 'InvokeMode': mode}}
 
-    def from_edge(function):
+    def from_edge(function, action):
         # Signed requests from this distribution only; the URLs are not public.
-        return {'Type': 'AWS::Lambda::Permission', 'Condition': 'OnDemandRuntime', 'Properties': {
-            'FunctionName': ref(function), 'Action': 'lambda:InvokeFunctionUrl', 'Principal': 'cloudfront.amazonaws.com',
-            'SourceArn': sub('arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${OnDemandDistribution}')}}
+        # A function URL refuses a caller that holds only one of the two actions.
+        properties = {
+            'FunctionName': ref(function), 'Action': action, 'Principal': 'cloudfront.amazonaws.com',
+            'SourceArn': sub('arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${OnDemandDistribution}')}
+        if action == 'lambda:InvokeFunction':
+            # Only through the URL, never as a direct invocation.
+            properties['InvokedViaFunctionUrl'] = True
+        return {'Type': 'AWS::Lambda::Permission', 'Condition': 'OnDemandRuntime', 'Properties': properties}
 
     def variables(values):
         return {'Variables': values}
@@ -365,7 +370,8 @@ def functions():
             }),
         }},
         'OnDemandApiUrl': url('OnDemandApiFunction', 'RESPONSE_STREAM'),
-        'OnDemandApiFromEdge': from_edge('OnDemandApiFunction'),
+        'OnDemandApiFromEdge': from_edge('OnDemandApiFunction', 'lambda:InvokeFunctionUrl'),
+        'OnDemandApiInvokeFromEdge': from_edge('OnDemandApiFunction', 'lambda:InvokeFunction'),
         'OnDemandWebRole': role([log_writer('NodeLogs')]),
         'OnDemandWebFunction': {'Type': 'AWS::Lambda::Function', 'Condition': 'OnDemandRuntime', 'Properties': {
             'FunctionName': sub('${AWS::StackName}-web'), 'PackageType': 'Image', 'Code': {'ImageUri': ref('OnDemandNodeImage')},
@@ -379,7 +385,8 @@ def functions():
             }),
         }},
         'OnDemandWebUrl': url('OnDemandWebFunction', 'BUFFERED'),
-        'OnDemandWebFromEdge': from_edge('OnDemandWebFunction'),
+        'OnDemandWebFromEdge': from_edge('OnDemandWebFunction', 'lambda:InvokeFunctionUrl'),
+        'OnDemandWebInvokeFromEdge': from_edge('OnDemandWebFunction', 'lambda:InvokeFunction'),
         'OnDemandRelayLogs': {'Type': 'AWS::Logs::LogGroup', 'Condition': 'OnDemandRuntime', 'Properties': {'RetentionInDays': 14}},
         'OnDemandRelayRole': role([log_writer('OnDemandRelayLogs')]),
         'OnDemandRelayFunction': {'Type': 'AWS::Lambda::Function', 'Condition': 'OnDemandRuntime', 'Properties': {
