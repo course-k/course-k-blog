@@ -31,11 +31,11 @@ class OnDemandTemplateTest(unittest.TestCase):
         self.assertTrue(self.added)
         for name, resource in self.added.items():
             self.assertTrue(name.startswith('OnDemand'), name)
-            self.assertIn(resource.get('Condition'), {'OnDemand', 'OnDemandRuntime', 'OnDemandMigration', 'OnDemandBootstrap'}, name)
+            self.assertIn(resource.get('Condition'), {'OnDemand', 'OnDemandRuntime', 'OnDemandMigration', 'OnDemandBootstrap', 'OnDemandRestore'}, name)
         conditions = self.template['Conditions']
         on = {'Fn::Equals': [{'Ref': 'EnableOnDemand'}, 'true']}
         self.assertEqual(conditions['OnDemand'], on)
-        for name in ('OnDemandRuntime', 'OnDemandMigration', 'OnDemandBootstrap'):
+        for name in ('OnDemandRuntime', 'OnDemandMigration', 'OnDemandBootstrap', 'OnDemandRestore'):
             self.assertEqual(conditions[name]['Fn::And'][0], on, name)
         for name, output in self.template['Outputs'].items():
             if name not in self.before['Outputs']:
@@ -197,7 +197,7 @@ class OnDemandTemplateTest(unittest.TestCase):
         boundary = production_access_template()['Resources']['RuntimeBoundary']['Properties']['PolicyDocument']['Statement']
         allowed = {action for statement in boundary for action in statement['Action']}
         roles = [name for name, r in self.added.items() if r['Type'] == 'AWS::IAM::Role']
-        self.assertEqual(len(roles), 6)
+        self.assertEqual(len(roles), 8)
         for name in roles:
             self.assertEqual(self.resources[name]['Properties']['PermissionsBoundary'], {'Ref': 'RuntimeBoundaryArn'}, name)
             for statement in statements(self.resources[name]) if 'Policies' in self.resources[name]['Properties'] else []:
@@ -225,6 +225,25 @@ class OnDemandTemplateTest(unittest.TestCase):
         self.assertIn('OnDemandMigrationUrlParameterArn', granted)
         self.assertNotIn('"MigrationUrlParameterArn"', granted)
         self.assertNotEqual(migration['Family'], self.resources['MigrationTask']['Properties']['Family'])
+
+    def test_restore_task_writes_rows_as_the_application_and_cannot_delete_or_alter(self):
+        restore = self.resources['OnDemandRestoreTask']['Properties']
+        container = restore['ContainerDefinitions'][0]
+        # The application user has no schema rights; the migration user is not used.
+        self.assertEqual(container['Secrets'], [{'Name': 'DATABASE_URL', 'ValueFrom': {'Ref': 'OnDemandDatabaseUrlParameterArn'}}])
+        self.assertEqual(container['Command'], ['restore'])
+        env = {e['Name']: e['Value'] for e in container['Environment']}
+        self.assertEqual((env['MEDIA_BUCKET'], env['BACKUP_BUCKET']), ({'Ref': 'ImagesBucket'}, {'Ref': 'BackupsBucket'}))
+        self.assertEqual(restore['TaskRoleArn'], {'Fn::GetAtt': ['OnDemandRestoreTaskRole', 'Arn']})
+        actions = {a for s in statements(self.resources['OnDemandRestoreTaskRole']) for a in s['Action']}
+        self.assertEqual(actions, {'s3:GetObject', 's3:PutObject', 's3:ListBucket'})
+        archive = next(s for s in statements(self.resources['OnDemandRestoreTaskRole']) if s['Action'] == ['s3:GetObject'])
+        self.assertNotIn('s3:PutObject', archive['Action'])
+        granted = json.dumps(self.resources['OnDemandRestoreExecutionRole'])
+        self.assertIn('OnDemandDatabaseUrlParameterArn', granted)
+        self.assertNotIn('OnDemandMigrationUrlParameterArn', granted)
+        families = {self.resources[n]['Properties']['Family']['Fn::Sub'] for n in ('MigrationTask', 'OnDemandMigrationTask', 'OnDemandRestoreTask')}
+        self.assertEqual(len(families), 3)
 
 
 if __name__ == '__main__':

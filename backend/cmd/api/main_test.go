@@ -60,3 +60,29 @@ func TestStorageCannotTreatSourceAsItsOwnBackup(t *testing.T) {
 		t.Fatal("same bucket accepted as independent backup")
 	}
 }
+
+func TestRestoreIntoANewDatabaseNeedsItsHostNamedExactly(t *testing.T) {
+	// Moving to a new database server restores into its real, still empty
+	// database. The operator must name that server, so a command aimed at the
+	// wrong connection cannot proceed. Emptiness is checked by the restore itself.
+	live := "mysql://app:secret@old.example.internal:3306/blog?tls=verify-full"
+	fresh := "mysql://app:secret@new.cluster.example.internal:3306/blog?tls=verify-full"
+	cases := []struct {
+		name, dsn, named string
+		allowed          bool
+	}{
+		{"dedicated restore database needs no host", "mysql://app@db/blog_restore", "", true},
+		{"real database without a named host", fresh, "", false},
+		{"real database with its own host named", fresh, "new.cluster.example.internal", true},
+		{"host of another server", live, "new.cluster.example.internal", false},
+		{"host with a port is not a host name", fresh, "new.cluster.example.internal:3306", false},
+		{"prefix of the host", fresh, "new.cluster", false},
+		{"not a MySQL URL", "postgres://app@new.cluster.example.internal/blog", "new.cluster.example.internal", false},
+		{"unparseable URL", "://", "new.cluster.example.internal", false},
+	}
+	for _, tc := range cases {
+		if got := restoreAllowed(tc.dsn, tc.named); got != tc.allowed {
+			t.Errorf("%s: allowed=%v, want %v", tc.name, got, tc.allowed)
+		}
+	}
+}
