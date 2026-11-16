@@ -203,9 +203,10 @@ class Release:
         """Run the pending work once, which takes a backup when content changed."""
         with tempfile.TemporaryDirectory(prefix='blog-invoke-') as directory:
             output = Path(directory) / 'response.json'
-            result = self.aws.call('lambda', 'invoke', data={
-                'FunctionName': self.functions['OnDemandGoImage'], 'Payload': '{"work":"pending"}'},
-                extra=['--cli-binary-format', 'raw-in-base64-out', str(output)])
+            # This command takes its required arguments only as options, not from --cli-input-json.
+            result = self.aws.call('lambda', 'invoke', extra=[
+                '--function-name', self.functions['OnDemandGoImage'], '--payload', '{"work":"pending"}',
+                '--cli-binary-format', 'raw-in-base64-out', str(output)])
             require(result.get('StatusCode') == 200 and not result.get('FunctionError'), 'Pending work failed')
             response = json.loads(output.read_text() or '{}')
             require(response.get('statusCode') == 200, 'Pending work failed; production was not updated')
