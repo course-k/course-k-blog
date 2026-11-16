@@ -64,7 +64,7 @@ func TestParameterStoreIsAskedToDecryptTheNamedParameter(t *testing.T) {
 		raw, _ := io.ReadAll(r.Body)
 		target, body = r.Header.Get("X-Amz-Target"), string(raw)
 		w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-		io.WriteString(w, `{"Parameter":{"Name":"/blog/url","Type":"SecureString","Value":"mysql://app@db/blog"}}`)
+		io.WriteString(w, `{"Parameters":[{"Name":"/blog/url","Type":"SecureString","Value":"mysql://app@db/blog"}],"InvalidParameters":[]}`)
 	}))
 	defer server.Close()
 	store := parameterStore{Client: ssm.New(ssm.Options{Region: "us-west-2", BaseEndpoint: aws.String(server.URL), Credentials: aws.AnonymousCredentials{}})}
@@ -72,7 +72,19 @@ func TestParameterStoreIsAskedToDecryptTheNamedParameter(t *testing.T) {
 	if err != nil || value != "mysql://app@db/blog" {
 		t.Fatalf("the parameter value must be returned: %q %v", value, err)
 	}
-	if target != "AmazonSSM.GetParameter" || !strings.Contains(body, `"Name":"/blog/url"`) || !strings.Contains(body, `"WithDecryption":true`) {
+	if target != "AmazonSSM.GetParameters" || !strings.Contains(body, `"Names":["/blog/url"]`) || !strings.Contains(body, `"WithDecryption":true`) {
 		t.Fatalf("request: %q %q", target, body)
+	}
+}
+
+func TestMissingParameterIsNotAnEmptyValue(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/x-amz-json-1.1")
+		io.WriteString(w, `{"Parameters":[],"InvalidParameters":["/blog/url"]}`)
+	}))
+	defer server.Close()
+	store := parameterStore{Client: ssm.New(ssm.Options{Region: "us-west-2", BaseEndpoint: aws.String(server.URL), Credentials: aws.AnonymousCredentials{}})}
+	if _, err := store.fetch(context.Background(), "/blog/url"); err == nil {
+		t.Fatal("a parameter that does not exist must be an error")
 	}
 }

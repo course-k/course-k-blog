@@ -35,11 +35,13 @@ func databaseURL(ctx context.Context, getenv func(string) string, fetch func(con
 type parameterStore struct{ Client *ssm.Client }
 
 func (p parameterStore) fetch(ctx context.Context, name string) (string, error) {
-	result, err := p.Client.GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(name), WithDecryption: aws.Bool(true)})
-	if err != nil || result.Parameter == nil || result.Parameter.Value == nil {
+	// GetParameters is the action the runtime roles are already limited to,
+	// the same one ECS uses to inject this value.
+	result, err := p.Client.GetParameters(ctx, &ssm.GetParametersInput{Names: []string{name}, WithDecryption: aws.Bool(true)})
+	if err != nil || len(result.Parameters) != 1 || result.Parameters[0].Value == nil {
 		return "", errors.New("parameter unavailable")
 	}
-	return *result.Parameter.Value, nil
+	return *result.Parameters[0].Value, nil
 }
 
 // fetchParameter reads one decrypted parameter with the process's AWS identity.
