@@ -127,7 +127,7 @@ Lambdaは応答後に凍結されるため、現行の常駐ループを次の�
 2. `EnableOnDemand=true`でスタックを更新し、Auroraの初期化と移行を一時タスクで行う。
 3. 稼働中の構成の最新バックアップをAuroraへ復元し、受入用ホスト名で受入条件を確認する。
 4. 切替日：稼働中の構成でバックアップを取り、Auroraを`clear-restore-target`で空にして復元し直す。us-east-1の証明書とCloudFrontの独自ドメインを設定し、XServer DomainのCNAMEをCloudFrontへ向ける。
-5. 数日運用して問題がなければ、ECSサービス・API Gateway・VPC Link・Cloud Map・RDSインスタンス（最終スナップショットを残す）・旧サブネットを定義から外す。
+5. 数日運用して問題がなければ、ECSサービス・API Gateway・VPC Link・Cloud Map・RDSインスタンス（最終スナップショットを残す）・旧サブネットを定義から外す（[手順](../infra/production.md#旧構成の撤去)）。
 
 ## 月額の試算
 
