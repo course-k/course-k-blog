@@ -204,6 +204,32 @@ func validateRestore(ctx context.Context, query restoreQuery, snapshot backup.Sn
 func (s *Store) ValidateRestore(ctx context.Context, snapshot backup.Snapshot) error {
 	return validateRestore(ctx, s.db, snapshot)
 }
+
+// restoreTargetTables lists what ClearRestoreTarget deletes, children first.
+// It is the restored content plus per-database state a restore would otherwise
+// inherit: unfinished uploads and sign-in state. Backup records stay, so the
+// database keeps pruning only the archives it wrote itself.
+var restoreTargetTables = []string{"post_images", "creation_requests", "posts", "images", "external_posts", "image_uploads", "sessions", "login_flows"}
+
+// ClearRestoreTarget empties a database that is about to receive a restore
+// again, such as a new server that already held trial content.
+func (s *Store) ClearRestoreTarget(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var generation int64
+	if err = tx.QueryRowContext(ctx, "SELECT generation FROM operation_state WHERE singleton FOR UPDATE").Scan(&generation); err != nil {
+		return err
+	}
+	for _, table := range restoreTargetTables {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM "+table); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
 func (s *Store) RestoreSnapshot(ctx context.Context, snapshot backup.Snapshot) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

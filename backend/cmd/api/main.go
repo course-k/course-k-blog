@@ -48,7 +48,7 @@ func run() error {
 		command = os.Args[1]
 	}
 	switch command {
-	case "serve", "migrate", "backup", "restore", "revoke-sessions", "release-check", "schema-version", "verify-schema", "refresh-public":
+	case "serve", "migrate", "backup", "restore", "clear-restore-target", "revoke-sessions", "release-check", "schema-version", "verify-schema", "refresh-public":
 	default:
 		return errors.New("unknown application command")
 	}
@@ -126,7 +126,7 @@ func run() error {
 	if len(os.Args) == 2 && os.Args[1] == "migrate" {
 		return store.Migrate(ctx)
 	}
-	if command == "revoke-sessions" {
+	if command == "revoke-sessions" || command == "clear-restore-target" {
 		work, done := context.WithTimeout(context.Background(), 30*time.Second)
 		defer done()
 		return runDataCommand(work, command, os.Args[2:], dsn, store, nil)

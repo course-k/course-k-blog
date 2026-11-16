@@ -51,6 +51,13 @@ func runDataCommand(ctx context.Context, command string, args []string, dsn stri
 			return errors.New("restore requires --backup-id, --confirm-empty-target and either a dedicated _restore or _test database or --new-database-host naming the target server")
 		}
 		return service.Restore(ctx, *id)
+	case "clear-restore-target":
+		host := flags.String("new-database-host", "", "")
+		confirm := flags.Bool("confirm-delete-content", false, "")
+		if flags.Parse(args) != nil || flags.NArg() != 0 || !*confirm || !restoreAllowed(dsn, *host) {
+			return errors.New("clearing requires --confirm-delete-content and either a dedicated _restore or _test database or --new-database-host naming the target server")
+		}
+		return store.ClearRestoreTarget(ctx)
 	case "revoke-sessions":
 		confirm := flags.Bool("confirm", false, "")
 		if flags.Parse(args) != nil || flags.NArg() != 0 || !*confirm {
