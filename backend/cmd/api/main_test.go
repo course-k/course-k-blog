@@ -86,3 +86,18 @@ func TestRestoreIntoANewDatabaseNeedsItsHostNamedExactly(t *testing.T) {
 		}
 	}
 }
+
+func TestClearingARestoreTargetNeedsConfirmationAndItsHost(t *testing.T) {
+	// Rejections happen before the store is touched, so a nil store is safe.
+	fresh := "mysql://app:secret@new.cluster.example.internal:3306/blog?tls=verify-full"
+	for _, args := range [][]string{
+		{"--new-database-host", "new.cluster.example.internal"},
+		{"--confirm-delete-content"},
+		{"--confirm-delete-content", "--new-database-host", "old.example.internal"},
+		{"--confirm-delete-content", "--new-database-host", "new.cluster.example.internal", "extra"},
+	} {
+		if err := runDataCommand(context.Background(), "clear-restore-target", args, fresh, nil, nil); err == nil {
+			t.Errorf("accepted %v", args)
+		}
+	}
+}

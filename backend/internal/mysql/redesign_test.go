@@ -492,3 +492,40 @@ func TestImageUploadRejectionsAndExpiry(t *testing.T) {
 		t.Fatal("rejected upload registered an image", count, err)
 	}
 }
+
+func TestClearedTargetAcceptsTheRestoreAgain(t *testing.T) {
+	// Cutover restores the latest backup into a server that already holds
+	// the trial restore. Clearing must leave it acceptable to restore again.
+	ctx := context.Background()
+	source, target := isolatedStore(t), isolatedStore(t)
+	post := blog.Post{ID: "trial", Title: "受入確認用の記事", Markdown: "本文", UpdatedAt: time.Now().UTC(), Version: 1}
+	if err := source.Create(ctx, post); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := source.ExportSnapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = target.RestoreSnapshot(ctx, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if err = target.ValidateRestore(ctx, snapshot); err == nil {
+		t.Fatal("restore accepted a target that already holds content")
+	}
+	if err = target.ClearRestoreTarget(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range restoreTargetTables {
+		var count int
+		if err = target.db.QueryRowContext(ctx, "SELECT count(*) FROM "+table).Scan(&count); err != nil || count != 0 {
+			t.Fatal(table, count, err)
+		}
+	}
+	if err = target.RestoreSnapshot(ctx, snapshot); err != nil {
+		t.Fatal("cleared target rejected the restore", err)
+	}
+	restored, err := target.GetAdmin(ctx, post.ID)
+	if err != nil || restored.Title != post.Title {
+		t.Fatal(restored, err)
+	}
+}

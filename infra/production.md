@@ -167,7 +167,7 @@ python3 scripts/aws/production_access.py > config/aws-production/access.template
 
 適用の順序は、権限上限の更新（[`scripts/aws/production_access.py`](../scripts/aws/production_access.py)。Lambdaのネットワークインターフェース、自分自身と中継の呼び出し、キャッシュ無効化、Auroraの管理者シークレットの読み取りを足した）→ `EnableOnDemand=true` → Auroraの初期化と2つの接続文字列の登録（`/course-k/blog-production/`の下）→ 残りのパラメータ、の順。新しい資材の種類を作る権限は操作者ロールにないため、スタックの更新は管理者ログインで行う。
 
-Auroraへの復元は`<Goイメージ> restore --backup-id <ID> --confirm-empty-target --new-database-host <Auroraのホスト名>`で行う。復元先は本来`_restore`か`_test`で終わる専用DBに限るが、新しいDBサーバーへ移すときは実際のDB（`blog`）へ入れる必要があるため、接続先のホスト名を一致させたときだけ許可する。復元先が空でなければ、復元の処理自体が拒否する。復元はアプリ用の利用者で行い、タスクのロールはバックアップの読み取りと画像バケットへの追加だけを持つ。
+Auroraへの復元は`<Goイメージ> restore --backup-id <ID> --confirm-empty-target --new-database-host <Auroraのホスト名>`で行う。復元先は本来`_restore`か`_test`で終わる専用DBに限るが、新しいDBサーバーへ移すときは実際のDB（`blog`）へ入れる必要があるため、接続先のホスト名を一致させたときだけ許可する。復元先が空でなければ、復元の処理自体が拒否する。復元はアプリ用の利用者で行い、タスクのロールはバックアップの読み取りと画像バケットへの追加だけを持つ。受入の試験記事が残ったAuroraへ切替日に復元し直すときは、同じタスクで先に`<Goイメージ> clear-restore-target --confirm-delete-content --new-database-host <Auroraのホスト名>`を実行する。記事・画像の記録・外部記事・作成要求・未完了の画像送信・セッション・ログインの途中状態を一つのトランザクションで消す。許可の条件は復元と同じで、画像の実体とバックアップの記録・実体は消さない。
 
 適用時には疎通監視の修正も反映される。監視は`/?page=1`の200を確かめていたが、このURLは`/`への308を返すため、2026-10-29から毎回失敗していた。対象を`/`へ直した。
 
@@ -216,6 +216,8 @@ Auroraへの復元は`<Goイメージ> restore --backup-id <ID> --confirm-empty-
 api backup
 # 移行済みの空DBと別画像保存先へ復元。IDは管理画面の保存済みID。
 api restore --backup-id BACKUP_ID --confirm-empty-target
+# 新しいDBサーバーへ復元し直す前に、そのDBの記事と付随する状態を消す。
+api clear-restore-target --confirm-delete-content --new-database-host HOST
 # ログインフローを含め、ローカルDBセッションを全失効。
 api revoke-sessions --confirm
 ```
