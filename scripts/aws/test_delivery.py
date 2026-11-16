@@ -90,6 +90,30 @@ class DeliveryTest(unittest.TestCase):
             with self.assertRaises(ReleaseError):
                 release.check_functions(images)
 
+    def test_pending_work_passes_invoke_arguments_as_options(self):
+        aws = MagicMock()
+        release = Release(aws, '123456789012', 'a' * 40)
+        release.functions = {GO: 'api', NODE: 'web'}
+
+        def invoke(service, action, *, extra=(), **kwargs):
+            self.assertNotIn('data', kwargs)
+            self.assertEqual(extra[:4], ['--function-name', 'api', '--payload', '{"work":"pending"}'])
+            with open(extra[-1], 'w') as stream:
+                stream.write('{"statusCode":200}')
+            return {'StatusCode': 200}
+
+        aws.call.side_effect = invoke
+        release.backup()
+
+        def failed(service, action, *, extra=(), **kwargs):
+            with open(extra[-1], 'w') as stream:
+                stream.write('{"statusCode":500}')
+            return {'StatusCode': 200}
+
+        aws.call.side_effect = failed
+        with self.assertRaisesRegex(ReleaseError, 'Pending work failed'):
+            release.backup()
+
     def test_pending_work_failure_prevents_production_change(self):
         release = Release(MagicMock(), '123456789012', 'a' * 40)
         release.preflight = MagicMock()
