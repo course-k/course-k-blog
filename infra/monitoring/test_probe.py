@@ -2,7 +2,7 @@ import io
 import json
 from pathlib import Path
 import unittest
-from probe import check
+from probe import check, probe_paths
 
 class Reply(io.BytesIO):
     status = 200
@@ -36,6 +36,21 @@ class ProbeTest(unittest.TestCase):
         check('https://example.test/', Opener())
         self.assertIn('https://example.test/', paths)
         self.assertFalse([p for p in paths if '?' in p])
+    def test_paths_can_leave_out_the_database_check(self):
+        # A database that pauses when idle must not be woken by every probe.
+        paths = []
+        class Opener:
+            def open(self, url, timeout):
+                paths.append(url)
+                return Reply(b'<html></html>', 'text/html') if url == 'https://example.test/' else Reply(b'{"ok":true}')
+        check('https://example.test', Opener(), ['/healthz', '/'])
+        self.assertEqual(paths, ['https://example.test/healthz', 'https://example.test/'])
+        self.assertEqual(probe_paths({'PROBE_PATHS': '/healthz,/'}), ['/healthz', '/'])
+        self.assertEqual(probe_paths({}), ['/healthz', '/api/readyz', '/'])
+        # A setting that would check nothing must not pass silently.
+        for empty in ('', ' , '):
+            with self.assertRaises(ValueError):
+                probe_paths({'PROBE_PATHS': empty})
     def test_failure_is_not_reported_as_success(self):
         for body in [b'{"ok":false}',b'<login>']:
             class Opener:

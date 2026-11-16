@@ -7,9 +7,18 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
 
-def check(base, opener):
+def probe_paths(env):
+    # A stack whose database pauses when idle leaves out the database check.
+    if 'PROBE_PATHS' not in env:
+        return ['/healthz', '/api/readyz', '/']
+    paths = [path.strip() for path in env['PROBE_PATHS'].split(',') if path.strip()]
+    if not paths:
+        raise ValueError('no probe paths')
+    return paths
+
+def check(base, opener, paths=('/healthz', '/api/readyz', '/')):
     # The first page is '/'; '/?page=1' redirects there and redirects are not followed.
-    for path in ['/healthz', '/api/readyz', '/']:
+    for path in paths:
         with opener.open(base.rstrip('/') + path, timeout=5) as response:
             if response.status != 200:
                 raise RuntimeError('probe status failure')
@@ -22,7 +31,7 @@ def check(base, opener):
 def handler(event, context):
     # The endpoint is configured by the stack, never supplied by a public event.
     try:
-        check(os.environ['ENDPOINT'], urllib.request.build_opener(NoRedirect))
+        check(os.environ['ENDPOINT'], urllib.request.build_opener(NoRedirect), probe_paths(os.environ))
     except Exception:
         print('external probe failed')
         raise RuntimeError('external probe failed') from None

@@ -158,7 +158,7 @@ python3 scripts/aws/production_access.py > config/aws-production/access.template
 |---|---|
 | `EnableOnDemand=true` | 新しいデュアルスタックのサブネットとIPv6の出口、S3のゲートウェイエンドポイント、Auroraのクラスタとインスタンス、読者向けファイルのバケット、Aurora向けの初期化タスク |
 | `OnDemandMigrationUrlParameterArn` | Aurora向けの移行タスク |
-| `OnDemandDatabaseUrlParameterArn` | GoとNodeのLambda、取得の中継、CloudFront、1日1回の定期呼び出し |
+| `OnDemandDatabaseUrlParameterArn` | GoとNodeのLambda、取得の中継、CloudFront、1日1回の定期呼び出し、CloudFront向けの疎通監視（公開ページと`/healthz`だけを見る。DBへ接続する`/api/readyz`は停止中のDBを15分ごとに起こすため対象にしない） |
 | 上の2つの両方 | Auroraへバックアップを復元する一時タスク |
 | `OnDemandOrigin`・`OnDemandDistributionId` | 新構成が自分のホスト名で応答するための設定（GoのOrigin照合、キャッシュ無効化の権限、Cognitoのコールバック、画像バケットのCORS）。CloudFrontの作成後に、その出力を渡して更新する |
 | `OnDemandCertificateArn` | 切替時に設定する。ブログのホスト名をCloudFrontへ割り当てる |

@@ -104,8 +104,12 @@ class OnDemandTemplateTest(unittest.TestCase):
         self.assertEqual(len(by_action['lambda:InvokeFunctionUrl']), 2)
         for permission in by_action['lambda:InvokeFunctionUrl']:
             self.assertEqual((permission['Principal'], permission['SourceArn']), (EDGE, DISTRIBUTION_ARN))
-        (scheduled,) = by_action['lambda:InvokeFunction']
-        self.assertEqual((scheduled['Principal'], scheduled['SourceArn']), ('events.amazonaws.com', {'Fn::GetAtt': ['OnDemandDailyWork', 'Arn']}))
+        scheduled = {json.dumps(p['FunctionName']): p for p in by_action['lambda:InvokeFunction']}
+        self.assertEqual(len(scheduled), 2)
+        work = scheduled[json.dumps({'Ref': 'OnDemandApiFunction'})]
+        self.assertEqual((work['Principal'], work['SourceArn']), ('events.amazonaws.com', {'Fn::GetAtt': ['OnDemandDailyWork', 'Arn']}))
+        probe = scheduled[json.dumps({'Ref': 'OnDemandProbeFunction'})]
+        self.assertEqual((probe['Principal'], probe['SourceArn']), ('events.amazonaws.com', {'Fn::GetAtt': ['OnDemandProbeSchedule', 'Arn']}))
         self.assertEqual(set(by_action), {'lambda:InvokeFunctionUrl', 'lambda:InvokeFunction'})
         # The relay is invoked by the API only; it has no URL and no trigger.
         self.assertFalse([p for p in permissions if p['FunctionName'] == {'Ref': 'OnDemandRelayFunction'}])
@@ -197,7 +201,7 @@ class OnDemandTemplateTest(unittest.TestCase):
         boundary = production_access_template()['Resources']['RuntimeBoundary']['Properties']['PolicyDocument']['Statement']
         allowed = {action for statement in boundary for action in statement['Action']}
         roles = [name for name, r in self.added.items() if r['Type'] == 'AWS::IAM::Role']
-        self.assertEqual(len(roles), 8)
+        self.assertEqual(len(roles), 9)
         for name in roles:
             self.assertEqual(self.resources[name]['Properties']['PermissionsBoundary'], {'Ref': 'RuntimeBoundaryArn'}, name)
             for statement in statements(self.resources[name]) if 'Policies' in self.resources[name]['Properties'] else []:
@@ -206,6 +210,22 @@ class OnDemandTemplateTest(unittest.TestCase):
                     self.assertIn(action, allowed, f'{name}: {action}')
         scoped = {json.dumps(s['Resource']) for s in boundary if s['Action'] in (['lambda:InvokeFunction'], ['cloudfront:CreateInvalidation'])}
         self.assertFalse([r for r in scoped if r == '"*"'])
+
+    def test_probe_watches_the_distribution_without_waking_the_database(self):
+        function = self.resources['OnDemandProbeFunction']['Properties']
+        env = function['Environment']['Variables']
+        self.assertEqual(env['ENDPOINT'], {'Fn::Sub': 'https://${OnDemandDistribution.DomainName}'})
+        self.assertEqual(env['PROBE_PATHS'], '/healthz,/')
+        self.assertNotIn('readyz', json.dumps(env))
+        self.assertEqual(function['Code'], self.resources['ProbeFunction']['Properties']['Code'])
+        self.assertEqual(function['Role'], {'Fn::GetAtt': ['OnDemandProbeRole', 'Arn']})
+        for name in ('OnDemandProbeErrorAlarm', 'OnDemandProbeInvocationAlarm'):
+            alarm = self.resources[name]['Properties']
+            self.assertEqual(alarm['Dimensions'], [{'Name': 'FunctionName', 'Value': {'Ref': 'OnDemandProbeFunction'}}], name)
+            self.assertEqual(alarm['AlarmActions'], [{'Ref': 'AlarmTopic'}], name)
+        self.assertEqual(self.resources['OnDemandProbeSchedule']['Properties']['Targets'][0]['Arn'], {'Fn::GetAtt': ['OnDemandProbeFunction', 'Arn']})
+        # The running probe keeps its own target and settings.
+        self.assertEqual(self.resources['ProbeFunction'], self.before['Resources']['ProbeFunction'])
 
     def test_relay_runs_the_tested_source(self):
         embedded = self.resources['OnDemandRelayFunction']['Properties']['Code']['ZipFile']

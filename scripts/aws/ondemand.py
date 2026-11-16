@@ -464,6 +464,35 @@ def delivery():
     }
 
 
+def monitoring(resources):
+    """The running probe, pointed at the distribution and without the database check.
+
+    The running probe asks /api/readyz, which connects to the database. Here
+    that would wake a paused database every fifteen minutes.
+    """
+    names = {'ProbeRole': 'OnDemandProbeRole', 'ProbeFunction': 'OnDemandProbeFunction', 'ProbeSchedule': 'OnDemandProbeSchedule',
+             'ProbePermission': 'OnDemandProbePermission', 'ProbeErrorAlarm': 'OnDemandProbeErrorAlarm',
+             'ProbeInvocationAlarm': 'OnDemandProbeInvocationAlarm'}
+
+    def renamed(value):
+        if isinstance(value, dict):
+            if set(value) == {'Ref'} and value['Ref'] in names:
+                return ref(names[value['Ref']])
+            if set(value) == {'Fn::GetAtt'} and value['Fn::GetAtt'][0] in names:
+                return att(names[value['Fn::GetAtt'][0]], value['Fn::GetAtt'][1])
+            return {key: renamed(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [renamed(item) for item in value]
+        return value
+
+    added = {new: renamed(copy.deepcopy(resources[old])) for old, new in names.items()}
+    for resource in added.values():
+        resource['Condition'] = 'OnDemandRuntime'
+    added['OnDemandProbeFunction']['Properties']['Environment'] = {'Variables': {
+        'ENDPOINT': sub('https://${OnDemandDistribution.DomainName}'), 'PROBE_PATHS': '/healthz,/'}}
+    return added
+
+
 def add_on_demand(template):
     """Add the on-demand side to the production template in place."""
     template['Parameters'].update(parameters())
@@ -477,6 +506,7 @@ def add_on_demand(template):
     added.update(database_tools(resources))
     added.update(functions())
     added.update(delivery())
+    added.update(monitoring(resources))
     clash = set(added) & set(resources)
     if clash:
         raise ValueError(f'On-demand resources collide with existing ones: {sorted(clash)}')
