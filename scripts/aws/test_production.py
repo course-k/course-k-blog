@@ -122,8 +122,11 @@ class ProductionTemplateTest(unittest.TestCase):
         self.assertEqual(integrations[0]['IntegrationUri'], {'Fn::GetAtt': ['ApplicationDiscovery', 'Arn']})
         assertions = self.template['Rules']['RuntimeRequiresImages']['Assertions']
         self.assertEqual([a['Assert']['Fn::Not'][0]['Fn::Equals'][0] for a in assertions], [{'Ref': n} for n in ['NodeImage', 'GoImage', 'RouterImage']])
-        alarms = [r for r in self.resources.values() if r['Type'] == 'AWS::CloudWatch::Alarm']
-        self.assertEqual(len(alarms), 7)
+        alarms = {name for name, r in self.resources.items() if r['Type'] == 'AWS::CloudWatch::Alarm'}
+        on_demand = {name for name in alarms if name.startswith('OnDemand')}
+        self.assertEqual(len(alarms - on_demand), 7)
+        # The on-demand side adds only its own probe alarms.
+        self.assertEqual(on_demand, {'OnDemandProbeErrorAlarm', 'OnDemandProbeInvocationAlarm'})
         # Removed logical IDs must not survive in references, roles or alarm dimensions.
         encoded = json.dumps(self.template)
         for obsolete in ['NodeTask', 'GoTask', 'NodeService', 'GoService', 'NodeSg', 'GoSg', 'NodeDiscovery', 'GoDiscovery', 'NodeIntegration', 'GoIntegration']:
