@@ -177,6 +177,14 @@ Auroraへの復元は`<Goイメージ> restore --backup-id <ID> --confirm-empty-
 
 生成した定義は51,200バイトを超えるので、S3経由（TemplateURL）で渡す。定義の不変条件は`scripts/aws/test_ondemand.py`で確認する：既定では何も作らない、稼働中の資材への変更は受入用ホスト名の2か所だけ、関数URLは署名つきでこのCloudFrontからだけ呼べる、読者向けバケットはこのCloudFrontだけが読める、DBは非公開でAPIと一時タスクだけが届く、実行ロールの権限は権限上限に収まる。
 
+## 旧構成の撤去
+
+切替（2026-11-16）の後、本番スタックへ当てる定義は[`scripts/aws/retire.py`](../scripts/aws/retire.py)の`current_template()`とする。`backfill_template()`の出力から、Fargateのサービスだけが使っていた資材を外す：ECSサービスとタスク定義、API Gateway・VPC Link・Cloud Map、MySQLのRDSインスタンスとそのサブネット・セキュリティグループ・パラメータグループ、旧構成の疎通監視、それらの上に作った一時操作（別RDSへの復元、起動失敗版からの戻し、外部記事の補完）。残す資材の定義は適用済みのものと同じで、変更は削除だけになる。不変条件は`scripts/aws/test_retire.py`で確認する。
+
+適用の順序は、`EnableRuntime=false`でサービスを止める → RDSインスタンスの削除保護を外す → `current_template()`の変更セットを確かめて実行、の順。RDSは削除方針（Snapshot）により最終スナップショットを残す。画像・バックアップのバケット、Cognito、ECRは残る。保持方針（Retain）のロググループとリポジトリ（RouterRepository等）は定義に残す。
+
+一時タスク（Auroraの初期化・移行・復元）は、新構成のサブネット（`OnDemandSubnet1`・`OnDemandSubnet2`）で、セキュリティグループ`ApplicationSg`と公開IPv4を付けて実行する。このサブネットはIPv4をインターネットゲートウェイへ向けているため、ECRとSSMへ届く。
+
 ## 現在の配置結果
 
 2026-10-19、mainのdd049adと一致する基盤変更セットを費用承認後に実行し、CREATE_COMPLETEを確認した。RDSは暗号化・非公開・7日バックアップ・削除保護、両S3は公開アクセス全面ブロック・SSE-S3・版管理が有効。DB初期化とMySQLの001_initial.sqlの移行は別々の単発タスクで終了コード0を確認。通常用と移行用の接続値はSSM SecureStringに分離し、Gitやコマンド引数へ秘密値を保存していない。
