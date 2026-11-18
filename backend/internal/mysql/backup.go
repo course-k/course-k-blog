@@ -169,7 +169,7 @@ func (s *Store) ForgetBackup(ctx context.Context, id string) error {
 // tables or columns outside the snapshot. Older archives therefore restore into
 // the current schema; an archive from a newer schema never does.
 func restorableSchema(snapshot, current int) bool {
-	return snapshot >= 1 && snapshot <= current && current <= 2
+	return snapshot >= 1 && snapshot <= current && current <= 3
 }
 
 type restoreQuery interface {
