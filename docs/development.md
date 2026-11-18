@@ -74,7 +74,7 @@ docker stop course-k-blog-mysql-check
 ### TLS専用試験
 
 実DBの通常接続とTLS検証は別に実行する。通常の全体試験ではTLS専用試験をSKIPし、CIでは以下の独立したTLS環境で検証する。
-`node scripts/test-mysql-tls.mjs` が一時CA・localhost証明書・専用MySQLを用意し、信頼済み接続の成功とホスト名違い・CA違いの拒否を確認して撤去する。Docker、Go、OpenSSLが必要。RDS本番でのTLS接続確認は別に行う。
+`node scripts/test-mysql-tls.mjs` が一時CA・localhost証明書・専用MySQLを用意し、信頼済み接続の成功とホスト名違い・CA違いの拒否を確認して撤去する。Docker、Go、OpenSSLが必要。本番（Aurora）でのTLS接続は、切替時の復元とアプリの接続で確認した。
 
 ### ブラウザの選択と通し確認
 
@@ -102,7 +102,7 @@ node scripts/test-local-e2e.mjs
 TEST_LIVE_EXTERNAL=1 go -C backend test -count=1 -v ./internal/external -run TestLiveOwnerMetadata
 ```
 
-本番のタスク内接続を模した検証は `node scripts/test-local-e2e.mjs --single-task`。Nginx/Node/Goがネットワークを共有し、localhostで接続する。稼働中の本番と同じく読者向けファイルを使わず、NodeがGoへ問い合わせる経路を確認する。通常の通し試験は読者向けファイルの経路を確認する。通常のCaddy構成もCIで検証する。共有CPU・IAM・ECSによる更新を再現する試験ではない。
+`node scripts/test-local-e2e.mjs --single-task` は、読者向けファイルを使わずNodeがGoへ問い合わせる経路（Nginx/Node/Goがネットワークを共有）を確認する。本番はこの経路を使わず、通常の通し試験が本番と同じ読者向けファイルの経路を確認する。
 
 ## PRで確認する範囲
 

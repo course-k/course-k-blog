@@ -10,7 +10,7 @@
 | 今どこまでできていて、何が残るか | [公開までの進捗台帳](blog-publication-roadmap-2026-10-18.md) |
 | コードと文書をどう分け、何をGitへ保存するか | [リポジトリ構成と保存方針](repository-organization.md) |
 | 本番の認証・保存・回復・配置と費用 | [本番配置と運用](../infra/production.md) |
-| 常駐をやめる移行先の構成・費用・作業順 | [移行設計](future-static-delivery.md)（移行を決定済み・実装は未着手） |
+| mainからの反映とスキーマ変更 | [本番への反映](production-release.md) |
 | 旧検証環境の設定・配置・撤去の手順 | [検証環境の手順](../infra/README.md) |
 | ローカル起動・検証・変更の手順 | [開発ガイド](development.md) |
 

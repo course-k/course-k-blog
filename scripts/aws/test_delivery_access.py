@@ -91,12 +91,15 @@ class DeliveryAccessTest(unittest.TestCase):
             self.assertTrue(forwarded(self.by_sid[sid]), sid)
 
     def test_special_release_permissions_are_bounded(self):
-        image = self.by_sid['ImageSettingsThroughStack']
-        self.assertNotIn('s3:GetObject', image['Action'])
-        self.assertEqual({a for a in image['Action'] if a.startswith('s3:Put')}, {'s3:PutBucketCORS', 's3:PutLifecycleConfiguration'})
-        self.assertTrue(forwarded(image))
+        for sid in ('RegisterCandidateMigration', 'RunMigration'):
+            statement = self.by_sid[sid]
+            self.assertTrue(json.dumps(statement['Resource']).endswith('on-demand-migration:*"}'), sid)
+        self.assertIn('ecs:cluster', self.by_sid['RunMigration']['Condition']['ArnLike'])
+        self.assertEqual(self.by_sid['ReadMigrationDefinition']['Action'], ['ecs:DescribeTaskDefinition'])
         state = self.by_sid['AppliedSchemaState']
         self.assertTrue(json.dumps(state['Resource']).endswith('applied-schema-digest"}'))
+        actions = {a for s in self.statements for a in s['Action']}
+        self.assertFalse([a for a in actions if a.startswith('s3:')])
         extra = self.template['Resources']['ReleasePolicy']['Properties']['PolicyDocument']
         self.assertLessEqual(len(json.dumps(extra, separators=(',', ':'))), 6144)
 
