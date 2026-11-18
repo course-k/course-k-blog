@@ -22,24 +22,22 @@ React / TypeScriptで公開画面と編集画面を作り、TanStack StartがSSR
 
 ```mermaid
 flowchart LR
-    browser[ブラウザ] --> entry[API Gateway / VPC Link / Cloud Map]
-    entry --> nginx
-    subgraph task[ECS Fargate：1タスク]
-        nginx[Nginx] --> node[Node.js / TanStack Start]
-        nginx --> api[Go API]
-        node --> api
-    end
-    api --> db[(RDS MySQL)]
+    browser[ブラウザ] --> cf[CloudFront]
+    cf -->|公開ページ| node[Node.js / TanStack Start：Lambda]
+    cf -->|公開画像・公開データ| pub[(S3：公開用)]
+    cf -->|/api/*| api[Go API：Lambda]
+    node --> pub
+    api --> db[(Aurora MySQL：自動停止)]
+    api --> pub
     api --> storage[(S3：画像・バックアップ)]
 ```
 
-本番はAWSオレゴンで稼働しています。Node.js・Go・Nginxは別コンテナとしてビルドし、同じFargateタスクで配備します。DBとS3バケットは非公開です。本番の本人認証にはCognitoと認証アプリのMFAを使います。
+本番はAWSオレゴンで稼働しています。Node.jsとGoはそれぞれLambdaで動き、CloudFrontが公開ページをキャッシュします。読者の閲覧はDBに触れず、DBは本人の管理操作のときだけ起動します（無操作30分で停止）。DBとS3バケットは非公開です。本番の本人認証にはCognitoと認証アプリのMFAを使います。
 
 | 選択 | 重視したこと・受け入れた制約 |
 |---|---|
 | ReactとTanStack Startで画面を統一 | Reactへの習熟と編集画面の状態管理を活かし、公開画面も同じ部品で改良できることを優先。GoのHTMLテンプレートでも実現できますが、今回はNode.jsとGoの運用を受け入れています |
-| ECS FargateとRDS MySQL | AWSのサービスの幅と実務学習、ホストOSやDB基盤の保守負担を重視。MySQLは本人の習熟を優先しています。実行資源の常時課金とAWS設定の管理は残ります |
-| 3コンテナを1タスクに配置 | 小規模な個人運用での費用と管理の簡潔さを優先。更新・停止・資源・タスクIAMを共有し、各コンテナを独立して拡張できない制約があります |
+| CloudFront・LambdaとAurora MySQL（自動停止） | 常駐をやめて月額を下げることを優先（公開当初のECS Fargate・RDSは月約35 USDで、2026-11-16に移行）。MySQLは本人の習熟を優先しています。DBが停止中は最初の管理操作が再開を待ちます |
 
 比較した選択肢と判断の詳細は[設計書](docs/current-design.md)、配色・文字組み・操作配置の理由は[UI設計](docs/ui-ux-decisions-current.md)にまとめています。
 
@@ -53,7 +51,7 @@ flowchart LR
 |---|---|
 | [frontend/](frontend/) | Reactの画面、SSR、Markdown表示、編集操作とテスト |
 | [backend/](backend/) | Go API、認証、記事・画像・外部同期、MySQLとテスト |
-| [infra/](infra/) | AWS構成、Nginx、DB初期化、監視 |
+| [infra/](infra/) | AWS構成、DB初期化、監視、取得の中継 |
 | [scripts/](scripts/) | 開発・検証・構成生成の補助 |
 | [docs/](docs/) | 設計・UI・検証結果・開発手順 |
 

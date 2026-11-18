@@ -1,8 +1,8 @@
 # 独自ブログ：現行設計書
 
-最終更新：2026-10-31。現行の要件、採用構成、比較と選定理由をまとめる。提案・未決と記した項目は採用済みではない。
+最終更新：2026-11-18。現行の要件、採用構成、比較と選定理由をまとめる。提案・未決と記した項目は採用済みではない。
 
-費用を下げるため、CloudFront・Lambda・自動停止するAuroraへの移行を本人が決定した（2026-11-11）。移行先の構成と作業順は[移行設計](future-static-delivery.md)にまとめる。実装と本番切替は未着手で、本書は稼働中のFargate構成を記述する。
+本番はCloudFront・Lambda・自動停止するAurora MySQLで動く（2026-11-16に切替。第5節）。
 
 本番の操作者ロールと実行ロールの権限上限は、管理者用の別スタックで準備する。アプリ配置側はその上限ARNを受け取り、操作者自身が上限を作成・拡張できる権限を与えない。[本番手順](../infra/production.md)のアクセス設定は本人承認後に適用済み。アプリの実配置と受入状況は公開台帳で管理する。
 
@@ -26,8 +26,8 @@
 | R03 | 外部記事の登録 | 本人の判断（2026-10-31）で定期同期を停止し、設定画面の媒体別アイコンによる手動同期だけにする。取得済みの記事は保持する |
 | R04 | SSRで本文HTMLを取得可能にする | JavaScriptを実行せず公開本文を取得できること |
 | R05 | React／TypeScript、TanStack Router、Goを使用 | 現在はTanStack StartによるSSRとGo API |
-| R06 | 常時稼働。意図的なアイドル停止を避ける | アプリ全体を通常1タスク維持。更新時は一時的に新旧タスクが並行。容量の最終値は本番受入で判断 |
-| R07 | AWSを軸に、実行基盤はECS＋Fargate | 決定済み。最安を意味しない |
+| R06 | 閲覧は常時速く保つ。保存・更新・管理操作は待ち時間を許容（2026-11-11に常時稼働から変更） | 閲覧はCloudFrontのキャッシュとNodeのLambdaで返し、DBに触れない。DBは無操作30分で停止し、管理操作が再開を待つ |
+| R07 | AWSを軸に、費用を月5 USD前後へ下げる（2026-11-11にECS＋Fargateから変更） | CloudFront・Lambda・Aurora Serverless v2（自動停止）。第5節 |
 | R08 | 変更内容に応じたバックアップと復元 | 変更時の取得と別環境への復元を対象とし、毎日の自前フルダンプを既定にしない |
 | R09 | 個人GitHubでソースコードを公開して管理 | course-k/course-k-blog。変更はブランチとPR |
 | R10 | UI/UXを本人と検討し、選択理由を記録 | 一覧・本文の文字組み・目次・管理配置・外部別タブ・配色方向を採用済み。詳細は最新の採用事項を参照 |
@@ -121,84 +121,113 @@ SSRのheadにOGPとTwitterカードのメタ情報を出す。トップ用は`/b
 
 TanStack Routerは本人の学習対象・選好として採用し、そのSSR実行にStartを用いる。React RouterやNext.jsより普遍的に優れるという判断ではない。TypeScriptは画面側の型確認、GoはAPIと業務処理の学習・責務分離を目的とする。
 
-### 基盤：AWS / ECS Fargate / RDS MySQL
+### 基盤：AWS / CloudFront / Lambda / Aurora MySQL
 
 AWSはブログ以外のWebサービス、情報収集・LINE連携・モバイル向けAPI等を同じベンダーへ展開できる幅と、実務学習へのつながりを重視して採用する。Railway等の簡便さより、提供サービスの幅と構成の選択余地を優先した。将来の全要件に無変更で対応できる保証ではない。
 
-| 比較案 | 今回の選定理由と受け入れる負担 |
-|---|---|
-| EC2 / Lightsail上の自営 | 低い固定費を狙えるが、ホストOS・更新・障害対応を自分で担う |
-| ECS on EC2 | コンテナ配置はECSで管理できるが、EC2ホストの容量と保守が残る |
-| ECS Fargate（採用） | コンテナの配置・更新・必要数の維持をECS、実行ホストの管理をFargateへ委ねる。常時実行の資源課金とAWS設定の管理を受け入れる。最安の選択ではない |
-| MySQL自営 | 費用・設定の裁量は大きいが、DB更新・障害復旧・保存基盤を自分で管理する |
-| RDS MySQL（採用） | 通常のリレーショナルDB構成を保ち、基盤保守を委ねる。権限・SQL移行・アプリ整合性・復元確認は自分で担う |
-
-MySQL 8.4 LTSを採用する。記事・下書き・公開版・外部記事・画像参照を扱う要件はMySQLとPostgreSQLの双方で実現でき、比較したオレゴンのRDS db.t4g.micro通常料金は同額だった。PostgreSQL固有の機能を必要とする要件はなく、本人のMySQL習熟によって実装理解・保守・障害調査の負担を抑えることを優先する。DB基盤保守をRDSへ委ねる判断と、DBエンジンをMySQLにする判断は分ける。MySQLの普遍的な性能優位を主張する選択ではない。
-
-DB接続はGo標準のdatabase/sqlとgo-sql-driver/mysqlを使う。UTC・マイクロ秒精度・utf8mb4の大文字小文字を区別する照合順序を揃える。更新と更新後の読み取り、画像参照の更新を同じトランザクションに置き、楽観的な版管理を維持する。DDLの暗黙コミットを踏まえ、移行は専用接続の名前付きロックで直列化し、各DDLを再実行可能にする。部分失敗を全体ロールバック済みとは扱わない。
-
-MySQLのスナップショットは明示した列だけをJSONへ保存し、生成列を除外し、エンジン名とスキーマ版を照合する。復元は専用の空DBで行う。エンジン名を含まない旧PostgreSQLのアプリバックアップやデータボリュームをMySQLへ直接流用しない。旧ローカルDBは削除しない。MySQLは新規の本番DBへ配置し、既存AWS DBの置換や旧DBの消去は行わない。
-
-### AWSの入口と配置：1サービス・1タスク
-
-```text
-ブラウザ → HTTPS / API Gateway HTTP API → VPC Link → Cloud Map
-  → アプリタスク（公開IPv4は通常1個、合計0.5vCPU / 2GiB）
-      Nginx :8080 ├─ /api・/api/* → Go :8081 → 非公開RDS / 非公開S3
-                  └─ その他      → Node :3000 → Go :8081（SSR取得）
-```
-
-Node.js・Go・Nginxは別イメージ・別コンテナのまま、一つのECSサービスの同じFargateタスクに配置する。通常DesiredCount=1を維持し、意図的なアイドル停止は行わない。NginxとNode/Go間、SSRからGoへの接続は同じタスク内のlocalhostを使う。アプリの入り口はNginxだけで、VPC LinkのSGから8080への受信だけを許可する。Node/Goはloopbackにbindし、3000/8081へのVPC内受信規則は設けない。
-
-**採用理由：** NodeとGoは役割が異なるため、独立したタスクへの分離を比較した。一方、初期の小規模な個人運用では個別の更新・増減より、常時稼働費用と運用の簡潔さを優先した。ローカルの資源制限下で表示・画像処理・保存・バックアップを確認し、その試験条件では統合を妨げる問題が見られなかったため、1タスクを採用する。本番では配置・一覧の1req/sでの負荷・別RDSへの復元・正常定義への復帰を確認した。条件と未確認範囲は公開台帳を参照し、全操作・全負荷での保証とは扱わない。
+公開当初はECS Fargateの常駐タスクとRDS MySQLで運用したが、請求は月約35 USD（税別）のペースで、本人が許容できないと判断した（2026-11-11）。費用の84％は常駐するタスクとDBインスタンスの時間課金で、一覧負荷試験のCPU平均は2.81％だった。処理量ではなく常駐時間が費用を決めていたため、常駐をやめる構成へ移した（2026-11-16に切替、旧構成は撤去済み）。
 
 | 比較案 | 今回の判断 |
 |---|---|
-| NodeとGoを別タスクにする | 個別更新・増減・障害影響・AWS権限の分離が利点。今回はその利点より、IPv4と予約CPUの費用・運用の簡潔さを優先する |
-| Node / Go / Nginxを1タスクにする（採用） | 役割はコンテナで分けつつ、更新・停止・増減・タスクIAM・ネットワークを共有する。通常IPv4は1個。独立した拡張・権限境界が必要になったら分離を再検討する |
-| ALBからNode / Goへ転送 | 有力な標準構成だが、今回はALBの時間・LCU等の費用を追加しない |
-| NodeまたはGoに相手への転送を実装 | 専用プロキシは省けるが、画面または業務APIへCookie・ヘッダー・接続切断等の転送責務を追加する |
-| 独自処理で同じタスクの2ポートをCloud Mapへ登録 | ECSの自動登録とは別に、起動・停止・入替に追従する登録処理の保守が増えるため採らない |
+| CloudFront・Lambda・自動停止するAurora（採用） | 閲覧はCloudFrontとNodeのLambdaで返し、DBに触れるのは本人の管理操作だけにする。DBは無操作30分で停止し、再開を待つ間は管理操作が遅れる。本人は閲覧の速さを保ち、保存・更新・管理操作の待ち時間を許容した |
+| ECS Fargate・RDS MySQLの継続 | 常駐の時間課金が残り、目標額（5 USD前後）に届かない |
+| ISR、またはFargateを残したままのCDNキャッシュ | 費用は常駐時間で決まるため、常駐サーバーを前提とする方式は範囲外 |
+| 全ページを事前生成してS3へ置くSSG | 生成ジョブと「保存済みだが未反映」の状態管理が要る。NodeのLambdaとキャッシュで閲覧時のDB接続をなくせるため、追加しない。キャッシュがないときの応答時間が問題になった場合に再検討する |
+| RDS Data API経由の接続 | 応答が1MiBまでで、全記事の本文を返す管理一覧やバックアップの取得が上限に当たる。ローカルとCIの実MySQL試験とも経路が分かれるため、標準のMySQL接続を維持する（[Data APIの制限](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.limitations.html)） |
+| DynamoDB | 本人がMySQL互換の維持を選んだ |
+| サーバー1台へのCompose配置 | OSとDBの保守を自分で持たない方針を維持する |
+| NAT Gateway・NATインスタンス | 時間課金と公開IPv4が加わり、目標額に届かない |
 
-ECSの1サービスに紐づけられるサービスレジストリは1つで、ポートも一つの組で登録する。入口はCloud MapへNginxの8080を登録し、API Gatewayから1つの統合先へ転送する。Nginxを使う理由は、アプリへ独自の転送実装を持ち込まず、専用プロキシでパス・Cookie・ストリーミングを取り次ぐため。ローカルで使っているCaddyでも実現できるが、今回の本番はHTTP転送だけのNginxを使用し、自動TLS等は不要とする。別の常駐タスク・ALB・NATは追加しない。
+MySQL互換を維持する。記事・下書き・公開版・外部記事・画像参照を扱う要件はMySQLとPostgreSQLの双方で実現でき、PostgreSQL固有の機能を必要とする要件はなく、本人のMySQL習熟によって実装理解・保守・障害調査の負担を抑えることを優先した。DBはAurora MySQL 3（MySQL 8.0互換、作成時の既定3.10.3）のServerless v2、最小0・最大1 ACU、単一インスタンス。ローカルとCIの実DB試験はMySQL 8.4と8.0で行う。MySQLの普遍的な性能優位を主張する選択ではない。
 
-**受け入れる制約：** いずれかの必須コンテナが停止するとタスク全体を置き換える。CPU・メモリの競合と一つの障害範囲を共有する。Goだけに必要なS3アクセス権も、タスクIAMを介してNode/Nginxから利用可能になる。DB接続値はGoコンテナだけへ渡すが、それをコンテナ間の完全なセキュリティ境界とは扱わない。通常1タスク・RDS Single-AZは高可用構成ではない。
+DB接続はGo標準のdatabase/sqlとgo-sql-driver/mysqlを使う。UTC・マイクロ秒精度・utf8mb4の大文字小文字を区別する照合順序を揃える。更新と更新後の読み取り、画像参照の更新を同じトランザクションに置き、楽観的な版管理を維持する。DDLの暗黙コミットを踏まえ、移行は専用接続の名前付きロックで直列化し、各DDLを再実行可能にする。部分失敗を全体ロールバック済みとは扱わない。
 
-各コンテナを必須かつヘルスチェック対象とし、NginxはNode/Goの正常性を確認してから起動する。CPUの初期比率はNode:Go:Nginx=300:150:30（CPU units）で、競合時の相対的な配分であり、固定の個別上限ではない。メモリは合計2GiBとし、各コンテナにsoft reservationを置く。サービス全体のCPU/メモリアラームを用い、同じ指標を二重に監視しない。
+MySQLのスナップショットは明示した列だけをJSONへ保存し、生成列を除外し、エンジン名とスキーマ版を照合する。復元は空のDBで行う（新しいDBサーバーへ移すときは、そのホスト名を明示した場合だけ実際のDBへ入れる）。
 
-Nginxは非root・権限追加なし・rootファイルシステム読み取り専用で、PID等はタスクとともに破棄する一時ボリュームへ保存する。再試行による書き込みの重複やSSRのバッファリングを避ける。認証コード等をログへ残さないよう、アクセスログはメソッド・状態・所要時間だけとし、URLを含み得るNginxの詳細エラーログは無効にする。コンポーネントのログ・正常性と入口の5xx監視で障害を検知する。
+### AWSの入口と配置
 
-HTTP APIの時間・送信サイズ等の制約が要件に合わなくなればALB等へ見直す。Nginxを追加しても入口の制約は消えない。画像本体はAPI Gatewayを通さず、署名付きPOSTで非公開S3の一時領域へ送り、Goが検査・正規化してから登録する（第9節）。
+```mermaid
+flowchart LR
+    reader[読者] --> cf[CloudFront]
+    owner[本人] --> cf
+    cf -->|公開ページ・OGP| node[Node Lambda：SSR]
+    cf -->|公開画像・公開データ| pub[(S3：公開用)]
+    cf -->|/api/*| go[Go Lambda：VPC内]
+    node -->|/data/* をCloudFront経由| pub
+    go --> db[(Aurora MySQL：自動停止)]
+    go --> pub
+    go --> media[(S3：画像・バックアップ)]
+    go -->|IPv4専用の媒体だけ| fetch[取得用Lambda：VPC外]
+```
 
-現行の生成処理は[本番定義](../scripts/aws/production.py)と[1タスクへの変換](../scripts/aws/single_task.py)、転送設定は[Nginx設定](../infra/router/nginx.conf)、運用は[本番手順](../infra/production.md)を参照。旧検証テンプレートの2サービス構成は検証用として区別し、本番の採用構成と混同しない。
+| 役割 | 配置 | 動くとき |
+|---|---|---|
+| 入口・キャッシュ | CloudFront。`blog.course-k.com`とus-east-1のACM証明書。XServer DomainのCNAMEでCloudFrontへ向ける | 常時 |
+| 公開ページのHTML・記事OGP・JS・CSS・題字等 | NodeのLambda（VPC外）。SSRサーバーをLambda Web Adapterで動かし、記事データは公開用S3のJSONを読む | CloudFrontにキャッシュがないとき |
+| 公開画像、公開データJSON | 非公開S3をCloudFrontのアクセス制御で配信 | 常時 |
+| 認証・記事の保存と公開・画像登録・外部同期・バックアップ | GoのLambda（VPC内）。HTTPサーバーをLambda Web Adapterで動かす | 管理操作のとき、1日1回の定期呼び出し |
+| 本文・下書き・公開版・セッション等 | Aurora MySQL Serverless v2 | 管理操作のとき。無操作30分で停止 |
+| note・Wantedlyの取得 | 取得用Lambda（VPC外、権限なし）。許可した3ページだけを代理取得 | 本人が同期を要求したとき |
+| DBの初期化・移行・復元 | 単発のFargateタスク（ECSクラスタのみで常駐サービスなし） | 管理者が実行したとき |
 
-根拠：[ECSのサービスレジストリ制約](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-ecs-service-serviceregistry.html)、[タスクIAM](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html)、[Fargateの定義・依存関係](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html)、[Nginx転送仕様](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)。
+2つの関数URLは署名つき（IAM）で、このCloudFrontからだけ呼べる。公開用S3もこのCloudFrontだけが読める。
 
-### 地域・容量
+#### 読者の経路：CloudFrontのキャッシュとNodeのLambda
 
-オレゴン（us-west-2）を採用する。地域選定時の同条件比較では、米国東部候補と同程度の費用で、東京AWS発の公開遅延データはオレゴンが短めだったため、費用と通信待ち時間のバランスを重視した。これは家庭・モバイル回線の実測でも現在価格の保証でもない。日本近傍の低遅延を最優先するなら東京等が比較対象となる。
+公開ページはCloudFrontが1日キャッシュする。記事の公開・更新・非公開化・外部同期のときに、Goが読者向けファイルを書き出し、CloudFrontのキャッシュを無効化する。DBが停止していても、未キャッシュの公開ページは表示できる（2026-11-16に本番で確認）。
 
-本番の開始値は、Node/Go/Nginxを共有する0.5vCPU/2GiBの1タスク、Linux ARM64。1vCPU/2GiBは増量候補として比較した。RDSはSingle-AZ db.t4g.micro / gp3 20GiBを検証値とする。本番受入の開始見積もりは[運用手順](../infra/production.md)に記載し、実測と許容月額で確定する。
+- Goは公開内容が変わる操作と同じ要求の中で、一覧の各ページ・月別・各記事のJSONを書き出す。全件を毎回書き直し、途中失敗は次の操作か未処理作業の呼び出しで回復する。管理画面は未反映のとき警告と再反映ボタンを出す。
+- Nodeは公開データJSONを、CloudFront自身のホスト名の`/data/*`から読む（`OnDemandDataOrigin`）。ブログのホスト名はDNSに従うため使わない。この経路はキャッシュしない。JSONをキャッシュすると、無効化の途中で古いJSONから描画したページが新しく保持され、次の公開まで残り得る。
+- 保持時間を1日にするのは、無効化と描画が重なって古いページが保持された場合でも、翌日には作り直されるようにするため。
+- キャッシュがないときの応答時間はNodeのLambdaの起動時間で決まり、DBの再開待ちは発生しない。管理画面とAPIはキャッシュしない。
 
-#### タスク統合候補の性能確認
+#### 公開画像
 
-2026-10-19に現行のNode/GoのDockerfileからARM64イメージをビルドし、ローカルDockerのCPUクォータ・メモリ上限で比較した。この性能計測はPostgreSQL時点の結果で、MySQL移行後の同一負荷の性能を証明しない。専用PostgreSQLへ200記事を作成し、作業版・公開版の本文をそれぞれ50KiBとした。本文は見出し・リスト・コードブロックを多数含む反復データで、すべての実記事の代表ではない。一覧と記事本文を交互に取得し、HTTP 200とHTML内の記事タイトルを確認した。応答時間はHTML全体の受信完了までで、ブラウザ描画や日本からAWSまでの通信時間を含まない。
+公開版が参照する画像は、公開時に公開用S3へ現在のURLと同じパス（`/api/images/<ID>`）で置く。CloudFrontは`/api/images/*`を公開用S3から返し、403・404のときだけGoのLambdaへ切り替える。Goはセッションを確かめ、本人にだけ下書き・差し替え画像を返す（`no-store`）。公開画像は1日キャッシュされ、2回目以降の取得はキャッシュから返る（2026-11-18に本番で確認）。
 
-| 比較構成 | 表示のみ5req/sのp95 | 表示のみ10req/sのp95 | 表示5req/s＋管理操作のp95 |
-|---|---:|---:|---:|
-| 分離：Node 0.5vCPU/1GiB、Go 0.25vCPU/1GiB | 0.753秒 | 18.678秒 | 0.562秒 |
-| 共有0.5vCPU/2GiB相当 | 0.708秒 | 14.721秒 | 0.505秒 |
-| 共有1vCPU/2GiB相当 | 0.120秒 | 0.098秒 | 0.169秒 |
+非公開化のときは公開用S3から該当ファイルを消し、キャッシュを無効化する。読者のブラウザに残ったコピーは回収できない。存在しない画像への要求はGoへ届くため、DBを起こす。
 
-各構成で順に100件/20秒、300件/30秒、200件/40秒を投入した。各構成600件はすべてHTTP 200で、OOMはなかった。10req/sの投入分は、分離構成で約56秒、共有0.5vCPUで約45秒かかって処理を完了しており、10req/sを遅延なく継続できたという意味ではない。各条件は1回の短時間測定で、数値の小差から構成の優劣を断定しない。これらの負荷を本番の想定アクセス数や合意済みの性能目標とは扱わない。
+#### GoのLambda：VPC内とIPv6の出口
 
-管理操作は約207万画素/1200万画素PNGの各1回のアップロード・再エンコード、記事保存、バックアップ要求を表示負荷と並行して実行した。すべて201/200/202で応答したが、202は受付であり完了を意味しない。PNGは規則的なRGBパターンで入力は約26KiB/143KiB。高エントロピー画像やJPEGの最悪値を保証しない。共有0.5vCPUのメモリピークは約364MiB、共有1vCPUは約380MiBで、cgroupのmemory.peakを読み取った。これは本番の必要メモリ下限や長時間運用の保証ではない。
+Goは現行のMySQLドライバとSQLを変えずにAuroraへ接続するため、VPC内に置く。NAT Gatewayと公開IPv4を持たない。
 
-追加の毎秒1リクエスト・35件の混在試験でも、分離/共有0.5vCPUの表示は全件200で、p95はそれぞれ0.417秒/0.407秒だった。両構成で画像処理・保存が成功し、バックアップは要求受付後に変更世代と保存済み世代が一致し、実行中でなくエラーもないことまで確認した。共有構成のメモリピークはこの条件で約307MiBだった。
+| 通信先 | 経路 |
+|---|---|
+| Aurora | VPC内のプライベート接続 |
+| S3 | ゲートウェイエンドポイント |
+| Cognito・Qiita・SSM・Lambda・CloudFrontのAPI | デュアルスタックのサブネットとEgress-Only Internet GatewayによるIPv6。AWSのAPIはデュアルスタックのエンドポイントを使う |
+| note・Wantedly | 取得用Lambdaを呼び出して代理取得（AAAAレコードが無くIPv6で届かないため） |
 
-共有候補は検証専用イメージ内でNodeとGoの2プロセスを動かし、共通のCPU・メモリ上限を適用した近似試験。今回採用する「1タスク・3コンテナ」のCPU配分・権限・ネットワークを再現したものではない。DBはローカルで、S3の代わりに検証コンテナ内のファイルを利用し、外部記事自動取得は無効化した。この近似試験はAPI Gateway/VPC Link/Cloud Map/RDS/S3/Cognitoを含む本番経路や、Fargateの実行ホスト、長時間負荷、更新・停止を検証するものではない。本番で別途確認した範囲は公開台帳を参照する。検証用ソース・生の出力・仮の認証情報をGitへ保存しない。
+単発のFargateタスクは同じサブネットで公開IPv4を付けて動き、ECRとSSMへIPv4で届く。
 
-この範囲では、0.5vCPU共有を性能だけで除外する根拠は得られなかった。一方、重い本文の10req/sではCPU待ちが大きくなる。更新・停止・増減の単位とタスクIAM権限を共有する制約を受け入れて、1タスクを採用した。配置設定はNode/Go/Nginxの3コンテナへ変更するが、この数値はNginx追加前の近似試験である。実FargateのCPU配分や本番全経路の性能は受入時に確認する。
+#### 常駐処理の置き換え
+
+Lambdaは応答後に凍結されるため、Fargate時代の常駐ループを次のように置き換えた。
+
+| 処理 | 動き方 |
+|---|---|
+| 外部同期 | 同期要求を受けたGoが、同じ関数を非同期で呼び出して処理する |
+| バックアップ | 変更を伴う操作の後の非同期呼び出しと、1日1回（00:10 UTC）の定期呼び出しで、期限が来ていれば取得する |
+| 一時アップロードの掃除・読者向けファイルの再書き出し | 同じ呼び出しの中で実行する。S3側の1日期限は維持する |
+| DB接続 | 要求ごとに閉じる。凍結中の接続が残るとAuroraが停止しないため |
+
+#### Auroraの自動停止に合わせた設定
+
+- 起動時の接続待ちは90秒、通常の要求の上限は45秒。CloudFrontのGoへの応答待ちは60秒。再開は通常約15秒で、24時間を超えて停止した後は30秒以上かかる場合がある（AWSの説明）。
+- 管理画面は最初の確認を1分まで待ち、3秒を過ぎたらDBの起動待ちであることを表示する。
+- 停止までの時間は30分。5分だと、執筆中に手を止めるたびに次の自動保存が再開待ちに当たる。
+- 疎通監視は公開ページと`/healthz`だけを見る。DBへ接続する`/api/readyz`は、停止中のDBを15分ごとに起こすため対象にしない。
+- RDS Proxyとバイナリログのレプリケーションは使わない。どちらも停止を妨げる。
+
+**受け入れる制約：** DBが停止している間、最初の管理操作は再開を待つ。存在しない画像やAPIへの要求、1日1回の定期呼び出しもDBを起こすため、実運用ではDBが24時間続けて停止することは少ない。通常1インスタンスのAuroraは高可用構成ではない。
+
+現行の生成処理は[本番定義](../scripts/aws/retire.py)（[新構成の追加](../scripts/aws/ondemand.py)を含む）、運用・費用・配備は[本番手順](../infra/production.md)を参照。
+
+根拠：[Auroraの自動停止・再開](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-serverless-v2-auto-pause.html)、[VPC接続したLambdaとIPv6](https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html)、[Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter)。
+
+### 地域
+
+オレゴン（us-west-2）を採用する。地域選定時の同条件比較では、米国東部候補と同程度の費用で、東京AWS発の公開遅延データはオレゴンが短めだったため、費用と通信待ち時間のバランスを重視した。CloudFrontの導入後は、読者への応答は近くのエッジから返る。家庭・モバイル回線の実測でも現在価格の保証でもない。
 
 ### ローカル構成
 
@@ -245,18 +274,18 @@ Go側はすでにStore契約とDB実装が分かれ、公開版の保存をSQL�
 
 - 生存確認とDB準備状態を分離し、DB障害だけでアプリ再起動を繰り返さない。Nodeは `/healthz`、Goは `/api/healthz` と `/api/readyz` を持つ。
 - Nodeの実行入口はSSRのfetchエントリーと静的配信を接続し、API転送を担わない。SSR・静的・404・例外の外側で保護ヘッダーを適用する。
-- RDS接続は `verify-full` と同梱する公開CAで署名・ホスト名を検証する。CAは公開情報であり秘密鍵ではない。更新情報は[証明書の説明](../backend/certs/README.md)を参照。
+- DB接続（Aurora）は `verify-full` と同梱する公開CAで署名・ホスト名を検証する。CAは公開情報であり秘密鍵ではない。更新情報は[証明書の説明](../backend/certs/README.md)を参照。
 - [DB初期化](../backend/cmd/bootstrap/main.go)は移行用DDLロールと通常アプリ用DMLロールを分離する。初期化・移行は明示的な単発タスクとし、アプリ起動より前に完了させる。
-- イメージはdigestで固定し、秘密値はSSM SecureStringから役割別に注入する。管理・移行用の値を通常アプリへ渡さない。
-- [疎通監視](../infra/monitoring/probe.py)はNode・API・SSRの応答を確認し、失敗と未実行を区別する。本番定義にはSNSメール購読と運用失敗ログのアラームを含める。本人によるSNS購読確認とテストメールの受信を確認済み。予算通知のしきい値到達による発火は未試験であり、障害通知の到達確認と区別する。CIは試験対象の監視ソースとテンプレート内の配備コピーの一致も検査する。
+- イメージはdigestで固定する。接続文字列はSSM SecureStringに役割別に置き、GoのLambdaは起動時に自分の値だけを読む。管理・移行用の値を通常アプリへ渡さない。
+- [疎通監視](../infra/monitoring/probe.py)はCloudFront経由で公開ページと`/healthz`の応答を15分ごとに確認し、失敗と未実行を区別する。DBを起こさないよう`/api/readyz`は見ない。本番定義にはSNSメール購読と運用失敗ログのアラームを含める。本人によるSNS購読確認とテストメールの受信を確認済み。予算通知のしきい値到達による発火は未試験であり、障害通知の到達確認と区別する。CIは試験対象の監視ソースとテンプレート内の配備コピーの一致も検査する。
 
 ### 選定に関係する一次資料
 
 - [Go公式のMySQL接続入門](https://go.dev/doc/tutorial/database-access)、[MySQLドライバー](https://github.com/go-sql-driver/mysql)、[MySQLのDDL暗黙コミット](https://dev.mysql.com/doc/refman/8.4/en/implicit-commit.html)
 - [GoのHTMLテンプレート](https://pkg.go.dev/html/template)、[React SSR](https://react.dev/reference/react-dom/server/renderToPipeableStream)、[ハイドレーション](https://react.dev/reference/react-dom/client/hydrateRoot)
-- [AWSのコンテナ同居・分離の基準](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/container-considerations.html)、[ECSサービス発見](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/service-discovery.html)
-- [HTTP APIの私有統合](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-private.html)、[HTTP APIの制限](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-quotas.html)
-- [Fargate料金](https://aws.amazon.com/fargate/pricing/)、[ALB料金](https://aws.amazon.com/elasticloadbalancing/pricing/)、[公開地域間遅延データ](https://cloudping.co/)
+- [Lambda関数URLとCloudFrontのアクセス制御](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-lambda.html)、[CloudFrontのオリジンフェイルオーバー](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/high_availability_origin_failover.html)
+- [Lambdaのクォータ（要求・応答6MB等）](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html)
+- [Aurora料金](https://aws.amazon.com/rds/aurora/pricing/)、[Lambda料金](https://aws.amazon.com/lambda/pricing/)、[CloudFront料金](https://aws.amazon.com/cloudfront/pricing/)、[公開地域間遅延データ](https://cloudping.co/)
 
 ## 6. API：現在の実装契約
 
@@ -301,7 +330,7 @@ Go側はすでにStore契約とDB実装が分かれ、公開版の保存をSQL�
 - 日時は時刻付きJSON、画面では日本時間。IDは32バイト乱数のbase64url文字列（43文字）。タイトル変更でIDを変えない。
 - エラー本文は `{error:文字列}`。入力400、認証401、Origin拒否403、未存在404、競合409、JSON以外415、ログイン試行制限429、内部失敗500。
 - 更新系はOrigin完全一致とJSONを要求する。JSON上限300KiB、タイトルは最大200 Unicodeコードポイント（空は保存可、公開時は空白だけを拒否）、本文は最大256KiB。予約した画像表示設定（`blog-image:`で始まる画像title）は文法に合わなければ400。入力欄も同じく200コードポイントで制限する。
-- 読者向けファイル：`PUBLIC_DIRECTORY`（ローカルのディレクトリ）か`PUBLIC_BUCKET`（S3。オブジェクトごとに種類を保存し、暗号化する）のどちらかを設定すると、Goは公開・非公開化・外部同期の完了・起動のたびに、一覧（`data/articles/{all|YYYY-MM}/{ページ}.json`）、公開記事（`data/posts/{id}.json`）、公開画像（`api/images/{id}`）を書き出す。JSONは上記の公開APIと同じ形。公開でなくなったファイルは消す。書き出しに失敗しても記事の変更は保存し、応答ヘッダー`X-Publication: pending`で未反映を伝える。公開操作に続く書き出しは6秒で打ち切り（編集画面の応答待ち15秒に収めるため）、明示的な再書き出しは25秒まで待つ。編集画面は公開・非公開化のあとに`GET /api/admin/publication`で確認し、未反映なら警告と再反映ボタンを表示する。公開状態が変わらなければ何も書かない。`PUBLIC_DISTRIBUTION_ID`を設定すると、書き換えのあとにそのCloudFrontディストリビューションの全パス（`/*`の1件）を無効化する。無効化に失敗した書き出しは未反映として扱い、次の書き出しでやり直す。Nodeは`PUBLIC_DATA_URL`があるとこのファイルから描画し、Goを呼ばない。稼働中のFargate本番は両方とも未設定で、従来どおりNodeがGoへ問い合わせる。採用理由は[移行設計](future-static-delivery.md)。
+- 読者向けファイル：`PUBLIC_DIRECTORY`（ローカルのディレクトリ）か`PUBLIC_BUCKET`（S3。オブジェクトごとに種類を保存し、暗号化する）のどちらかを設定すると、Goは公開・非公開化・外部同期の完了・起動のたびに、一覧（`data/articles/{all|YYYY-MM}/{ページ}.json`）、公開記事（`data/posts/{id}.json`）、公開画像（`api/images/{id}`）を書き出す。JSONは上記の公開APIと同じ形。公開でなくなったファイルは消す。書き出しに失敗しても記事の変更は保存し、応答ヘッダー`X-Publication: pending`で未反映を伝える。公開操作に続く書き出しは6秒で打ち切り（編集画面の応答待ち15秒に収めるため）、明示的な再書き出しは25秒まで待つ。編集画面は公開・非公開化のあとに`GET /api/admin/publication`で確認し、未反映なら警告と再反映ボタンを表示する。公開状態が変わらなければ何も書かない。`PUBLIC_DISTRIBUTION_ID`を設定すると、書き換えのあとにそのCloudFrontディストリビューションの全パス（`/*`の1件）を無効化する。無効化に失敗した書き出しは未反映として扱い、次の書き出しでやり直す。Nodeは`PUBLIC_DATA_URL`があるとこのファイルから描画し、Goを呼ばない。稼働中のFargate本番は両方とも未設定で、従来どおりNodeがGoへ問い合わせる。採用理由は[第5節](#基盤aws--cloudfront--lambda--aurora-mysql)。
 - 呼び出しごとの実行：`ON_DEMAND_FUNCTION`（自分自身のLambda関数名）を設定すると、Goは常駐のタイマー（外部同期・バックアップ・一時アップロードの掃除）を動かさない。本人の変更（`/api/admin/`への読み取り以外で成功した要求）のあとに自分自身を非同期で呼び出し、その呼び出しが`POST /internal/work`で受理済みの同期・読者向けファイルの更新・期限の来たバックアップ・掃除を順に実行する。1つが失敗しても残りは実行し、失敗時は500を返して呼び出しを再試行させる。起動要求が失敗しても本人の変更は成功のままで、未処理の作業はDBに残り、次の起動要求か定期実行が拾う。`/internal/work`は`/api`の外にあり、公開の入口からは振り分けない。このモードではDB接続を使い終わるたびに閉じ（凍結中の接続がDBの停止を妨げるため）、通常の要求の時間上限を8秒から45秒へ、起動時のDB接続待ちを30秒から90秒へ延ばす。稼働中のFargate本番は未設定で、従来どおりタイマーで動く。
 - 取得の中継：`FETCH_RELAY_FUNCTION`を設定すると、IPv6のアドレスを持たない媒体（note・Wantedly）のページだけを、中継用のLambda（[`infra/relay/relay.py`](../infra/relay/relay.py)）を同期で呼び出して取得する。Qiitaは直接取得する。中継は同期が読む3ページ（noteのRSS、Wantedlyのrobots.txtと本人の記事一覧）だけを受け付け、それ以外のURLは取得せずに拒否する。リダイレクトを追わず、4MiBを超える応答は切り詰めずに拒否する。資格情報・DB・保存先への権限を持たせない。Goは中継の失敗を空のページとして扱わず、取得失敗として同期結果へ記録する。
 - 配信向けの準備：GoとNodeのイメージはLambda Web Adapter（1.1.0）を含む。Lambdaでは呼び出しを同梱のHTTPサーバーへの要求に変換し、それ以外の環境では読み込まれない。Nodeは`EDGE_CACHE_SECONDS`を設定したときだけ、読者向けページの成功応答（GET/HEADの200で、管理画面・ヘルスチェック・Cookieつきを除く）へ`Cache-Control: public, max-age=0, s-maxage=秒数`を付ける。ブラウザは毎回確認し、CloudFrontだけが保持する前提で、公開内容の変更時にGoが無効化する。管理APIへの本文つき要求は、本文のSHA-256を`x-amz-content-sha256`ヘッダーで送る。CloudFrontからLambdaの関数URLを署名つきで呼ぶ構成が、本文つき要求にこの値を必須とするため。稼働中のFargate本番ではどちらも影響しない（ヘッダーは無視され、キャッシュ指定は未設定）。
@@ -370,11 +399,11 @@ Qiitaは最大100件×20ページ、最後のページまで取得できた場�
 
 Cognitoの開始設定はLite・提供ログイン画面（classic）・TOTP必須・本人のemail回復・自己登録禁止。Goにはリフレッシュトークンや本人パスワードを保存しない。Cognitoに有効なログインが残っていれば再利用される場合があり、毎回のパスワード・MFA再入力を保証する設計ではない。ローカルのDBセッションはHttpOnly・SameSite Strict・HTTPS時Secure、8時間。本人subjectとの照合、別のsubject・署名不正・issuer/audience/nonce/期限不正・リプレイ拒否は署名付きテストプロバイダーで検証。実CognitoのMFA登録と回復は本番確認で扱う。
 
-ローカルパスワードはPBKDF2-SHA256。全体10回/15分の制限には第三者が枠を使い切れる弱点があるため、公開用へ流用しない。認証失効時は管理パネルを破棄せず隠して入力を保ち、明示したログアウト時だけ破棄する。公開DBは非公開RDS、タスクSGとverify-fullで保護する。秘密値・コード・トークンはログやGitへ入れない。
+ローカルパスワードはPBKDF2-SHA256。全体10回/15分の制限には第三者が枠を使い切れる弱点があるため、公開用へ流用しない。認証失効時は管理パネルを破棄せず隠して入力を保ち、明示したログアウト時だけ破棄する。DBは非公開のAuroraで、GoのLambdaと単発タスクのセキュリティグループからだけ届き、verify-fullで接続する。秘密値・コード・トークンはログやGitへ入れない。
 
 ### 画像
 
-画像はPNG・JPEG・WebP、1枚10,000,000バイト（画面表記10MB）・1200万画素まで。SVG・GIF・HEIC・アニメーション画像は受け付けない。10MBの本体をbase64のJSONでAPI Gatewayへ通すと入口の上限を超えるため、画像本体は非公開S3の一時キー `images/staging/<uploadId>` へブラウザから署名付きPOSTで送る。署名は5分有効で、キー・Content-Type・サイズ・AES256暗号化を署名ポリシーで拘束し、任意キー・公開ACLを受け付けない。CORSは本番の公開Originと POST だけを許可し、Block Public Accessは維持する。非本番は同じ契約を認証付きの同一オリジンPUTで代替する。
+画像はPNG・JPEG・WebP、1枚10,000,000バイト（画面表記10MB）・1200万画素まで。SVG・GIF・HEIC・アニメーション画像は受け付けない。10MBの本体をbase64のJSONでLambdaへ通すと要求の上限（6MB）を超えるため、画像本体は非公開S3の一時キー `images/staging/<uploadId>` へブラウザから署名付きPOSTで送る。署名は5分有効で、キー・Content-Type・サイズ・AES256暗号化を署名ポリシーで拘束し、任意キー・公開ACLを受け付けない。CORSは本番の公開Originと POST だけを許可し、Block Public Accessは維持する。非本番は同じ契約を認証付きの同一オリジンPUTで代替する。
 
 完了処理（20秒期限）で実バイト数・SHA256・実フォーマット・画素数を検証し、拡張子や申告MIMEを信用しない。メタデータを除くため再エンコードし、PNG・WebPはPNG（透過維持）、JPEGは品質85のJPEGにする。正規化後も10,000,000バイトを超えれば登録しない。正式画像IDはセッション作成時に、正式キーは書き込み前に確定し、DBのリースで排他する。同じuploadIdの再完了・応答消失・処理中の停止でも正式画像は一つだけになり、S3に置けた後のDB応答消失では既存オブジェクトを採用して削除しない。一時オブジェクトは完了後に削除し、残ったものはS3のライフサイクルで1日後に消す。24時間を過ぎた未完了のセッションは期限切れとし、掃除は既存のAPIプロセス内で行う。
 
@@ -384,7 +413,7 @@ Cognitoの開始設定はLite・提供ログイン画面（classic）・TOTP必�
 
 S3は非公開で、公開済み本文の画像参照をDBで照合してから配信する。作業版と公開版の参照を分け、本文と同じトランザクションで更新する。Markdownは既存のCommonMarkパーサーで解析し、コードブロックや参照形式を正規表現だけで扱わない。下書き・未添付画像は認証した本人だけが取得できる。画像単体の削除・自動GCは初回に導入しない。
 
-ローカルは永続ボリューム、HTTPS環境はS3を必須にしてFargateの一時ファイルへ保存しない。公開・非公開の切替後も新規取得はno-storeとし、すでに読者が取得したデータを回収できるという保証はしない。
+ローカルは永続ボリューム、HTTPS環境はS3を必須にしてLambdaの一時ファイルへ保存しない。公開・非公開の切替後も新規取得はno-storeとし、すでに読者が取得したデータを回収できるという保証はしない。
 
 未添付・差し替え済み画像も自動削除せず、保存量に含める。S3保存後にDB応答を失った場合も、DB登録済みの可能性があるため画像を機械的に削除しない。未登録なら匿名配信されず、登録済みならバックアップ対象になる。復元用の画像コピーも削除しない。これは誤消去を避ける初回の判断であり、無制限の無償保管ではない。増加時に参照・バックアップ世代と整合するGCを検討する。
 
@@ -398,7 +427,7 @@ DB JSONの出力合計64MiB、展開アーカイブ128MiBを上限にし、超�
 
 開始値は取得済みアーカイブ4世代（BACKUP_RETAINで1〜30）。非公開S3は画像用とバックアップ用を分ける。本番案では旧アーカイブの非現行S3版を7日後に削除し、4世代制御で発生する保存費用を抑える。現行の画像コピーへ日数だけの削除期限を付けない。暗号化とSHA256は完全性確認に使い、WORMやアカウント侵害への保証とは扱わない。
 
-復元は同じ移行版の空DB（名前が_testまたは_restore）と別の画像保存先へ行う。既存データがあれば中断し、セッション・ログインフローを持ち越さない。別DB・別画像先への実復元と、200記事×50KiBの作業版/公開版の復元をローカルで確認した。実RDS/S3でも5テーブルと画像2点の復元・一致、通知メール到達を確認した。RDS PITRや資格情報紛失の回復、復旧時間の保証は行わない。本人は現行保存周期・通知後の手動復元で開始する方針を受入済み。[運用・本番手順](../infra/production.md)で公開前に確認する。
+復元は同じ移行版の空DB（名前が_testまたは_restore）と別の画像保存先へ行う。既存データがあれば中断し、セッション・ログインフローを持ち越さない。別DB・別画像先への実復元と、200記事×50KiBの作業版/公開版の復元をローカルで確認した。実RDS/S3でも5テーブルと画像2点の復元・一致、通知メール到達を確認した。2026-11-16の切替では、旧RDSの最新バックアップを新しいAuroraへ復元した。Auroraの時点復元（PITR）や資格情報紛失の回復、復旧時間の保証は行わない。本人は現行保存周期・通知後の手動復元で開始する方針を受入済み。[運用・本番手順](../infra/production.md)で公開前に確認する。
 
 ## 10. 受入条件
 

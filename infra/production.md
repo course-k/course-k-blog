@@ -1,47 +1,34 @@
 # 本番配置と運用
 
-**本番用IAMは適用済み。費用承認後、本番基盤・DB初期化・スキーマ移行は完了。3コンテナの1タスクとDNS/HTTPSも配置済み。本人の初回ログイン・TOTP登録と優先方式設定、通知購読とテストメール到達は確認済み。本番バックアップを別RDSと別画像先へ復元し、全行と画像の一致を確認済み。** 進捗は[公開台帳](../docs/blog-publication-roadmap-2026-10-18.md)、仕様と理由は[現行設計](../docs/current-design.md)で管理する。
-
-MySQL移行後のローカル結合試験・TLS・権限分離・通し試験と、本番での配置確認は分けて扱う。以下にある以前の性能測定値はPostgreSQL時点のもので、MySQLの同一性能を保証しない。初回は提供可否を確認したMySQL 8.4.11、db.t4g.micro/gp3 20GiBを配置した。
+**本番はCloudFront・Lambda・自動停止するAurora MySQLで稼働している（2026-11-16に切替、旧Fargate構成は同日撤去）。** 構成と選定理由は[現行設計](../docs/current-design.md#5-採用構成と選定理由)、進捗は[公開台帳](../docs/blog-publication-roadmap-2026-10-18.md)、mainからの反映は[本番への反映](../docs/production-release.md)を参照する。
 
 ## 使用する定義
 
-[scripts/aws/production.py](../scripts/aws/production.py)が、旧検証のネットワーク・RDS・監視の[共通定義](aws/validation-stack.template.json)を読み、本番用の認証・保存・通知・独自ホスト名を追加し、[常駐部分を1タスクへ変換](../scripts/aws/single_task.py)する。旧検証の2サービスを、そのまま本番へ使う構成ではない。巨大なテンプレートを2本手修正する案より、共通構成の修正を両方へ反映できる。生成処理はAWS SDK・資格情報を使わず、配置しない。生成物をGitへ重複保存しない。
+本番スタック`course-k-blog-production`へ当てる定義は[`scripts/aws/retire.py`](../scripts/aws/retire.py)の`current_template()`。旧検証の共通定義を読む[`production.py`](../scripts/aws/production.py)・[`recovery.py`](../scripts/aws/recovery.py)・[`backfill.py`](../scripts/aws/backfill.py)の出力に[新構成](../scripts/aws/ondemand.py)を足し、Fargateのサービスだけが使っていた資材を外す（[旧構成の撤去](#旧構成の撤去)）。
 
 ```sh
-mkdir -p config/aws-production
-python3 scripts/aws/production.py > config/aws-production/stack.template.json
+python3 scripts/aws/retire.py > config/aws-production/stack.template.json
 python3 -m unittest discover -s scripts/aws -p 'test_*.py' -v
-cfn-lint -r us-west-2 -t config/aws-production/stack.template.json
+cfn-lint config/aws-production/stack.template.json --regions us-west-2
 ```
 
-CIはcfn-lint 1.57.2で生成物を検査する。スキーマ検査と契約試験はIAMの実効権限、リージョン内の空き、実配備の成功を保証しない。従来の`validation.py`は検証環境だけを操作する制限を維持し、本番に転用しない。元の検証テンプレートだけでは現在のHTTPSアプリに必要なCognito/S3設定が揃わない。
-
-本番の拡張点：
-
-- 共有アプリタスクのIAMロールとその権限境界に、画像・バックアップの特定バケット内のGet/Put/DeleteObjectと両バケットのListBucketを追加。DeleteObjectVersion、公開ACL、IAM変更権限は与えない。同じタスク内のNode/NginxからもこのS3権限を利用可能になる制約を受け入れる。DB用SSMはタスク実行ロールが読み、接続値はGoコンテナだけへ渡す。[S3 GetObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html)ではListBucketなしの不存在も403になるため、バックアップで未保存と権限拒否を区別するために必要。
-- Cognito Lite、提供ログイン画面classic、TOTP必須、自己登録禁止、verified_emailによる回復。Goは登録した本人のsubだけを受け入れる。クライアントシークレットと公開用パスワードハッシュは使わない。
-- API Gatewayの地域証明書と独自ホスト名。DNSレコードは自動変更せず、既存DNSを使用する。ブログ専用サブドメインを前提とし、`/blog`等のパス配下へ置く場合はルーター・リンク・Cookieを別途対応する。
-- 運用失敗のJSONログからメトリクスを作り、共有サービス等の6アラームと合わせた7件を同じSNSトピックへ通知。メール購読は本人による確認が必要。API入口は10要求/秒・burst20の開始値。
-- アーカイブ4世代。S3版管理で残る旧アーカイブ版は7日後に消す。参照される画像コピーは期間だけで消さない。RDSは非公開Single-AZ、7日バックアップ、削除保護、保存資源はRetain。
-
-定義の根拠：[Cognito UserPool](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-cognito-userpool.html)、[UserPoolClient](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-cognito-userpoolclient.html)、[機能プラン](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-sign-in-feature-plans.html)、[APIドメイン](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-apigatewayv2-domainname.html)、[S3旧版の期限](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-s3-bucket-noncurrentversionexpiration.html)。
-
-## 共有タスクのイメージと入口
-
-Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t course-k-router:production infra/router`でビルドする。専用ECRへ登録後、NodeImage / GoImage / RouterImageの3つをdigestで固定する。Nginxはタスク内localhostへ転送するだけで、TLS終端はAPI Gatewayに委ねる。タスク実行ロールにはこの3リポジトリとロググループ、DB用SSMのみの読み取り・ログ送信を許可する。
-
-通常のアプリはApplicationService / ApplicationTask / ApplicationSg。Cloud MapはNginxの8080を登録し、VPC LinkのSGからそのポートだけへ受信を許可する。Node/Goへ直接の受信を開けない。DB初期化・移行・復元の単発タスクにはApplicationSgを指定する。旧検証用のGoSgやNodeServiceを本番へ指定しない。Nginxの一時ボリュームはDockerfileのVOLUMEと同じ`/tmp/nginx`を指定し、非rootの書き込み先を確保する。
+CIはcfn-lint 1.57.2で生成物を検査する。スキーマ検査と契約試験はIAMの実効権限や実配備の成功を保証しない。資材の追加・削除・権限の変更は管理者ログインで行い、変更セットの中身（追加・変更・削除・置き換え）を確かめてから実行する。
 
 ## 本番の構成と運用条件
 
 ### 採用した構成
 
-公開先は`https://blog.course-k.com`、リージョンはus-west-2、スタック名は`course-k-blog-production`を使う。本人メール・通知先とオレゴンの発行済み証明書ARNはGit対象外の`config/aws-production/domain.json`に記録済み。証明書の発行とDNS/HTTPS接続は確認済み。[移行設計](../docs/future-static-delivery.md)の構成は、切替までこの手順の対象に含めない。
+公開先は`https://blog.course-k.com`、リージョンはus-west-2。XServer DomainのCNAME`blog`を`d3t8lafmacar3v.cloudfront.net`へ向け、CloudFrontにus-east-1のACM証明書を付ける。
 
-通常はNode/Go/Nginxの1タスク（ARM64、0.5vCPU/2GiB）、公開IPv4 1個、非公開RDS MySQL db.t4g.micro・gp3 20GiB。ネットワークは新規VPC・4サブネット・3セキュリティグループ、入口はHTTP API・VPC Link・Cloud Map・Nginx、保存は非公開S3 2バケット。ECR 4リポジトリのうち1件は初期化用。ECSタスク定義は通常用・移行用・初期化用の3件だが、常駐サービスは1件だけで、移行用・初期化用を常駐させない。ほかにCognito、SNSメール購読、7アラーム、ログ5グループ、15分間隔の疎通確認Lambdaと定期ルールを含む。詳細な資材の正本は生成定義とし、ここではアプリ本体の全68論理資源を68台のサーバーと解釈しない。
-
-費用は本書の開始例で税前約39.03 USD/月。税前約39.03 USD/月と初回の復元・負荷試験の追加5 USD以内は本人承認済みで、後日案の約18.13 USDを今回の料金として扱わない。通常1タスクでも更新時は一時的に2タスクになる。DB作成時点からDB課金が始まるため、EnableRuntime=falseを無課金の待機と扱わない。
+- 入口：CloudFront（PriceClass_200、HTTP/2・3、IPv6）。公開ページは1日キャッシュ、`/api/*`と`/data/*`はキャッシュしない、`/api/images/*`は公開用S3を先に見て無ければGoのLambdaへ。
+- 処理：NodeのLambda（`course-k-blog-production-web`、VPC外）、GoのLambda（`course-k-blog-production-api`、VPC内）、取得の中継Lambda（`-relay`、VPC外・権限なし）。関数URLは署名つきで、このCloudFrontからだけ呼べる。
+- DB：Aurora MySQL Serverless v2、最小0・最大1 ACU、無操作30分で停止、削除保護、7日のバックアップ保持。非公開で、GoのLambdaと単発タスクのセキュリティグループからだけ届く。
+- 保存：非公開S3 3バケット（画像、バックアップ、読者向けファイル）。読者向けファイルのバケットはこのCloudFrontだけが読める。
+- 単発タスク：ECSクラスタ（常駐サービスなし）で、Aurora向けの初期化・移行・復元を必要時だけ動かす。
+- ネットワーク：既存VPCにデュアルスタックのサブネット2つ、Egress-Only Internet Gateway、S3のゲートウェイエンドポイント。NAT Gateway・公開IPv4の常駐は無い。
+- 認証：Cognito Lite、提供ログイン画面classic、TOTP必須、自己登録禁止、verified_emailによる回復。Goは登録した本人のsubだけを受け入れる。
+- 定期処理：1日1回（00:10 UTC）にGoへ未処理の作業を実行させる。15分ごとの疎通監視は公開ページと`/healthz`だけを見る。
+- 通知：運用失敗のJSONログと疎通監視のアラームを同じSNSトピックからメールで通知する。
 
 ### 本番権限の分離
 
@@ -65,39 +52,11 @@ Node/Goは従来のDockerfile、Nginxは`docker build --platform linux/arm64 -t 
 4. 現行CloudFormationテンプレートと他のパラメータを維持し、OnDemandGoImage/OnDemandNodeImageだけの変更セットを作る。2つの関数のイメージ、一時タスク2つの定義の置き換え、関数や配信を参照する資材の再評価（値は変わらない）以外の変更は拒否してから実行する。
 5. 更新したパラメータでスタックが完了したこと、2つの関数が新しいイメージで更新を終えたことを待って確かめ、CloudFrontのキャッシュを全体で無効化する（読者のページは1日キャッシュされ、古いページは新しいビルドに無い資材を参照するため）。その後、公開HTTPSのhealth・readiness・一覧を確認する。DBが停止中なら再開を待つ。確認で失敗した場合は、元の2イメージのdigestへ戻して確認し、候補の配備自体は失敗として扱う。
 
-Fargate時代の単発タスク`release-check`（本番S3への直接送信の確認）は、ECSのアプリ定義が無くなったため配備から外した。[`special-release.yml`](../.github/workflows/special-release.yml)はまだFargateの定義を前提にしており、新構成のスキーマ変更には使えない。スキーマを変える配備は、対応するまで管理者がAurora向けの移行タスクで行う。
+Fargate時代の単発タスク`release-check`（本番S3への直接送信の確認）は、ECSのアプリ定義が無くなったため配備から外した。スキーマを変える配備は[`special-release.yml`](../.github/workflows/special-release.yml)で行う（[本番への反映](../docs/production-release.md#dbのスキーマを変える更新)）。
 
-#### DB・画像バケットの変更を伴う配備
+#### DBのスキーマを変える配備
 
-[`special-release.yml`](../.github/workflows/special-release.yml)はmainの同じコミットに対する4検査の成功を確認し、通常配備と同じ排他制御で動く。まず`mode=plan`で読み取り確認し、出力された`schemaDigest`と`expectedSchema`を実行入力に指定する。
-
-- `apply`：現在のアプリとのSQL互換性を確認した場合だけ選ぶ。バックアップ、移行用イメージの設定、SQL移行、実DBの版・SQLチェックサム照合、画像設定、適用済みハッシュの記録、アプリ配備、本番確認の順で進める。SQLは自動で巻き戻さない。
-- `record-existing`：今回の002のようにSQLを適用済みの場合に選ぶ。DDLを実行せず、実DBのSQLチェックサムと版を確認して記録する。その後の配備・確認は同じ。
-- `check_sync=true`：今回の初回確認など、実際にQiitaの手動同期を1回要求するときだけ指定する。通常配備は同期を要求せず状態照会だけにする。
-
-自動適用を許す定義の差分は、移行タスクのイメージと、画像バケットの公開Origin限定POST CORS・stagingだけの1日期限に限定する。DB本体・公開設定・資源の追加削除などは拒否する。任意の基盤変更をこのワークフローに渡さない。51,200バイトを超える定義は、非公開の配備用S3へ置いてTemplateURLで送る（上限1MiB）。テンプレートは30日で削除する。
-
-初回のみ、管理者が`delivery_access.py`の出力を既存`course-k-blog-delivery-access`へ更新する。追加するのは配備用非公開S3と限定した管理ポリシーで、既存OIDCプロバイダ・接続条件・従来のインラインポリシーは維持する。Mac用ロールは自分やGitHubロールの権限を変更できないため、この初回更新には使えない。`production-access`スタックとは別物であり、同時更新しない。
-
-初回のmain取り込み直後は、適用済みハッシュが未登録のため通常配備が止まる。4検査成功後に専用ワークフローの`plan`→`record-existing`（今回の版は2）を実行する。これが成功した後に、必要なら通常ワークフローの失敗した配備ジョブだけを再実行する。ハッシュを手動で書いて移行確認を迂回しない。
-
-`release-check`はAPIと実AWS経路の試験であり、マウスでの画像操作・ブラウザの貼り付け・OIDCの本人ログインを再現する試験ではない。ブラウザ操作の回帰は既存のUI試験で確認する。本番確認の途中で失敗した場合はジョブを失敗として扱い、削除に失敗した試験データはログの失敗を解消してから確認する。
-
-更新失敗時はCloudFormationイベントから拒否されたIAMアクション名だけをGitHubログへ出す。イベント本文・秘密値・認証情報は出さない。アクセス定義の単体試験・構文検査は、OIDCの実接続や本番配備の成功を保証しない。実際の実行結果は公開台帳とGitHubジョブで区別する。作成済みOIDCプロバイダと専用ロールは維持し、基盤・認証・DB構造の変更を通常のアプリ自動更新へ混ぜない。公式仕様は[GitHub OIDC](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)、[ARM64ランナー](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)、[CloudFormationサービスロール](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-iam-servicerole.html)を参照する。
-
-検証用の`course-k-validation-operator`と本番用の`course-k-production-operator`を分離する。本番用アクセス設定は管理者が適用済みで、次の範囲を対象とする。
-
-| 対象 | 本番計画で必要な範囲 |
-|---|---|
-| スタック・資源名 | 検証用の`course-k-blog-validation-*`ではなく、本番スタックと対応リソースに限定したCloudFormation操作・参照 |
-| 実行ロール・権限境界 | 管理者が境界1件を作成し、操作者は本番の実行/タスク用ロール6件にその境界を必須で付ける。参照・インラインポリシー・必要なPassRoleを照合。操作者が自分の権限を自由に変更できる設計にしない |
-| RDS | MySQL 8.4のパラメーターグループ、非公開DB、サブネットグループ、管理者secret、削除前スナップショット。作成・復旧・保護の変更範囲を限定 |
-| Cognito | UserPool・Client・Domainの作成/更新/参照に加え、本人1人の登録と回復。管理者用の操作とアプリが行うOIDC通信を区別 |
-| API・証明書 | HTTP APIの独自ホスト名とマッピング、既存ACM証明書の参照、API Gatewayのログ配信 |
-| S3・ECR・SSM | 本番専用バケット/リポジトリ/SSMパスへの配置と運用。通常DB用とDDL用の秘密値を分離し、不要な版削除や他サービスへの操作を与えない |
-| 監視・通知 | ロググループだけでなくMetricFilter、アラーム、SNSトピック/購読、疎通Lambdaと定期ルールを照合 |
-
-本番用ロールで、基盤作成・DB初期化・移行・アプリ配置・別RDSへの復元と一時資源の撤去を確認済み。RDSスナップショット/PITR復旧、本人の資格情報紛失時の回復は未試験であり、これらの実効権限まで確認済みとは扱わない。
+手順は[本番への反映](../docs/production-release.md#dbのスキーマを変える更新)を参照。基盤の定義の変更はこのワークフローでは行わない。
 
 ### 管理者が適用する本番用アクセス設定
 
@@ -109,52 +68,19 @@ python3 scripts/aws/production_access.py > config/aws-production/access.template
 
 管理者はオレゴンの別スタック`course-k-blog-production-access`として内容と名前付きIAM資源を確認して適用する。作成するのはIAMの操作者ロール1件・管理ポリシー5件（うち1件は実行ロールの上限）・既存course-k-deployへのAssumeRoleポリシー1件で、DBや常駐アプリの課金は開始しない。既存の検証用ロール・ポリシーを置き換えない。検証環境用の保存済みオブジェクト版・スナップショット等の直接削除権限は引き継がず、本番データの撤去は管理者の別操作とする。操作者には自分のロールやこの上限ポリシーを変更する権限を与えない。出力のRuntimeBoundaryArnは操作者から読み取れるため、本人へARNのコピーを繰り返し依頼する運用にはしない。
 
-適用後は専用の`course-k-production-operator`へAssumeRoleし、アカウント・ロールを照合して、既存証明書と本番スタックを再確認する。MySQLは読み取りで提供を確認した8.4.11を初回配置に指定する。Cognitoの本人管理はProject=course-k-blog-productionタグのプールに限定し、本人1人だけを登録する。CloudFormation経由の作成/更新を広い資源指定で許可する箇所は残るため、万能な最小権限やアカウント全体の隔離を保証する設定とは説明しない。
+適用後は専用の`course-k-production-operator`へAssumeRoleし、アカウント・ロールを照合して、本番スタックを再確認する。Cognitoの本人管理はProject=course-k-blog-productionタグのプールに限定し、本人1人だけを登録する。CloudFormation経由の作成/更新を広い資源指定で許可する箇所は残るため、万能な最小権限やアカウント全体の隔離を保証する設定とは説明しない。
 
 ポリシー検査・構文検査の成功は実効権限や配置成功を保証しない。生成物と現行ソースを照合し、管理者による権限変更の承認後に適用する。
 
 ### 回復目標の扱い
 
-アプリの変更時バックアップ4世代とRDS自動バックアップ7日を維持する。公開反映後は速やかに取得し、下書き等はUTCの日付境界でまとめる。障害通知を受けて手順に沿い手動で復元する方針を本人が受入済みで、復旧時間の保証や数値目標は設けていない。許容損失は取得周期だけで決めず、最後に成功したアーカイブ世代とRDSの復元可能時点を示して判断する。
+アプリの変更時バックアップ4世代とAuroraの自動バックアップ7日を維持する。公開反映後は速やかに取得し、下書き等はUTCの日付境界でまとめる。障害通知を受けて手順に沿い手動で復元する方針を本人が受入済みで、復旧時間の保証や数値目標は設けていない。許容損失は取得周期だけで決めず、最後に成功したアーカイブ世代とAuroraの復元可能時点を示して判断する。旧RDSの最終スナップショット（`course-k-blog-production-snapshot-database-pts5zduc7iua`、2026-11-16）は残している。
 
-スタック名は小文字の`course-k-blog-production`、SSMパスは`/course-k/blog-production/`を使用する。RuntimeBoundaryは管理者用の別スタック`course-k-blog-production-access`で作り、その出力ARNを本番定義へ渡す。操作者へ境界の作成・更新権限を与えず、検証用境界も流用しない。DB用パスワード・DSNは権限0600のGit対象外ファイルからSSM SecureStringへ登録し、コマンド引数・ログ・PRへ値を出さない。通常DML用と移行DDL用は分ける。
+スタック名は小文字の`course-k-blog-production`、SSMパスは`/course-k/blog-production/`を使用する。RuntimeBoundaryは管理者用の別スタック`course-k-blog-production-access`で作り、その出力ARNを本番定義へ渡す。操作者へ境界の作成・更新権限を与えず、検証用境界も流用しない。DB用の接続文字列は権限0600のGit対象外ファイルからSSM SecureStringへ登録し、コマンド引数・ログ・PRへ値を出さない。通常DML用と移行DDL用は分ける。
 
-## 配置・更新の順序
+## 新構成の定義とパラメータ
 
-| 段階 | 作業と終了条件 |
-|---|---|
-| 1. 承認する計画 | 確定した公開URL、全資源の月額見込み、IAM差分、保持方針を確認。継続課金とDNS変更の対象を示して承認を得る |
-| 2. 証明書・基盤 | オレゴンの対応MySQL版とアカウントを確認。ACMの証明書を発行・DNS検証し、EnableRuntime=falseで基盤を配置。まだアプリは稼働しないが、DB等の課金は始まる |
-| 3. 本人・データ準備 | 自己登録を使わずCognitoに本人だけを作る。本人所有メールを確認し、subをAdminSubjectへ設定。初期認証情報は本人が安全に保持し、パスワード変更・TOTP登録は接続後の段階6で行う。本人の秘密値をチャットへ送らない |
-| 4. ビルド・DB移行 | 同じDockerfileからLinux ARM64のNode/Go/Nginx/DB初期化イメージを作り、ECRへ登録してdigestを固定。新規DBのロールを初期化後、MySQLの001_initial.sqlの移行を単発タスクで実行。実データがあるDBを再初期化しない |
-| 5. 配置 | 公開URL、DB用SSM ARN、Cognito本人sub、digestを設定し、変更セットを確認してEnableRuntime=true。1サービス・通常1タスク（0.5vCPU/2GiB）の常時稼働・ヘルスチェック・DB接続を確認 |
-| 6. 接続確認 | 専用ホスト名のDNSをRegionalDomainNameへ接続。Cognitoログイン・TOTP・サインアウト・回復、非公開S3の拒否、記事/画像の公開制御、同期、バックアップ、メール通知到達を確認 |
-| 7. 運用受入 | 別RDS・別画像バケットへの復元、候補版の負荷、失敗イメージからの戻し、請求/予算通知を確認。許容損失と復旧時間に合うことを確認して公開 |
-
-初期化・移行・復元用のタスクは必要時だけ動かす。ECSの完了コードと移行結果を確認し、アプリが起動したことだけで移行成功にしない。DNSの実URL、承認済み額、適用済みdigest等はGit対象外の環境設定へ保存する。
-
-更新は変更前バックアップを確認し、後方互換の移行を先に行い、変更したコンテナのイメージを新digestへ指定し、Node/Go/Nginxを含むタスク全体を更新する。変更しないイメージは同じdigestを維持する。ローリング更新中は新旧2タスク・公開IPv4 2個が一時的に並行する。通常の1タスク料金は更新中の追加分を含まず、その分は予備枠へ計上する。ECS circuit breakerは起動に失敗した配置を戻すが、起動できる論理不具合までは判定しない。直前に稼働したdigestを保持し、公開疎通・投稿・画像・監視を検査する。不具合時は先のdigestへ戻し、DDLが非互換なら自動で巻き戻さず復元案を扱う。ECRの整理では現行・直前・復元に必要なイメージを消さない。
-
-## 管理画面再設計の別リリース
-
-2026-11-08にDB移行002、画像CORS・一時領域期限、アプリ配備を実施済み。自動リリースの運用手順は[本番への反映](../docs/production-release.md)を参照。画像の実送信を含む最終受け入れは、自動本番確認の結果で記録する。
-
-自動保存・直接アップロード・手動同期の変更は、スキーマ版2（`002_autosave_uploads_manual_sync.sql`）と画像バケットのCORS・一時領域の期限を前提にする。`scripts/aws/delivery.py`は移行コードのハッシュが検証済みの状態記録と異なると停止し、ImagesBucketの変更も通常のアプリ更新では拒否する。このガードを外してmainへ流さない。mainへ取り込んだ後の自動配備は、適用済みハッシュが記録されるまで停止する。
-
-適用順：
-
-1. 現行の変更をバックアップし、別RDS・別画像先への復元で全行と画像の一致を確認する（[別RDSへの復元リハーサル](#別rdsへの復元リハーサル)）。旧アプリはスキーマ版1のアーカイブを作る。版1のアーカイブは版2のDBへ復元できる。
-2. 移行用タスクで002を適用する。後方互換の追加（空タイトルを許す制約・画像上限10,000,000・`sync_sources.requested`・`image_uploads`）で、旧アプリは動き続ける。ただし002の時点で旧アプリの定期同期待ちは`idle`になり、旧アプリはその後も日次同期を続けうるため、2〜4は続けて行う。終了コード0と`schema_migrations`の版2を確認する。
-3. 本番スタックを`production.py`の現行出力で更新し、ImagesBucketに公開Originだけを許可するCORS（POST）と、`images/staging/`だけを1日で期限切れにするライフサイクルが付くことを変更セットで確認する。IAMの実行ロール（`images/*`）とPermissions Boundary（`course-k-blog-production-*/*`）は一時キーを含むため変更しない。変更セットにバケットの置換・公開設定・他リソースの変更が含まれたら実行しない。
-4. アプリのイメージを更新する（Node/Go/Nginx）。
-5. 検証：管理画面の新規作成で自動保存とURLの置換、10MB以下のPNG・WebPの貼り付け（ブラウザからS3へのPOST・完了・正式URL）、未公開画像の匿名404、公開画像の200と拡大表示、設定の手動同期1媒体、バックアップ状態。
-6. 上記の完了後、専用ワークフローの`record-existing`で、実DBの版とSQLチェックサムを検証して適用済みハッシュを記録する。通常配備の移行ガードは解除しない。
-
-ロールバック：アプリは直前のdigestへ戻せる（002は旧アプリと互換）。002自体は自動で巻き戻さない。空タイトルの作業版や10,000,000バイト近い画像が保存された後に旧スキーマへ戻す必要があれば、手順1のバックアップから別DBへ復元して切り替えを判断する。CORS・ライフサイクルはスタックの再更新で外せるが、外すと新しい画面から画像を送れない。実AWSでの直接アップロード（署名・CORS・期限）は未検証であり、適用までは本番で「10MB対応済み」と扱わない。
-
-## オンデマンド構成の追加（未適用）
-
-[移行設計](../docs/future-static-delivery.md#新構成の定義と切替の進め方)の資材は、同じ本番定義（`scripts/aws/production.py`）へ[`scripts/aws/ondemand.py`](../scripts/aws/ondemand.py)が足す。パラメータが既定値のままなら何も作らず、稼働中の構成は変わらない。**本番スタックへはまだ適用していない。**
+[現行設計の構成](../docs/current-design.md#awsの入口と配置)の資材は、本番定義（`scripts/aws/production.py`）へ[`scripts/aws/ondemand.py`](../scripts/aws/ondemand.py)が足す。2026-11-16に適用し、同日にブログのホスト名を割り当てた。各パラメータで作られるもの：
 
 | パラメータ | 設定すると作られるもの |
 |---|---|
@@ -171,47 +97,19 @@ python3 scripts/aws/production_access.py > config/aws-production/access.template
 
 Auroraへの復元は`<Goイメージ> restore --backup-id <ID> --confirm-empty-target --new-database-host <Auroraのホスト名>`で行う。復元先は本来`_restore`か`_test`で終わる専用DBに限るが、新しいDBサーバーへ移すときは実際のDB（`blog`）へ入れる必要があるため、接続先のホスト名を一致させたときだけ許可する。復元先が空でなければ、復元の処理自体が拒否する。復元はアプリ用の利用者で行い、タスクのロールはバックアップの読み取りと画像バケットへの追加だけを持つ。受入の試験記事が残ったAuroraへ切替日に復元し直すときは、同じタスクで先に`<Goイメージ> clear-restore-target --confirm-delete-content --new-database-host <Auroraのホスト名>`を実行する。記事・画像の記録・外部記事・作成要求・未完了の画像送信・セッション・ログインの途中状態を一つのトランザクションで消す。許可の条件は復元と同じで、画像の実体とバックアップの記録・実体は消さない。
 
-適用時には疎通監視の修正も反映される。監視は`/?page=1`の200を確かめていたが、このURLは`/`への308を返すため、2026-10-29から毎回失敗していた。対象を`/`へ直した。
-
 新構成はイメージ用パラメータ（`OnDemandGoImage`・`OnDemandNodeImage`）を持ち、出力（Outputs）を足さない。切替後の通常の配備はこの2つを変える（[手順](#githubからのアプリ更新と専用アクセス)）。資材の名前やアドレスは、スタックの資材一覧から読む。
 
 権限上限は2026-11-16に適用した。適用済みのアクセス用スタックには、リポジトリの生成処理にない資材（MacからのRoles Anywhere接続用のTrustAnchorとProfile、それに合わせたOperatorRole）がある。生成した定義をそのまま適用するとこれらが削除されるため、適用済みの定義へ権限上限の文だけを足して更新した。アクセス用スタックを更新するときは、生成した定義と適用済みの定義の差を先に確かめる。
 
-生成した定義は51,200バイトを超えるので、S3経由（TemplateURL）で渡す。定義の不変条件は`scripts/aws/test_ondemand.py`で確認する：既定では何も作らない、稼働中の資材への変更は受入用ホスト名の2か所だけ、関数URLは署名つきでこのCloudFrontからだけ呼べる、読者向けバケットはこのCloudFrontだけが読める、DBは非公開でAPIと一時タスクだけが届く、実行ロールの権限は権限上限に収まる。
+生成した定義は51,200バイトを超えるので、S3経由（TemplateURL）で渡す。定義の不変条件は`scripts/aws/test_ondemand.py`で確認する：既定では何も作らない、既存の資材への変更は受入用ホスト名の2か所だけ、関数URLは署名つきでこのCloudFrontからだけ呼べる、読者向けバケットはこのCloudFrontだけが読める、DBは非公開でAPIと一時タスクだけが届く、実行ロールの権限は権限上限に収まる。
 
 ## 旧構成の撤去
 
 切替（2026-11-16）の後、本番スタックへ当てる定義は[`scripts/aws/retire.py`](../scripts/aws/retire.py)の`current_template()`とする。`backfill_template()`の出力から、Fargateのサービスだけが使っていた資材を外す：ECSサービスとタスク定義、API Gateway・VPC Link・Cloud Map、MySQLのRDSインスタンスとそのサブネット・セキュリティグループ・パラメータグループ、旧構成の疎通監視、それらの上に作った一時操作（別RDSへの復元、起動失敗版からの戻し、外部記事の補完）。残す資材の定義は適用済みのものと同じで、変更は削除だけになる。不変条件は`scripts/aws/test_retire.py`で確認する。
 
-適用の順序は、`EnableRuntime=false`でサービスを止める → RDSインスタンスの削除保護を外す → `current_template()`の変更セットを確かめて実行、の順。RDSは削除方針（Snapshot）により最終スナップショットを残す。画像・バックアップのバケット、Cognito、ECRは残る。保持方針（Retain）のロググループとリポジトリ（RouterRepository等）は定義に残す。
+2026-11-16に、`EnableRuntime=false`でサービスを止める → RDSインスタンスの削除保護を外す → `current_template()`の変更セット（削除28件だけ）を確かめて実行、の順で適用した。RDSは削除方針（Snapshot）により最終スナップショットを残す。画像・バックアップのバケット、Cognito、ECRは残る。保持方針（Retain）のロググループとリポジトリ（RouterRepository等）は定義に残す。
 
 一時タスク（Auroraの初期化・移行・復元）は、新構成のサブネット（`OnDemandSubnet1`・`OnDemandSubnet2`）で、セキュリティグループ`ApplicationSg`と公開IPv4を付けて実行する。このサブネットはIPv4をインターネットゲートウェイへ向けているため、ECRとSSMへ届く。
-
-## 現在の配置結果
-
-2026-10-19、mainのdd049adと一致する基盤変更セットを費用承認後に実行し、CREATE_COMPLETEを確認した。RDSは暗号化・非公開・7日バックアップ・削除保護、両S3は公開アクセス全面ブロック・SSE-S3・版管理が有効。DB初期化とMySQLの001_initial.sqlの移行は別々の単発タスクで終了コード0を確認。通常用と移行用の接続値はSSM SecureStringに分離し、Gitやコマンド引数へ秘密値を保存していない。
-
-同じmainからARM64の4イメージを作成し、専用ECRへ登録。アプリはNode/Go/Nginxのdigest固定・通常1タスクでUPDATE_COMPLETE、全コンテナHEALTHYを確認した。XServer DomainにblogのCNAMEを追加し、通常HTTPSで疎通できる。具体的ARN・イメージdigest・接続先・操作状態はGit対象外のconfig/aws-productionへ保持する。
-
-未ログイン管理APIの401、両S3の匿名403、JavaScriptなしのSSR、公開一覧の外部107件、疎通監視の実行を確認した。Cognitoの本人初期設定、TOTPの有効・優先設定、SNS購読とテストメール到達を確認した。専用の検証記事で保存・公開・更新・画像差し替え・非公開化を行い、公開前/差し替え前/非公開後の匿名画像404、公開画像200、公開版の維持と初回公開日/固定URLを照合した。検証記事は非公開で保持する。別RDSへの5テーブル/画像2点の復元、一覧600取得の失敗0とp95約0.661秒、失敗版から元の定義への復帰も確認した。手動復帰の要求とAWS自動ロールバック開始イベントが重なるため、自動回復単独の完走は未確認。具体的な条件と限界は公開台帳へまとめる。
-
-## 別RDSへの復元リハーサル
-
-[scripts/aws/recovery.py](../scripts/aws/recovery.py)は本番定義を拡張し、既存資源を変更せず、明示的に有効にした間だけ一時RDSと画像バケット、単発タスクを追加する。通常の定義を別に手修正しない。本番のDBと画像保存先は切り替えない。復元先は新規・非公開・暗号化のblog_restore、画像は専用の非公開バケット。パスワードとDSNも復元用のSSMへ分離する。
-
-最初はEnableRestoreExercise=true / EnableRestoreTasks=falseで一時DBとバケットだけを作る。完了後、復元専用SSM、RestoreCheckImageの固定digest、管理画面で確認したRestoreBackupIdを指定して単発タスクを有効にする。既存の移行用ロールを使うためEnableDatabaseTools=trueも必要。新規DBの権限初期化、移行、復元照合の順に各タスクの終了コードを確認する。
-
-[restorecheck](../backend/cmd/restorecheck/main.go)は通常の復元処理を実行し、復元先から再取得した全表を、行順と変更世代だけを除いてアーカイブと比較する。本文・公開状態・画像参照・作成要求の対応・外部記事を含み、画像本体もサイズとSHA-256を照合する。SQLの行順やJSON数値精度によって差を見逃さない試験を付ける。本番ホスト・通常のblog DB・本番画像バケットは対象として拒否する。
-
-復元専用のIAMロールは元バックアップを読むだけで、削除は復元用画像バケット内だけに許可する。成功後の--cleanup-mediaはコピーした画像だけを削除する。検証用バケットは版管理なしで、本番2バケットの版管理を弱めない。最後に両フラグをfalseにした変更セットがRestoreで始まる一時資源の削除だけであることを照合し、空バケットと一時DBを撤去する。一時DBには自動バックアップ・削除保護・最終スナップショットを付けず、復元元は本番側に保持する。失敗した場合は再初期化せず対象を調査する。
-
-### 起動失敗版からの戻し方の確認
-
-一時資源の有効期間だけRollbackTestTaskの定義を追加する。この定義を作るだけではサービスは切り替わらない。通常の固定イメージを使い、Goの未対応コマンドでDBへ接続する前に終了させる。現在の正常なタスク定義・通常1台・全コンテナHEALTHY・直前の完了したデプロイ・minimumHealthyPercent=100 / maximumPercent=200・circuit breakerのrollback=trueを照合してから、対象サービスに限って失敗定義への更新を試す。
-
-既存の正常タスクを保持し、起動失敗と自動ロールバックをECSイベントで確認する。公開HTTPSの応答と、サービスが元のタスク定義へ戻ったことも照合する。自動回復が進まない場合は同じ正常な定義を明示して戻す。DB移行は行わない。終了後は元の定義が稼働中であることを確認してから、未使用の失敗用定義を一時資源と一緒に撤去する。これは起動失敗への回復確認で、起動後の論理不具合や非互換DDLの回復を保証する試験ではない。
-
-このリハーサルはアプリのバックアップから別RDSへ戻す確認で、RDSスナップショット/PITRの復旧や全スキーマ版への互換性を確認した意味ではない。通常費用に加算せず、承認済みの初回追加5 USD以内の作業予算で一時資源の稼働時間を管理する。
 
 ## 保存と回復の操作
 
@@ -232,50 +130,27 @@ api clear-restore-target --confirm-delete-content --new-database-host HOST
 api revoke-sessions --confirm
 ```
 
-復元先DB名は`_restore`または`_test`で終わり、対象表が空、移行版がアーカイブと同じことを要求する。対象DB用のDSN・権限・画像保存先を持つ専用の単発タスクを用意し、本番タスクの接続先を書き換えて復元しない。バックアップ用S3は復元元、MEDIA_BUCKETは新しい復元先とする。記事数・本文・公開状態・画像ハッシュを照合し、匿名で下書き画像を取得できないことまで確認してから切替を判断する。
+復元先DB名は`_restore`または`_test`で終わるか、`--new-database-host`で接続先のホスト名を明示し、対象表が空、移行版がアーカイブと同じことを要求する。Auroraへは`OnDemandRestoreTask`（アプリ用の利用者、バックアップの読み取りと画像バケットへの追加だけを持つロール）で、新構成のサブネット・`ApplicationSg`・公開IPv4を指定して実行する。バックアップ用S3は復元元、MEDIA_BUCKETは新しい復元先とする。記事数・本文・公開状態・画像ハッシュを照合し、匿名で下書き画像を取得できないことまで確認してから切替を判断する。
 
 パスワード回復はCognitoの検証済み本人メールを使用する。TOTP端末を失った場合や侵害が疑われる場合は、管理者が本人を確認してCognito側を停止・回復し、CognitoセッションとDBセッションを失効させる。Cognito側だけのサインアウトでは8時間のDBセッションは消えない。別の管理ユーザーを無条件に追加して回避しない。AWSアカウント自体のMFA・回復手段も本人が保持する。
 
-## 容量と費用の開始見積もり
+## 費用の見込み
 
-アプリはNode/Go/Nginxを合計0.5vCPU/2GiBの1タスクとし、公開IPv4は通常1個。RDS db.t4g.micro/20GiBとともに本番受入の開始値とする。共有候補のローカル性能確認と限界は[現行設計](../docs/current-design.md#タスク統合候補の性能確認)を参照。追加機能の試験では200記事×50KiBの作業版と公開版（計19.5MiB）を別DBへ復元し、最大1200万画素のPNGを再エンコードできた。macOS上の独立試験プロセス・GOMEMLIMIT=512MiBで最大常駐メモリはそれぞれ約175MiB・149MiB。画像は透明の規則的パターン、記事は反復文字であり、圧縮率・CPU時間・並行実行・Fargate ARM64の性能を保証しない。DB JSON 64MiB/展開アーカイブ128MiBの上限や、複数作業の同時実行には別の負荷確認が必要。
+オレゴン、オンデマンド、税別。Auroraの単価は2026-10-29版の[RDSオレゴン公式価格表](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/us-west-2/index.csv)で確認した。使用量と無料枠の適用は仮定であり、実測の請求ではない。
 
-2026-10-19に[AWS公式オレゴン価格表](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/us-west-2/index.json)と各サービスの公開表を確認。月730時間、オンデマンド、ARM64、アプリ1サービス・通常1タスク、総API要求10万、S3保存6GiB・PUT1万/GET10万、ECR2.1GiB（Nginx追加分を含む仮定）、ログ取込/保存各1GiBを例にする。アクセス量・保存量は想定であり、実測の確定請求ではない。
-
-| 項目 | 計算の前提 | 月額USD（税前） |
+| 項目 | 計算の前提 | 月額USD |
 |---|---|---:|
-| アプリ共有タスク | (0.5×0.03238＋2×0.00356)×730。Node/Go/Nginxで共有 | 17.02 |
-| 公開IPv4 1本 | 1×0.005×730。ALB・NATは作らない | 3.65 |
-| RDS | db.t4g.micro 0.016×730 | 11.68 |
-| RDS保存 | gp3 20×0.115 | 2.30 |
-| API Gateway | HTTP API 10万×0.000001 | 0.10 |
-| S3 | 6×0.023＋PUT1万＋GET10万 | 0.23 |
-| ECR | 2.1×0.10 | 0.21 |
-| CloudWatch | 取込0.50＋保存0.03＋7アラーム0.70＋独自指標0.30 | 1.53 |
-| Cloud Map・内部DNS | 1登録0.10＋検出10万0.10＋登録等千回0.001＋private zone0.50 | 0.70 |
-| Secrets Manager | RDS管理者secret1件0.40＋API千回0.005 | 0.41 |
-| Cognito | 本人1MAU、無償枠を使わない場合0.0055 | 0.01 |
-| 小額処理・通信の予備 | 監視Lambda・通知・更新/単発タスク・AZ間通信等の予算枠。固定単価ではない | 1.20 |
-| **例の合計** | インターネット転送30GiBをアカウントの月100GB無償枠内と仮定 | **約39.03** |
+| Auroraの計算資源 | 0.12/ACU時。執筆20回×（作業1時間＋停止まで30分）と定期呼び出し30回×30分で月45時間、平均0.75 ACUと仮定 | 約4.05 |
+| Auroraの保存領域 | 0.10/GB月×1GB、I/Oは0.20/100万回で少量 | 約0.15 |
+| Lambda | 月数万回・512MiB。毎月の無料枠内と仮定 | 0 |
+| CloudFront | 毎月の無料枠内と仮定 | 0 |
+| S3 | 数GBと少量の要求 | 約0.25 |
+| CloudWatch | ログ1GB未満、アラーム10件以内 | 約0.50 |
+| 秘密値 | 接続文字列はSSMのSecureString。Auroraの管理者パスワードはSecrets Managerの1件 | 約0.40 |
+| **小計** | | **約5.35** |
 
-[Fargate](https://aws.amazon.com/fargate/pricing/)、[RDS](https://aws.amazon.com/rds/mysql/pricing/)、[S3](https://aws.amazon.com/s3/pricing/)、[CloudWatch](https://aws.amazon.com/cloudwatch/pricing/)、[Cloud Map](https://aws.amazon.com/cloud-map/pricing/)、[Route 53](https://aws.amazon.com/route53/pricing/)、[Cognito](https://aws.amazon.com/cognito/pricing/)を参照。Cognitoの直接ログイン1MAUは通常10,000MAUの共通枠に収まるが、組織/アカウント全体の残枠は未確認。private hosted zoneの問い合わせはRoute 53で追加料金なし。公開DNSは既存サービスを使う前提で、新しいRoute 53公開ゾーンを必須にしない。
-
-税・為替・ドメイン更新・有償CI、転送枠を超える通信、増えた画像/ログ/旧版/スナップショット、RDSの追加CPUクレジット等は別。通常のSSM Standardパラメーターと本番VPCを使い、Spot・予約割引・期限付きクレジットで安く見せない。概算を月額上限の保証にはしない。通常月の見込み額は本人承認済みで、予算通知を設定した。運用中もアカウントの料金条件・無償枠・実際の利用量を確認し、構成変更時には再見積もりする。
+DBは定期呼び出しのほか、APIへの要求（存在しない画像への要求を含む）でも起きる（2026-11-17〜18の実測で1日数回）。Auroraの稼働時間が月90時間なら約4.05 USD増える。旧RDSの最終スナップショットの保管料、メンテナンスによる再開、無料枠の残り、キャッシュ無効化の超過、税、為替は含まない。切替後1か月の請求で、この範囲に収まるかを確かめる。
 
 ## 予算通知
 
 AWS Budgetsに月45 USDの予算通知を設定した。対象はブログだけの費用ではなく、AWSアカウント全体。実績85％（38.25 USD）・実績100％・予測100％で本人の登録メールへ通知する。受信先はActive (legacy)を確認済み。予算のしきい値到達による通知発火は未試験。障害通知用SNSのテストメール到達とは区別する。自動停止などのアクションは設定せず、料金の強制上限ではない。費用監視と通知の利用は[公式料金](https://aws.amazon.com/aws-cost-management/aws-budgets/pricing/)上無料で、既存の他の予算設定は変更していない。
-
-### 最新範囲から漏れる過去の外部記事の初回補完
-
-Wantedlyの公開プロフィールで過去記事を追加表示し、各記事の公開構造化メタデータで本人の著者URL・タイトル・公開日を照合する。本文は転載しない。自動同期の最新範囲と、初回の過去記事補完を区別する。
-
-補完には`cmd/externalimport`の一度限りの管理コマンドを使う。`scripts/aws/backfill.py`は既存の本番・復元定義を維持し、既定では無効なタスク定義だけを追加する。実行時は`EnableExternalBackfill=true`、Go用ECR内の固定digest画像、確認した公開メタデータの配列を指定する。JSONの項目は`id`・`title`・`url`・`publishedAt`、最大20件/4096バイト。DB接続先は既存のSSM秘密値から取得し、タスク上書きの平文環境変数に置かない。
-
-タスクは`--confirm-owner-metadata`と本番DBホストの一致・TLS検証を要求し、既存記事を更新せず未登録分だけを一つのトランザクションで追加する。既存の本人補正・非表示・版番号や同期の取得範囲は変更しない。新しいIAM権限や公開APIは追加せず、実行プロセスのAWSロールは権限なし。終了コード0・挿入数・公開一覧のリンクと日時を確認し、バックアップ後にタスク定義を無効化する。後日の自動取得が全履歴を保証する意味にはしない。
-
-2026-10-19の初回補完では、公開プロフィールで本人の14件を照合し、未登録4件だけを追加した。公開一覧はQiita92・Wantedly14・note1、計107件。4件のタイトルと元公開時刻を公開APIと照合した。通常のWantedly同期は最新範囲のままで、将来の全履歴取得の保証は追加していない。
-
-復元用DB・画像バケット・権限・タスク定義と初回補完定義は試験後に無効化して撤去した。復元専用SSMの4値も削除した。本番は通常1タスク/3コンテナHEALTHY、元のRDSは非公開・暗号化・7日バックアップ・削除保護を維持する。補完後のバックアップコマンドは終了コード0を確認し、単発タスクは停止した。通常の継続課金は残るが、一時DBの稼働は継続しない。
-
-本人の最終画面確認は「問題なし」。現行バックアップ・通知後の手動復元・時間保証なしで開始する方針の確認を得て、公開の受入を完了した。自動回復単独の完走や資格情報紛失・PITRの未試験を成功扱いにはしない。

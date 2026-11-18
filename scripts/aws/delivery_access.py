@@ -20,8 +20,6 @@ def delivery_access_template():
     iam = 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/'
     definitions = [sub(ecs + f'task-definition/{stack}-{family}:*')
                    for family in ('on-demand-migration', 'on-demand-restore')]
-    # Kept for the reviewed special release, which still names the retired family.
-    migration_definition = sub(ecs + f'task-definition/{stack}-migration:*')
     cluster = sub(ecs + f'cluster/{stack}-Cluster-*')
     functions = [sub('arn:${AWS::Partition}:lambda:us-west-2:${AWS::AccountId}:function:' + f'{stack}-{name}')
                  for name in ('api', 'web')]
@@ -49,15 +47,18 @@ def delivery_access_template():
             'cloudformation:ExecuteChangeSet', 'cloudformation:DeleteChangeSet',
         ], [sub(cfn + f'stack/{stack}/*'),
             sub(cfn + f'changeSet/{stack}-release-*/*')]),
-        allow('ReleaseTemplates', ['s3:GetObject', 's3:PutObject'],
-              sub('arn:${AWS::Partition}:s3:::course-k-blog-release-${AWS::AccountId}-${AWS::Region}/templates/*')),
         allow('AppliedSchemaState', ['ssm:GetParameter', 'ssm:PutParameter'],
               sub('arn:${AWS::Partition}:ssm:us-west-2:${AWS::AccountId}:parameter/course-k/blog-production/applied-schema-digest')),
-        allow('RunMigration', ['ecs:RunTask'], migration_definition, {
+        # The special release copies the stack's migration definition with the
+        # candidate image, then runs it in the blog cluster.
+        allow('ReadMigrationDefinition', ['ecs:DescribeTaskDefinition'], '*'),
+        allow('RegisterCandidateMigration', ['ecs:RegisterTaskDefinition'], definitions[0]),
+        allow('RunMigration', ['ecs:RunTask'], definitions[0], {
             **regional, 'ArnLike': {'ecs:cluster': cluster},
         }),
-        allow('ImageSettingsThroughStack', ['s3:GetAccelerateConfiguration', 's3:GetLifecycleConfiguration', 's3:GetBucketPublicAccessBlock', 's3:GetAnalyticsConfiguration', 's3:GetBucketCORS', 's3:GetEncryptionConfiguration', 's3:GetInventoryConfiguration', 's3:GetBucketLogging', 's3:GetMetricsConfiguration', 's3:GetBucketNotification', 's3:GetBucketVersioning', 's3:GetReplicationConfiguration', 's3:GetBucketWebsite', 's3:GetBucketObjectLockConfiguration', 's3:GetBucketTagging', 's3:ListTagsForResource', 's3:GetBucketAbac', 's3:GetBucketOwnershipControls', 's3:GetIntelligentTieringConfiguration', 's3:GetBucketMetadataTableConfiguration', 's3:ListBucket', 's3:GetBucketPolicy', 's3:GetBucketPolicyStatus', 's3:PutBucketCORS', 's3:PutLifecycleConfiguration'],
-              sub('arn:${AWS::Partition}:s3:::course-k-blog-production-imagesbucket-*'), through_stack),
+        allow('WatchMigration', ['ecs:DescribeTasks', 'ecs:StopTask'], sub(ecs + f'task/{stack}-Cluster-*/*'), {
+            **regional, 'ArnLike': {'ecs:cluster': cluster},
+        }),
         allow('EcrAuthentication', ['ecr:GetAuthorizationToken'], '*'),
         allow('ReleaseImages', [
             'ecr:BatchCheckLayerAvailability', 'ecr:InitiateLayerUpload',
@@ -105,7 +106,7 @@ def delivery_access_template():
         allow('PassTaskRoles', ['iam:PassRole'], task_roles,
               {'StringEquals': {'iam:PassedToService': 'ecs-tasks.amazonaws.com'}}),
     ]
-    extra_sids = {'ReleaseTemplates', 'AppliedSchemaState', 'RunMigration', 'ImageSettingsThroughStack'}
+    extra_sids = {'AppliedSchemaState', 'ReadMigrationDefinition', 'RegisterCandidateMigration', 'RunMigration', 'WatchMigration'}
     release_statements = [s for s in statements if s['Sid'] in extra_sids]
     statements = [s for s in statements if s['Sid'] not in extra_sids]
     return {

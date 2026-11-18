@@ -19,10 +19,6 @@ on:
         description: 'I reviewed the SQL and confirmed compatibility with the currently running app'
         type: boolean
         default: false
-      check_sync:
-        description: 'Explicitly request one real Qiita sync as part of acceptance'
-        type: boolean
-        default: false
 permissions:
   contents: read
 concurrency:
@@ -69,6 +65,5 @@ jobs:
           RELEASE_DIGEST: ${{ inputs.schema_digest }}
           RELEASE_SCHEMA: ${{ inputs.expected_schema }}
           RELEASE_COMPATIBLE: ${{ inputs.backward_compatible }}
-          RELEASE_SYNC: ${{ inputs.check_sync }}
         run: |
           python3 scripts/aws/run_special_release.py
